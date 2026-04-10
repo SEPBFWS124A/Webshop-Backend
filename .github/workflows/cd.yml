@@ -1,0 +1,52 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Build & Deploy to VPS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Make Maven Wrapper executable
+        run: chmod +x mvnw
+
+      - name: Build JAR (skip tests — CI already ran them)
+        run: ./mvnw package -DskipTests --no-transfer-progress
+
+      # ── Upload JAR to VPS ──────────────────────────────────────────────────
+      # Requires GitHub Secrets:
+      #   VPS_HOST     — server IP or domain
+      #   VPS_USER     — SSH user (e.g. deploy)
+      #   VPS_SSH_KEY  — private SSH key (contents of ~/.ssh/id_ed25519)
+      - name: Upload JAR to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: target/webshop-0.0.1-SNAPSHOT.jar
+          target: /opt/webshop/
+
+      # ── Restart systemd service on VPS ────────────────────────────────────
+      # The VPS needs a systemd unit at /etc/systemd/system/webshop.service
+      # and a sudoers entry: deploy ALL=(ALL) NOPASSWD: /bin/systemctl restart webshop
+      - name: Restart webshop service
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: sudo systemctl restart webshop

@@ -1,0 +1,135 @@
+package de.fhdw.webshop.product;
+
+import de.fhdw.webshop.product.dto.*;
+import de.fhdw.webshop.user.User;
+import jakarta.persistence.EntityNotFoundException;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.List;
+
+@Service
+@RequiredArgsConstructor
+public class ProductService {
+
+    private final ProductRepository productRepository;
+
+    public List<ProductResponse> listProducts(Boolean purchasableOnly, String category, String searchTerm) {
+        // Normalize null Strings to "" — JPQL IS NULL on String params infers bytea in PostgreSQL,
+        // breaking LOWER(). The repository query uses = '' as the "no filter" sentinel instead.
+        String normalizedCategory = (category == null) ? "" : category;
+        String normalizedSearchTerm = (searchTerm == null) ? "" : searchTerm;
+        return productRepository.searchProducts(purchasableOnly, normalizedCategory, normalizedSearchTerm)
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    public ProductResponse getProduct(Long productId) {
+        return toResponse(loadProduct(productId));
+    }
+
+    /** US #31 — Returns the price after applying the customer's best active discount. */
+    public ProductPriceResponse getPriceForCustomer(Long productId, User customer,
+                                                    DiscountLookupPort discountLookupPort) {
+        Product product = loadProduct(productId);
+        BigDecimal bestDiscountPercent = discountLookupPort.findBestActiveDiscountPercent(customer.getId(), productId);
+        BigDecimal effectivePrice = applyDiscount(product.getRecommendedRetailPrice(), bestDiscountPercent);
+        return new ProductPriceResponse(productId, product.getRecommendedRetailPrice(), effectivePrice, bestDiscountPercent);
+    }
+
+    /** US #13 — Add a new article to the catalogue. */
+    @Transactional
+    public ProductResponse createProduct(ProductRequest productRequest) {
+        Product product = new Product();
+        product.setName(productRequest.name());
+        product.setDescription(productRequest.description());
+        product.setImageUrl(productRequest.imageUrl());
+        product.setRecommendedRetailPrice(productRequest.recommendedRetailPrice());
+        product.setCategory(productRequest.category());
+        return toResponse(productRepository.save(product));
+    }
+
+    /** US #14 — Remove an article from the catalogue. */
+    @Transactional
+    public void deleteProduct(Long productId) {
+        Product product = loadProduct(productId);
+        productRepository.delete(product);
+    }
+
+    /** US #15 — Toggle whether customers can see and buy the article. */
+    @Transactional
+    public ProductResponse setPurchasable(Long productId, boolean purchasable) {
+        Product product = loadProduct(productId);
+        product.setPurchasable(purchasable);
+        return toResponse(productRepository.save(product));
+    }
+
+    /** US #26 — Toggle promoted flag (highlighted on storefront). */
+    @Transactional
+    public ProductResponse setPromoted(Long productId, boolean promoted) {
+        Product product = loadProduct(productId);
+        product.setPromoted(promoted);
+        return toResponse(productRepository.save(product));
+    }
+
+    /** US #16 — Update description text. */
+    @Transactional
+    public ProductResponse updateDescription(Long productId, UpdateDescriptionRequest updateDescriptionRequest) {
+        Product product = loadProduct(productId);
+        product.setDescription(updateDescriptionRequest.description());
+        return toResponse(productRepository.save(product));
+    }
+
+    /** US #17 — Update product image URL. */
+    @Transactional
+    public ProductResponse updateImage(Long productId, UpdateImageRequest updateImageRequest) {
+        Product product = loadProduct(productId);
+        product.setImageUrl(updateImageRequest.imageUrl());
+        return toResponse(productRepository.save(product));
+    }
+
+    /** US #18 — Update recommended retail price (SALES_EMPLOYEE only). */
+    @Transactional
+    public ProductResponse updatePrice(Long productId, UpdatePriceRequest updatePriceRequest) {
+        Product product = loadProduct(productId);
+        product.setRecommendedRetailPrice(updatePriceRequest.recommendedRetailPrice());
+        return toResponse(productRepository.save(product));
+    }
+
+    public Product loadProduct(Long productId) {
+        return productRepository.findById(productId)
+                .orElseThrow(() -> new EntityNotFoundException("Product not found: " + productId));
+    }
+
+    private BigDecimal applyDiscount(BigDecimal price, BigDecimal discountPercent) {
+        if (discountPercent == null || discountPercent.compareTo(BigDecimal.ZERO) == 0) {
+            return price;
+        }
+        BigDecimal multiplier = BigDecimal.ONE.subtract(discountPercent.divide(BigDecimal.valueOf(100)));
+        return price.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private ProductResponse toResponse(Product product) {
+        return new ProductResponse(
+                product.getId(),
+                product.getName(),
+                product.getDescription(),
+                product.getImageUrl(),
+                product.getRecommendedRetailPrice(),
+                product.getCategory(),
+                product.isPurchasable(),
+                product.isPromoted(),
+                product.getCreatedAt()
+        );
+    }
+
+    /** Port interface so ProductService does not depend on the discount package directly. */
+    @FunctionalInterface
+    public interface DiscountLookupPort {
+        BigDecimal findBestActiveDiscountPercent(Long customerId, Long productId);
+    }
+}

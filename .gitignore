@@ -1,16 +1,11 @@
-# Compiled class file
+# ── Maven ────────────────────────────────────────────────────────────────────
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+# ── Compiled output ──────────────────────────────────────────────────────────
 *.class
 
-# Log file
-*.log
-
-# BlueJ files
-*.ctxt
-
-# Mobile Tools for Java (J2ME)
-.mtj.tmp/
-
-# Package Files #
+# ── Package files ────────────────────────────────────────────────────────────
 *.jar
 *.war
 *.nar
@@ -19,6 +14,40 @@
 *.tar.gz
 *.rar
 
-# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+# ── Secrets & environment ────────────────────────────────────────────────────
+.env
+*.env
+!.env.example
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── IDE — IntelliJ IDEA ──────────────────────────────────────────────────────
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# ── IDE — VS Code ────────────────────────────────────────────────────────────
+.vscode/
+!.vscode/extensions.json
+
+# ── IDE — Eclipse ────────────────────────────────────────────────────────────
+.classpath
+.project
+.settings/
+bin/
+
+# ── OS ───────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── JVM crash logs ───────────────────────────────────────────────────────────
 hs_err_pid*
 replay_pid*
+
+# ── Claude Code ──────────────────────────────────────────────────────────────
+CLAUDE.md
+.claude
