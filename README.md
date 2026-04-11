@@ -163,6 +163,9 @@ cd Webshop-Backend
 ### Schritt 2 — Backend starten
 ```ps1
 ./dev.ps1 start
+
+# Bei Fehler die bat probieren:
+./dev.bat start
 ```
 
 Das Script startet automatisch:
@@ -173,10 +176,10 @@ Das Backend ist dann erreichbar unter: `http://localhost:8080`
 
 **Weitere Befehle:**
 ```bat
-dev stop             :: Backend + PostgreSQL beenden
-dev stop --keep-db   :: Nur Backend beenden, DB läuft weiter (schnellerer Neustart)
-dev restart          :: Stop + Start in einem
-dev rebuild          :: target/ löschen + neu bauen + starten
+./dev.bat stop             :: Backend + PostgreSQL beenden
+./dev.bat stop --keep-db   :: Nur Backend beenden, DB läuft weiter (schnellerer Neustart)
+./dev.bat restart          :: Stop + Start in einem
+./dev.bat rebuild          :: target/ löschen + neu bauen + starten
 ```
 
 > **Wann `dev rebuild` statt `dev restart`?**
