@@ -5,7 +5,7 @@
 #         dev rebuild --keep-db
 #
 # How it works:
-#   start   -> docker compose up  ->  mvnw spring-boot:start  (blocks until app is ready)
+#   start   -> docker compose up  ->  mvnw compile spring-boot:start  (blocks until app is ready)
 #   stop    -> mvnw spring-boot:stop  (graceful JMX shutdown)  ->  docker compose down
 #   restart -> stop + start
 #   rebuild -> stop + delete target/ + start  (forces full recompile)
@@ -143,7 +143,8 @@ function Start-Backend {
     Write-Host ""
     Write-Host "Starting Spring Boot (first run downloads dependencies - may take a few minutes)..."
     Write-Host "-------------------------------------------------------------------------------"
-    & "$Root\mvnw.cmd" spring-boot:start
+    # compile is required before spring-boot:start (unlike spring-boot:run, start does not compile)
+    & "$Root\mvnw.cmd" compile spring-boot:start
 
     if ($LASTEXITCODE -eq 0) {
         Write-Host "-------------------------------------------------------------------------------"
