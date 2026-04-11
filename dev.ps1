@@ -3,6 +3,15 @@
 #         dev stop --keep-db     (keeps the PostgreSQL container running)
 #         dev restart --keep-db
 #         dev rebuild --keep-db
+#
+# How it works:
+#   start   -> docker compose up  ->  mvnw spring-boot:start  (blocks until app is ready)
+#   stop    -> mvnw spring-boot:stop  (graceful JMX shutdown)  ->  docker compose down
+#   restart -> stop + start
+#   rebuild -> stop + delete target/ + start  (forces full recompile)
+#
+# mvnw is called directly from PowerShell - NOT via cmd.exe - so paths with special
+# characters (e.g. ! in folder names) are handled correctly.
 
 param(
     [Parameter(Mandatory)][ValidateSet("start","stop","restart","rebuild")]
@@ -10,15 +19,33 @@ param(
     [switch]$KeepDb
 )
 
-$Root    = $PSScriptRoot
-$LogFile = "$Root\target\dev.log"
-$Port    = 8080
+$Root = $PSScriptRoot
+$Port = 8080
+
+# mvnw.cmd v3.3.2 no longer passes -Dmaven.multiModuleProjectDirectory to the JVM,
+# but Maven 3.9.x requires it. Setting it via MAVEN_OPTS is the official workaround.
+# PowerShell handles the path correctly even when it contains ! characters.
+$env:MAVEN_OPTS = "$($env:MAVEN_OPTS) -Dmaven.multiModuleProjectDirectory=`"$Root`"".Trim()
 
 # --- helpers -----------------------------------------------------------------
 
 function Get-AppPid {
     Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
         Select-Object -ExpandProperty OwningProcess -First 1
+}
+
+function Test-Prerequisites {
+    if (-not (Get-Command java -ErrorAction SilentlyContinue)) {
+        Write-Host "ERROR: 'java' not found in PATH."
+        Write-Host "  Install Java 21: https://adoptium.net"
+        return $false
+    }
+    docker info 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "ERROR: Docker is not running. Start Docker Desktop and retry."
+        return $false
+    }
+    return $true
 }
 
 function Wait-ForPostgres {
@@ -38,8 +65,14 @@ function Wait-ForPostgres {
 function Stop-Backend {
     $appPid = Get-AppPid
     if ($appPid) {
-        Write-Host "Stopping Spring Boot (PID $appPid)..."
-        Stop-Process -Id $appPid -Force
+        Write-Host "Stopping Spring Boot..."
+        # Graceful shutdown via the Maven plugin (uses JMX internally)
+        & "$Root\mvnw.cmd" spring-boot:stop --quiet
+        if ($LASTEXITCODE -ne 0) {
+            # Fallback: kill the Java process that owns port 8080
+            Write-Host "JMX stop failed - killing process $appPid..."
+            Stop-Process -Id $appPid -Force -ErrorAction SilentlyContinue
+        }
         Write-Host "Spring Boot stopped."
     } else {
         Write-Host "Spring Boot is not running."
@@ -59,7 +92,9 @@ function Start-Backend {
         return
     }
 
-    # 1. Start PostgreSQL if not already up
+    if (-not (Test-Prerequisites)) { return }
+
+    # Start PostgreSQL if not already running
     $containerState = docker inspect "--format={{.State.Status}}" webshop-postgres 2>$null
     if ($containerState -ne "running") {
         Write-Host "Starting PostgreSQL container..."
@@ -73,42 +108,29 @@ function Start-Backend {
         return
     }
 
-    # 2. Start Spring Boot in background, redirect stdout+stderr to log
-    New-Item -ItemType Directory -Path "$Root\target" -Force | Out-Null
-    Write-Host "Starting Spring Boot... (log: target\dev.log)"
+    # spring-boot:start forks Spring Boot into a background JVM, then BLOCKS here
+    # until the application context is fully loaded (via JMX handshake).
+    # Maven output (downloads, compilation, Spring Boot startup logs) is printed
+    # directly to this terminal. Returns only when the app is ready - or fails.
+    #
+    # First run: Maven downloads ~200 MB of dependencies. This can take several
+    # minutes. Subsequent runs use the local ~/.m2 cache and start in ~20 seconds.
+    Write-Host ""
+    Write-Host "Starting Spring Boot (first run downloads dependencies - may take a few minutes)..."
+    Write-Host "-------------------------------------------------------------------------------"
+    & "$Root\mvnw.cmd" spring-boot:start
 
-    $process = Start-Process -FilePath "java" `
-        -ArgumentList `
-            "-Dmaven.multiModuleProjectDirectory=`"$Root`"", `
-            "-classpath", "`"$Root\.mvn\wrapper\maven-wrapper.jar`"", `
-            "org.apache.maven.wrapper.MavenWrapperMain", `
-            "spring-boot:run" `
-        -WorkingDirectory $Root `
-        -RedirectStandardOutput $LogFile `
-        -RedirectStandardError  "$Root\target\dev-err.log" `
-        -WindowStyle Hidden `
-        -PassThru
-
-    # 3. Wait until "Started" or "FAILED" appears in the merged log
-    Write-Host "Waiting for startup" -NoNewline
-    for ($i = 0; $i -lt 45; $i++) {
-        Start-Sleep -Seconds 2
-
-        $log = Get-Content $LogFile -ErrorAction SilentlyContinue
-        $err = Get-Content "$Root\target\dev-err.log" -ErrorAction SilentlyContinue
-        $combined = ($log + $err) -join "`n"
-
-        if ($combined -match "Started WebshopApplication") {
-            Write-Host "`nBackend is up at http://localhost:$Port"
-            return
-        }
-        if ($combined -match "APPLICATION FAILED TO START") {
-            Write-Host "`nStartup FAILED. Check target\dev.log and target\dev-err.log"
-            return
-        }
-        Write-Host -NoNewline "."
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "-------------------------------------------------------------------------------"
+        Write-Host "Backend is up at     http://localhost:$Port"
+        Write-Host "Swagger UI:          http://localhost:$Port/swagger-ui/index.html"
+        Write-Host ""
+        Write-Host "Run 'dev stop' to shut down."
+    } else {
+        Write-Host "-------------------------------------------------------------------------------"
+        Write-Host "ERROR: Spring Boot failed to start (exit code $LASTEXITCODE)."
+        Write-Host "Scroll up to see the error in the Maven output above."
     }
-    Write-Host "`nTimed out - check target\dev.log"
 }
 
 # --- rebuild -----------------------------------------------------------------

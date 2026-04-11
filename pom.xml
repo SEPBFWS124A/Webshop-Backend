@@ -131,6 +131,9 @@
                             <artifactId>lombok</artifactId>
                         </exclude>
                     </excludes>
+                    <!-- spring-boot:start blocks until the app is ready (90 × 2 s = 3 min max) -->
+                    <maxAttempts>90</maxAttempts>
+                    <wait>2000</wait>
                 </configuration>
             </plugin>
 
