@@ -1,6 +1,10 @@
-# Webshop Backend
+# Webshop Backend — Windows (PowerShell)
+
+> **Linux-Nutzer:** → [README-Linux.md](README-Linux.md)
 
 Spring Boot Backend für den Webshop. Stellt eine REST API bereit, die vom React-Frontend unter [SEPBFWS124A/Webshop](https://github.com/SEPBFWS124A/Webshop) verwendet wird.
+
+> Alle Befehle in diesem Dokument sind für **Windows PowerShell** geschrieben.
 
 ---
 
@@ -193,9 +197,8 @@ Spring Boot Ausgabe (Downloads, Compile-Log, Startup-Logs) erscheint direkt im T
 > Neukompilierung — z.B. nach Konfigurationsänderungen.
 
 ### Schritt 3 — Testdaten einspielen (einmalig)
-```bash
-docker exec -i webshop-postgres psql -U webshop -d webshop \
-  < src/main/resources/db/dev-seed.sql
+```powershell
+Get-Content src/main/resources/db/dev-seed.sql | docker exec -i webshop-postgres psql -U webshop -d webshop
 ```
 
 ### Schritt 4 — Verifizieren
@@ -725,8 +728,8 @@ Wenn ein neuer Endpunkt fertig ist, kurz im Team-Kanal melden. Das Frontend kann
 
 Alle Befehle setzen voraus, dass das Backend auf `http://localhost:8080` läuft (`dev start`).
 Testdaten einspielen (einmalig):
-```bash
-docker exec -i webshop-postgres psql -U webshop -d webshop < src/main/resources/db/dev-seed.sql
+```powershell
+Get-Content src/main/resources/db/dev-seed.sql | docker exec -i webshop-postgres psql -U webshop -d webshop
 ```
 
 Seeded-Accounts (Passwort überall: `Password1!`):
@@ -748,91 +751,87 @@ curl http://localhost:8080/api/health
 ```
 
 ### Login (Token holen)
-```bash
-TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"alice","password":"Password1!"}' \
-  | python -c "import sys,json; print(json.load(sys.stdin)['token'])")
+```powershell
+$TOKEN = (Invoke-RestMethod -Method Post http://localhost:8080/api/auth/login `
+  -ContentType "application/json" `
+  -Body '{"username":"alice","password":"Password1!"}').token
 ```
 
 ### Produkte
-```bash
+```powershell
 # Alle kaufbaren Produkte
-curl "http://localhost:8080/api/products?purchasable=true"
+Invoke-RestMethod "http://localhost:8080/api/products?purchasable=true"
 
 # Suche + Kategorie
-curl "http://localhost:8080/api/products?search=laptop&category=Electronics"
+Invoke-RestMethod "http://localhost:8080/api/products?search=laptop&category=Electronics"
 
 # Kundenpreis (mit Rabatten)
-curl "http://localhost:8080/api/products/1/price-for-customer" -H "Authorization: Bearer $TOKEN"
+Invoke-RestMethod "http://localhost:8080/api/products/1/price-for-customer" -Headers @{Authorization="Bearer $TOKEN"}
 ```
 
 ### Warenkorb & Bestellung
-```bash
+```powershell
 # Artikel in Warenkorb
-curl -X POST http://localhost:8080/api/cart/items \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"productId":1,"quantity":2}'
+Invoke-RestMethod -Method Post http://localhost:8080/api/cart/items `
+  -Headers @{Authorization="Bearer $TOKEN"} `
+  -ContentType "application/json" `
+  -Body '{"productId":1,"quantity":2}'
 
 # Warenkorb anzeigen
-curl http://localhost:8080/api/cart -H "Authorization: Bearer $TOKEN"
+Invoke-RestMethod http://localhost:8080/api/cart -Headers @{Authorization="Bearer $TOKEN"}
 
 # Bestellen
-curl -X POST http://localhost:8080/api/orders \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{}'
+Invoke-RestMethod -Method Post http://localhost:8080/api/orders `
+  -Headers @{Authorization="Bearer $TOKEN"} -ContentType "application/json" -Body '{}'
 
 # Bestellhistorie
-curl http://localhost:8080/api/orders -H "Authorization: Bearer $TOKEN"
+Invoke-RestMethod http://localhost:8080/api/orders -Headers @{Authorization="Bearer $TOKEN"}
 ```
 
 ### Mitarbeiter-Endpunkte
-```bash
-EMPLOYEE_TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"carol","password":"Password1!"}' \
-  | python -c "import sys,json; print(json.load(sys.stdin)['token'])")
+```powershell
+$EMPLOYEE_TOKEN = (Invoke-RestMethod -Method Post http://localhost:8080/api/auth/login `
+  -ContentType "application/json" `
+  -Body '{"username":"carol","password":"Password1!"}').token
 
-SALES_TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"dave","password":"Password1!"}' \
-  | python -c "import sys,json; print(json.load(sys.stdin)['token'])")
+$SALES_TOKEN = (Invoke-RestMethod -Method Post http://localhost:8080/api/auth/login `
+  -ContentType "application/json" `
+  -Body '{"username":"dave","password":"Password1!"}').token
 
 # Kundenliste
-curl "http://localhost:8080/api/customers" -H "Authorization: Bearer $EMPLOYEE_TOKEN"
+Invoke-RestMethod "http://localhost:8080/api/customers" -Headers @{Authorization="Bearer $EMPLOYEE_TOKEN"}
 
 # Rabatt anlegen (befristet)
-curl -X POST http://localhost:8080/api/customers/1/discounts \
-  -H "Authorization: Bearer $SALES_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"productId":1,"discountPercent":10,"validFrom":"2026-01-01","validUntil":"2026-12-31"}'
+Invoke-RestMethod -Method Post http://localhost:8080/api/customers/1/discounts `
+  -Headers @{Authorization="Bearer $SALES_TOKEN"} `
+  -ContentType "application/json" `
+  -Body '{"productId":1,"discountPercent":10,"validFrom":"2026-01-01","validUntil":"2026-12-31"}'
 
 # Unbefristeter Rabatt (validUntil = null)
-curl -X POST http://localhost:8080/api/customers/1/discounts \
-  -H "Authorization: Bearer $SALES_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"productId":1,"discountPercent":5,"validFrom":"2026-01-01","validUntil":null}'
+Invoke-RestMethod -Method Post http://localhost:8080/api/customers/1/discounts `
+  -Headers @{Authorization="Bearer $SALES_TOKEN"} `
+  -ContentType "application/json" `
+  -Body '{"productId":1,"discountPercent":5,"validFrom":"2026-01-01","validUntil":null}'
 
 # Umsatzstatistik
-curl "http://localhost:8080/api/customers/1/revenue?from=2026-01-01&to=2026-12-31" \
-  -H "Authorization: Bearer $SALES_TOKEN"
+Invoke-RestMethod "http://localhost:8080/api/customers/1/revenue?from=2026-01-01&to=2026-12-31" `
+  -Headers @{Authorization="Bearer $SALES_TOKEN"}
 ```
 
 ### Admin-Endpunkte
-```bash
-ADMIN_TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"Password1!"}' \
-  | python -c "import sys,json; print(json.load(sys.stdin)['token'])")
+```powershell
+$ADMIN_TOKEN = (Invoke-RestMethod -Method Post http://localhost:8080/api/auth/login `
+  -ContentType "application/json" `
+  -Body '{"username":"admin","password":"Password1!"}').token
 
 # Alle Benutzer
-curl http://localhost:8080/api/admin/users -H "Authorization: Bearer $ADMIN_TOKEN"
+Invoke-RestMethod http://localhost:8080/api/admin/users -Headers @{Authorization="Bearer $ADMIN_TOKEN"}
 
 # Identität annehmen (gibt Token zurück, der als alice funktioniert)
-curl -X POST http://localhost:8080/api/admin/impersonate/1 -H "Authorization: Bearer $ADMIN_TOKEN"
+Invoke-RestMethod -Method Post http://localhost:8080/api/admin/impersonate/1 -Headers @{Authorization="Bearer $ADMIN_TOKEN"}
 
 # Audit-Log
-curl http://localhost:8080/api/admin/audit-log -H "Authorization: Bearer $ADMIN_TOKEN"
+Invoke-RestMethod http://localhost:8080/api/admin/audit-log -Headers @{Authorization="Bearer $ADMIN_TOKEN"}
 ```
 
 ---

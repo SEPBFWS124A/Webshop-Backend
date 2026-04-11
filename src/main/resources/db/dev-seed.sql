@@ -7,11 +7,11 @@
 -- All passwords are: Password1!
 -- BCrypt hash for "Password1!" (cost 10)
 INSERT INTO users (username, email, password_hash, role, user_type, customer_number) VALUES
-  ('alice',   'alice@example.com',   '$2a$10$7EqJtq98hPqEX7fNZaFWoO5Pl9MhFzDgBExqSiNq.WQgYMUFMKG.G', 'CUSTOMER',       'PRIVATE',  nextval('customer_number_sequence')),
-  ('bob',     'bob@example.com',     '$2a$10$7EqJtq98hPqEX7fNZaFWoO5Pl9MhFzDgBExqSiNq.WQgYMUFMKG.G', 'CUSTOMER',       'BUSINESS', nextval('customer_number_sequence')),
-  ('carol',   'carol@example.com',   '$2a$10$7EqJtq98hPqEX7fNZaFWoO5Pl9MhFzDgBExqSiNq.WQgYMUFMKG.G', 'EMPLOYEE',       'PRIVATE',  NULL),
-  ('dave',    'dave@example.com',    '$2a$10$7EqJtq98hPqEX7fNZaFWoO5Pl9MhFzDgBExqSiNq.WQgYMUFMKG.G', 'SALES_EMPLOYEE', 'PRIVATE',  NULL),
-  ('admin',   'admin@example.com',   '$2a$10$7EqJtq98hPqEX7fNZaFWoO5Pl9MhFzDgBExqSiNq.WQgYMUFMKG.G', 'ADMIN',          'PRIVATE',  NULL);
+  ('alice',   'alice@example.com',   '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'CUSTOMER',       'PRIVATE',  nextval('customer_number_sequence')),
+  ('bob',     'bob@example.com',     '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'CUSTOMER',       'BUSINESS', nextval('customer_number_sequence')),
+  ('carol',   'carol@example.com',   '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'EMPLOYEE',       'PRIVATE',  NULL),
+  ('dave',    'dave@example.com',    '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'SALES_EMPLOYEE', 'PRIVATE',  NULL),
+  ('admin',   'admin@example.com',   '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'ADMIN',          'PRIVATE',  NULL);
 
 -- ── Business info for bob ────────────────────────────────────
 INSERT INTO business_info (user_id, company_name, industry, company_size)
