@@ -1,4 +1,4 @@
-# dev.ps1 — Start, stop, restart or rebuild the Spring Boot backend (incl. Docker/PostgreSQL)
+# dev.ps1 - Start, stop, restart or rebuild the Spring Boot backend (incl. Docker/PostgreSQL)
 # Usage:  dev start   | stop | restart | rebuild
 #         dev stop --keep-db     (keeps the PostgreSQL container running)
 #         dev restart --keep-db
@@ -14,7 +14,7 @@ $Root    = $PSScriptRoot
 $LogFile = "$Root\target\dev.log"
 $Port    = 8080
 
-# ── helpers ──────────────────────────────────────────────────────────────────
+# --- helpers -----------------------------------------------------------------
 
 function Get-AppPid {
     Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
@@ -24,7 +24,7 @@ function Get-AppPid {
 function Wait-ForPostgres {
     Write-Host "Waiting for PostgreSQL to be healthy..." -NoNewline
     for ($i = 0; $i -lt 30; $i++) {
-        $health = docker inspect --format='{{.State.Health.Status}}' webshop-postgres 2>$null
+        $health = docker inspect "--format={{.State.Health.Status}}" webshop-postgres 2>$null
         if ($health -eq "healthy") { Write-Host " ready."; return $true }
         Write-Host -NoNewline "."
         Start-Sleep -Seconds 2
@@ -33,7 +33,7 @@ function Wait-ForPostgres {
     return $false
 }
 
-# ── stop ─────────────────────────────────────────────────────────────────────
+# --- stop --------------------------------------------------------------------
 
 function Stop-Backend {
     $appPid = Get-AppPid
@@ -51,7 +51,7 @@ function Stop-Backend {
     }
 }
 
-# ── start ─────────────────────────────────────────────────────────────────────
+# --- start -------------------------------------------------------------------
 
 function Start-Backend {
     if (Get-AppPid) {
@@ -60,7 +60,7 @@ function Start-Backend {
     }
 
     # 1. Start PostgreSQL if not already up
-    $containerState = docker inspect --format='{{.State.Status}}' webshop-postgres 2>$null
+    $containerState = docker inspect "--format={{.State.Status}}" webshop-postgres 2>$null
     if ($containerState -ne "running") {
         Write-Host "Starting PostgreSQL container..."
         docker compose -f "$Root\docker-compose.yml" up -d
@@ -108,10 +108,10 @@ function Start-Backend {
         }
         Write-Host -NoNewline "."
     }
-    Write-Host "`nTimed out — check target\dev.log"
+    Write-Host "`nTimed out - check target\dev.log"
 }
 
-# ── rebuild ───────────────────────────────────────────────────────────────────
+# --- rebuild -----------------------------------------------------------------
 
 function Reset-Backend {
     Stop-Backend
@@ -131,7 +131,7 @@ function Reset-Backend {
     Start-Backend
 }
 
-# ── dispatch ──────────────────────────────────────────────────────────────────
+# --- dispatch ----------------------------------------------------------------
 
 switch ($Command) {
     "start"   { Start-Backend }
