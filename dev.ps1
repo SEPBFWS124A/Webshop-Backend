@@ -34,6 +34,30 @@ function Get-AppPid {
         Select-Object -ExpandProperty OwningProcess -First 1
 }
 
+function Initialize-MavenWrapper {
+    $wrapperJar = "$Root\.mvn\wrapper\maven-wrapper.jar"
+    if (Test-Path $wrapperJar) { return $true }
+
+    # mvnw.cmd has a bug: it sets WRAPPER_URL inside a cmd.exe block, but %WRAPPER_URL%
+    # is expanded at parse-time (before the FOR loop runs), so the URL is always empty.
+    # We download the JAR correctly from PowerShell instead.
+    $wrapperUrl = Get-Content "$Root\.mvn\wrapper\maven-wrapper.properties" |
+        Where-Object { $_ -match "^wrapperUrl=" } |
+        ForEach-Object { ($_ -split "=", 2)[1].Trim() }
+
+    Write-Host "Maven wrapper JAR not found - downloading..."
+    try {
+        Invoke-WebRequest -Uri $wrapperUrl -OutFile $wrapperJar -UseBasicParsing
+        Write-Host "Maven wrapper JAR downloaded."
+        return $true
+    } catch {
+        Write-Host "ERROR: Download failed: $_"
+        Write-Host "  Manual fix:"
+        Write-Host "  Invoke-WebRequest -Uri '$wrapperUrl' -OutFile '.mvn\wrapper\maven-wrapper.jar'"
+        return $false
+    }
+}
+
 function Test-Prerequisites {
     if (-not (Get-Command java -ErrorAction SilentlyContinue)) {
         Write-Host "ERROR: 'java' not found in PATH."
@@ -93,6 +117,7 @@ function Start-Backend {
     }
 
     if (-not (Test-Prerequisites)) { return }
+    if (-not (Initialize-MavenWrapper)) { return }
 
     # Start PostgreSQL if not already running
     $containerState = docker inspect "--format={{.State.Status}}" webshop-postgres 2>$null
