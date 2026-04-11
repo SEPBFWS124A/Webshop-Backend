@@ -161,36 +161,36 @@ cd Webshop-Backend
 ```
 
 ### Schritt 2 — Backend starten
-```ps1
-./dev.ps1 start
-
-# Bei Fehler die bat probieren:
+```bat
 ./dev.bat start
 ```
 
 Das Script startet automatisch:
-1. Den PostgreSQL Docker-Container (wartet bis er `healthy` ist)
-2. Das Spring Boot Backend (wartet bis `Started WebshopApplication`)
+1. Maven Wrapper JAR herunterladen (einmalig beim ersten Clone, braucht Internet)
+2. Den PostgreSQL Docker-Container (wartet bis er `healthy` ist)
+3. Das Spring Boot Backend kompilieren + starten (wartet bis `Started WebshopApplication`)
 
 Das Backend ist dann erreichbar unter: `http://localhost:8080`
 
-**Weitere Befehle:**
-```bat
-./dev.bat stop             :: Backend + PostgreSQL beenden
-./dev.bat stop --keep-db   :: Nur Backend beenden, DB läuft weiter (schnellerer Neustart)
-./dev.bat restart          :: Stop + Start in einem
-./dev.bat rebuild          :: target/ löschen + neu bauen + starten
-```
+Spring Boot Ausgabe (Downloads, Compile-Log, Startup-Logs) erscheint direkt im Terminal.
 
-> **Wann `dev rebuild` statt `dev restart`?**
+**Alle Befehle im Überblick:**
+
+| Befehl | Was passiert |
+|--------|-------------|
+| `./dev.bat start` | PostgreSQL + Spring Boot starten |
+| `./dev.bat stop` | Spring Boot + PostgreSQL beenden (graceful JMX-Shutdown) |
+| `./dev.bat stop --keep-db` | Nur Spring Boot beenden, DB läuft weiter (schnellerer Neustart) |
+| `./dev.bat restart` | Stop + Start in einem Schritt |
+| `./dev.bat restart --keep-db` | Neustart ohne PostgreSQL-Neustart |
+| `./dev.bat rebuild` | `target/` löschen + neu kompilieren + starten |
+| `./dev.bat rebuild --keep-db` | Rebuild ohne PostgreSQL-Neustart |
+
+> **Wann `./dev.bat rebuild` statt `./dev.bat restart`?**
 > Änderungen an `application.properties` oder anderen Ressourcen werden beim normalen
 > Restart manchmal nicht übernommen, weil Maven den kompilierten Cache in `target/`
 > wiederverwendet. `rebuild` löscht `target/` zuerst und erzwingt eine vollständige
-> Neukompilierung — z.B. nach Konfigurationsänderungen wie dem Aktivieren von Swagger UI.
-
-Logs werden geschrieben nach:
-- `target/dev.log` — Spring Boot Ausgabe
-- `target/dev-err.log` — Fehlerausgabe
+> Neukompilierung — z.B. nach Konfigurationsänderungen.
 
 ### Schritt 3 — Testdaten einspielen (einmalig)
 ```bash

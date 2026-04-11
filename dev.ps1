@@ -1,8 +1,8 @@
 # dev.ps1 - Start, stop, restart or rebuild the Spring Boot backend (incl. Docker/PostgreSQL)
-# Usage:  dev start   | stop | restart | rebuild
-#         dev stop --keep-db     (keeps the PostgreSQL container running)
-#         dev restart --keep-db
-#         dev rebuild --keep-db
+# Usage:  ./dev.bat start   | stop | restart | rebuild
+#         ./dev.bat stop --keep-db     (keeps the PostgreSQL container running)
+#         ./dev.bat restart --keep-db
+#         ./dev.bat rebuild --keep-db
 #
 # How it works:
 #   start   -> docker compose up  ->  mvnw compile spring-boot:start  (blocks until app is ready)
@@ -112,7 +112,7 @@ function Stop-Backend {
 
 function Start-Backend {
     if (Get-AppPid) {
-        Write-Host "Spring Boot is already running on port $Port. Use 'dev stop' first."
+        Write-Host "Spring Boot is already running on port $Port. Use './dev.bat stop' first."
         return
     }
 
@@ -151,7 +151,7 @@ function Start-Backend {
         Write-Host "Backend is up at     http://localhost:$Port"
         Write-Host "Swagger UI:          http://localhost:$Port/swagger-ui/index.html"
         Write-Host ""
-        Write-Host "Run 'dev stop' to shut down."
+        Write-Host "Run './dev.bat stop' to shut down."
     } else {
         Write-Host "-------------------------------------------------------------------------------"
         Write-Host "ERROR: Spring Boot failed to start (exit code $LASTEXITCODE)."
