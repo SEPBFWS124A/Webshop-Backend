@@ -56,18 +56,23 @@ wartbar und deploybar ist.
 ```
 Webshop-Backend/
 ├── pom.xml                    ← Maven Konfiguration (Abhängigkeiten, Build)
-├── mvnw                       ← Maven Wrapper Script (Linux/Mac)
-├── mvnw.cmd                   ← Maven Wrapper Script (Windows CMD)
-├── docker-compose.yml         ← PostgreSQL Container Definition
+├── Dockerfile                 ← Baut das Spring Boot Image (Multi-Stage: Maven + JRE)
+├── .dockerignore              ← Was Docker beim Build ignorieren soll
+├── docker-compose.yml         ← Definiert postgres + backend Container
 ├── .env.example               ← Vorlage für Umgebungsvariablen
 ├── .env                       ← Deine lokalen Secrets (nie committen!)
 ├── .gitignore                 ← Was Git ignorieren soll
 ├── dev.bat                    ← Thin-Wrapper: ruft dev.ps1 auf
-├── dev.ps1                    ← Das eigentliche Start/Stop/Rebuild Script
+├── dev.ps1                    ← Das eigentliche Start/Stop/Rebuild Script (nur Docker)
 ├── README.md                  ← Einstiegsdokumentation
 ├── deepdive.md                ← dieses Dokument
+├── docs/                      ← API-Dokumentation für das Frontend-Team
+│   ├── ROLLEN.md              ← Rollenkonzept + vollständige Berechtigungsmatrix
+│   ├── milestone-1-auth-benutzerverwaltung.md
+│   ├── milestone-2-produktkatalog.md
+│   └── ...                    ← eine Datei pro Frontend-Milestone
+├── mvnw / mvnw.cmd            ← Maven Wrapper (wird von GitHub Actions CI genutzt)
 ├── .mvn/wrapper/
-│   ├── maven-wrapper.jar      ← Maven Wrapper Binary
 │   └── maven-wrapper.properties ← welche Maven-Version soll heruntergeladen werden
 ├── .github/workflows/
 │   ├── ci.yml                 ← GitHub Actions: Tests bei Pull Request
@@ -93,12 +98,12 @@ Besonderheit in dieser `pom.xml`:
 Lombok 1.18.36 (Spring Boot Standard) crasht mit Java 24. Wir überschreiben die Version.
 
 ### mvnw / mvnw.cmd
-Maven Wrapper Scripts. Statt `mvn` (globales Maven) rufst du `./mvnw` auf.
-Beim ersten Aufruf lädt das Script Maven automatisch herunter nach `~/.m2/wrapper/`.
-Dadurch braucht kein Teammitglied Maven manuell zu installieren.
+Maven Wrapper Scripts — werden **nicht mehr für lokale Entwicklung** genutzt.
+Lokal läuft Maven jetzt vollständig im Docker-Container (via `Dockerfile`).
 
-- `mvnw` = für Linux/Mac (Bash-Script)
-- `mvnw.cmd` = für Windows CMD
+Die Wrapper-Scripts bleiben im Repository, weil **GitHub Actions** sie für die
+CI/CD-Pipeline verwendet (`./mvnw test`, `./mvnw package`) — dort ist Java direkt
+auf dem Runner verfügbar, ohne Docker.
 
 ### .mvn/wrapper/maven-wrapper.properties
 ```properties
@@ -107,22 +112,30 @@ distributionUrl=https://repo.maven.apache.org/maven2/org/.../apache-maven-3.9.9-
 Sagt dem Wrapper: "Lade Maven 3.9.9 herunter wenn es noch nicht da ist."
 
 ### docker-compose.yml
-Beschreibt einen PostgreSQL-Container:
+Beschreibt **zwei Container** — Datenbank und Backend:
 ```yaml
 services:
   postgres:
     image: postgres:16-alpine    # PostgreSQL Version 16, minimal
     container_name: webshop-postgres
-    environment:
-      POSTGRES_DB: webshop       # Datenbankname
-      POSTGRES_USER: webshop     # Benutzername
-      POSTGRES_PASSWORD: localdev
     ports:
-      - "5432:5432"              # Host:Container Port-Mapping
+      - "5432:5432"
     healthcheck:                 # wann ist der Container "bereit"?
       test: ["CMD-SHELL", "pg_isready -U webshop"]
+
+  backend:
+    build: .                     # Baut das Image aus dem Dockerfile
+    container_name: webshop-backend
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/webshop
+    depends_on:
+      postgres:
+        condition: service_healthy   # startet erst wenn DB healthy ist
 ```
-`dev start` führt `docker compose up -d` aus und wartet bis der `healthcheck` grün ist.
+`dev start` führt `docker compose up -d --build` aus — baut das Backend-Image
+und startet beide Container. Anschließend wird `/api/health` gepollt bis `200 OK`.
 
 ### .env / .env.example
 `.env.example` ist die Vorlage — sie ist im Repository und zeigt welche Variablen
@@ -144,14 +157,15 @@ Nichts weiter als ein Wrapper der `dev.ps1` aufruft — mit `-ExecutionPolicy By
 damit PowerShell-Scripts trotz Windows-Sicherheitsrichtlinien ausgeführt werden können.
 
 ### dev.ps1
-Das eigentliche Steuerungsskript. Vier Befehle:
+Das eigentliche Steuerungsskript. Alles läuft über Docker — kein Java lokal nötig.
 
 | Befehl | Was passiert |
 |---|---|
-| `dev start` | Docker starten → warten bis healthy → Spring Boot starten → warten bis "Started" |
-| `dev stop` | Spring Boot-Prozess killen → Docker stoppen |
-| `dev restart` | stop + start |
-| `dev rebuild` | stop + `target/` löschen + start (erzwingt Neukompilierung) |
+| `dev start` | `docker compose up -d --build` → HTTP-Poll auf `/api/health` bis bereit |
+| `dev stop` | `docker compose down` → alle Container stoppen |
+| `dev stop --keep-db` | Nur Backend-Container stoppen, PostgreSQL bleibt laufen |
+| `dev restart` | Backend-Container stoppen + neu starten |
+| `dev rebuild` | `docker compose up --build --force-recreate` (kein Layer-Cache) |
 
 ---
 
@@ -162,49 +176,64 @@ verwaltet alle Libraries (Abhängigkeiten).
 
 ### Was Maven macht wenn du `dev start` ausführst
 
+Maven läuft jetzt **innerhalb des Docker-Containers** (nicht mehr lokal). Das Dockerfile
+steuert den Build in zwei Stufen:
+
 ```
-./mvnw spring-boot:run
+docker compose up --build
         │
-        ├── 1. Lädt fehlende Abhängigkeiten aus dem Internet nach ~/.m2/repository/
+        ├── Stage 1: Build-Container (maven:3.9-eclipse-temurin-21-alpine)
+        │     ├── 1. Kopiert pom.xml → lädt alle Abhängigkeiten herunter
+        │     │         (Layer-Cache: nur bei pom.xml-Änderungen wiederholt)
+        │     │
+        │     ├── 2. Kopiert src/ → kompiliert Java → erstellt JAR
+        │     │
+        │     └── Ergebnis: target/webshop-0.0.1-SNAPSHOT.jar (im Container)
         │
-        ├── 2. Kompiliert src/main/java/**/*.java → target/classes/**/*.class
-        │
-        ├── 3. Kopiert src/main/resources/** → target/classes/
-        │         (application.properties, SQL-Migrations, dev-seed.sql)
-        │
-        └── 4. Startet die Anwendung mit den Klassen aus target/classes/
+        └── Stage 2: Runtime-Container (eclipse-temurin:21-jre-alpine)
+              └── Kopiert nur das JAR → minimales Image → startet Spring Boot
 ```
 
-### Das ~/.m2 Verzeichnis
-Maven speichert alle heruntergeladenen Libraries in `~/.m2/repository/` (dein
-Heimverzeichnis). Das ist ein lokaler Cache — beim zweiten Start muss nichts mehr
-heruntergeladen werden.
+### Der Docker Layer-Cache
+Docker cached jede Zeile des Dockerfiles als Layer. Wenn sich `pom.xml` nicht ändert,
+überspringt Docker den `mvn dependency:go-offline`-Schritt — die Dependencies sind
+bereits im Cache. Ändert sich nur der Java-Code, läuft nur der `mvn package`-Schritt neu.
 
-### Warum "Nothing to compile"?
-Maven prüft Timestamps. Wenn `target/classes/Foo.class` neuer ist als `src/.../Foo.java`,
-überspringt es die Datei. Das ist schnell — aber ein Problem wenn du z.B. nur
-`application.properties` änderst: Maven sieht keine `.java`-Änderung und kompiliert nicht neu.
-**Lösung: `dev rebuild`** — löscht `target/` und erzwingt eine vollständige Neukompilierung.
+### Wann `dev rebuild` statt `dev restart`?
+- Nach Änderungen am `Dockerfile` selbst
+- Wenn der Cache einen veralteten Stand hat und komische Build-Fehler auftreten
+- Für normale Code-Änderungen reicht `dev restart`
 
 ---
 
-## 4. Docker — wie läuft die Datenbank?
+## 4. Docker — wie laufen Datenbank und Backend?
 
 Docker ist eine Container-Laufzeitumgebung. Ein Container ist ein isolierter Prozess
 mit eigenem Dateisystem — wie eine sehr leichtgewichtige virtuelle Maschine.
 
+Das gesamte Backend läuft in Docker. Kein Java, kein Maven lokal nötig.
+
 ```
 dein Rechner
 └── Docker Engine
-    └── Container: webshop-postgres
-        ├── PostgreSQL 16 Prozess
-        ├── Port 5432 (gemapped auf Host-Port 5432)
-        └── Volume: postgres_data (persistente Daten)
+    ├── Container: webshop-postgres
+    │   ├── PostgreSQL 16 Prozess
+    │   ├── Port 5432 (gemapped auf Host-Port 5432)
+    │   └── Volume: postgres_data (persistente Daten)
+    │
+    └── Container: webshop-backend
+        ├── Java 21 + Spring Boot Prozess (aus dem Dockerfile gebaut)
+        ├── Port 8080 (gemapped auf Host-Port 8080)
+        └── Verbindet sich intern mit postgres:5432 (Docker-internes Netzwerk)
 ```
 
 Das Volume `postgres_data` sorgt dafür dass die Datenbank-Daten erhalten bleiben
 wenn der Container neu gestartet wird. Ohne Volume würde alles bei jedem Start
 gelöscht werden.
+
+Die beiden Container kommunizieren über das interne Docker-Netzwerk. Das Backend
+erreicht die Datenbank unter dem Hostnamen `postgres` (= der Service-Name in
+`docker-compose.yml`) — nicht `localhost`.
 
 ### Nützliche Docker-Befehle
 ```bash
@@ -857,108 +886,96 @@ Die Jobs laufen im Hintergrund — sie blockieren nicht den HTTP-Server.
 dev.bat
   └── powershell -ExecutionPolicy Bypass -File dev.ps1 start
         │
-        ├── 1. Prüft ob Port 8080 schon belegt (Get-NetTCPConnection)
+        ├── 1. Prüft ob Docker läuft (docker info)
         │
-        ├── 2. docker compose up -d
-        │      → PostgreSQL Container starten (falls nicht schon läuft)
+        ├── 2. docker compose up -d --build
+        │      → Baut das Backend-Image aus dem Dockerfile (falls nötig)
+        │      → Startet postgres-Container
+        │      → Wartet bis postgres "healthy" ist (depends_on condition)
+        │      → Startet backend-Container
         │
-        ├── 3. Wartet bis docker inspect ... = "healthy"
-        │      (pg_isready läuft alle 10s im Container)
-        │
-        ├── 4. Start-Process java ...
-        │      Argumente:
-        │      -Dmaven.multiModuleProjectDirectory="..."
-        │      -classpath ".mvn/wrapper/maven-wrapper.jar"
-        │      org.apache.maven.wrapper.MavenWrapperMain
-        │      spring-boot:run
-        │
-        │      → Maven Wrapper startet Maven
-        │      → Maven kompiliert (falls nötig)
-        │      → Maven startet Spring Boot
-        │
-        │      Ausgabe geht nach:
-        │      target/dev.log     (stdout)
-        │      target/dev-err.log (stderr)
-        │
-        └── 5. Wartet (polling alle 2s) bis "Started WebshopApplication" in Logs
+        └── 3. HTTP-Poll alle 2s auf http://localhost:8080/api/health
+               Gibt { "status": "UP" } zurück → bereit
+               Nach 90 Versuchen (3 Min.) → Timeout-Meldung
 ```
+
+**Erster Start:** Docker lädt das Maven-Base-Image und alle Java-Dependencies
+herunter (~200 MB) — läuft alles **innerhalb des Containers**, nichts lokal.
+Folgestarts nutzen den Docker Layer-Cache und sind viel schneller.
 
 ### dev stop
 
 ```
 dev.ps1 stop
-  ├── Get-NetTCPConnection -LocalPort 8080 → PID des Java-Prozesses
-  ├── Stop-Process -Id $pid -Force         → Java-Prozess killen
-  └── docker compose down                  → PostgreSQL Container stoppen
+  └── docker compose down   → backend + postgres Container stoppen
 ```
 
-`--keep-db` überspringt den `docker compose down` Schritt → DB bleibt laufen.
-Das spart beim nächsten `dev start` die Wartezeit bis die DB healthy ist.
+`--keep-db` → nur `docker compose stop backend` → postgres bleibt laufen.
+Beim nächsten `dev start` entfällt die DB-Startzeit.
 
 ### dev restart
 
 ```
 dev.ps1 restart
-  = dev stop + 1 Sekunde warten + dev start
+  = docker compose stop backend + docker compose up -d --build backend
 ```
 
 **Wann reicht restart?**
-- Java-Code geändert → Maven erkennt geänderte `.java`-Dateien, kompiliert neu
-- Neue Dependency in `pom.xml` → Maven lädt sie beim nächsten Start
+- Java-Code geändert → Docker baut das Image neu (Source-Layer neu, Dependencies gecacht)
+- `application.properties` geändert → kein Problem mehr, alles läuft im Container
 
-**Wann reicht restart NICHT?**
-- `application.properties` geändert → Maven sieht keine `.java`-Änderung, nimmt alten Cache
-- Andere Ressourcen-Dateien geändert → gleiches Problem
+**Wann rebuild statt restart?**
+- `Dockerfile` selbst geändert
+- Komische Build-Fehler die sich nicht erklären lassen (Cache-Probleme)
 
 ### dev rebuild
 
 ```
 dev.ps1 rebuild
-  ├── dev stop
-  │
-  ├── Remove-Item -Recurse -Force target/
-  │     → löscht alle kompilierten Klassen
-  │     → löscht die gecachten Ressourcen (application.properties etc.)
-  │     → löscht dev.log und dev-err.log
-  │
-  └── dev start
-        → Maven findet kein target/ → kompiliert ALLES neu
-        → kopiert application.properties frisch aus src/ nach target/classes/
+  └── docker compose up -d --build --force-recreate
+        → --force-recreate: Container immer neu erstellen
+        → kein Layer-Cache: Maven lädt Dependencies neu (wie erster Start)
 ```
 
 **Wann rebuild nötig:**
-- `application.properties` geändert (z.B. Swagger UI aktiviert)
-- Build-Fehler die sich nicht erklären lassen
-- Nach Merge von Branches mit vielen Änderungen
-- `pom.xml` geändert (neue Library, Version geändert)
+- `Dockerfile` geändert
+- `pom.xml` geändert und der Layer-Cache hat einen alten Stand
+- Build-Fehler die sich nicht durch `restart` beheben lassen
 
 ---
 
 ## 14. target/ — warum gibt es diesen Ordner?
 
-`target/` ist der **Build-Output-Ordner** — er wird von Maven erstellt und verwaltet.
+`target/` ist der **Build-Output-Ordner** von Maven — er enthält kompilierten
+Java-Bytecode und das fertige JAR.
+
+**Lokal (dein Rechner):** `target/` existiert bei dir nur wenn du Maven manuell
+aufgerufen hast oder die IDE das Projekt baut. Für den normalen `dev start` ist er
+**nicht nötig** — Maven läuft im Docker-Container und `target/` liegt dort drin,
+nicht auf deinem Rechner.
 
 ```
+Innerhalb des Build-Containers (Docker Stage 1):
 target/
 ├── classes/
 │   ├── de/fhdw/webshop/          ← kompilierte .class Dateien (Java Bytecode)
 │   ├── application.properties    ← KOPIE aus src/main/resources/
 │   └── db/migration/             ← KOPIE der SQL-Migrations
-├── webshop-0.0.1-SNAPSHOT.jar    ← fertiges Deployment-Paket (mvn package)
-├── dev.log                       ← Spring Boot Ausgabe
-└── dev-err.log                   ← Fehlerausgabe
+└── webshop-0.0.1-SNAPSHOT.jar    ← fertiges Deployment-Paket
 ```
 
+Das JAR wird dann in Stage 2 des Dockerfiles in das Runtime-Image kopiert.
+Auf deinem Rechner siehst du davon nichts.
+
 **Warum ist target/ in .gitignore?**
-- Kann jederzeit durch `mvn compile` neu erstellt werden
+- Kann jederzeit durch Maven neu erstellt werden
 - Enthält kompilierten Bytecode der betriebssystemspezifisch sein kann
 - Kann sehr groß werden (JARs, Testberichte)
-- Enthält Logs die nicht ins Repository gehören
 
-**Warum sehen src/main/resources/ und target/classes/ gleich aus?**
-Maven kopiert beim Build alles aus `src/main/resources/` nach `target/classes/`.
-Spring Boot liest zur Laufzeit aus `target/classes/` (dem Classpath).
-`src/` ist die Quelle, `target/` ist das Ergebnis.
+**Wann existiert target/ doch lokal?**
+Wenn die IDE (IntelliJ / VS Code mit Java Extension) das Projekt baut — für
+Code-Navigation, Autovervollständigung und lokale Tests. Für `dev start` spielt das
+keine Rolle.
 
 ---
 
