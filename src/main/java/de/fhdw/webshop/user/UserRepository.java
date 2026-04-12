@@ -11,11 +11,13 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     Optional<User> findByUsername(String username);
 
+    Optional<User> findByUsernameAndActiveTrue(String username);
+
     Optional<User> findByEmail(String email);
 
-    boolean existsByUsername(String username);
+    boolean existsByUsernameAndActiveTrue(String username);
 
-    boolean existsByEmail(String email);
+    boolean existsByEmailAndActiveTrue(String email);
 
     /**
      * Returns all active customers, optionally filtered by username or email substring.

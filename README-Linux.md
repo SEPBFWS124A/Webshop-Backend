@@ -46,8 +46,8 @@ Jede Anfrage wird über einen JWT-Token authentifiziert (außer Login/Register).
 
 | Technologie | Zweck | Version |
 |---|---|---|
-| Java | Programmiersprache | 21 |
-| Maven Wrapper | Build-Tool (kein globales Maven nötig) | 3.9.9 |
+| Java | Programmiersprache (läuft im Docker Container) | 21 |
+| Maven | Build-Tool (läuft im Docker Container) | 3.9 |
 | Spring Boot | Framework (Web, Security, JPA) | 3.4.4 |
 | PostgreSQL | Datenbank | 16 |
 | Flyway | Datenbank-Migrations | - |
@@ -64,8 +64,8 @@ Jede Anfrage wird über einen JWT-Token authentifiziert (außer Login/Register).
 ### Java 21 — die Sprache
 Die Basis von allem. Java ist stark typisiert, was bei einem größeren Team Fehler früh erkennt. Version 21 ist die aktuelle LTS-Version (Long Term Support) — die empfohlene stabile Version für neue Projekte.
 
-### Maven Wrapper — das Build-Tool
-Entspricht `npm` im Frontend. Verwaltet Abhängigkeiten (`pom.xml` = `package.json`), baut das Projekt und führt Tests aus. Der Wrapper (`mvnw` / `mvnw.cmd`) lädt Maven automatisch herunter — **kein globales Maven nötig**.
+### Maven — das Build-Tool
+Entspricht `npm` im Frontend. Verwaltet Abhängigkeiten (`pom.xml` = `package.json`), baut das Projekt und führt Tests aus. Maven läuft vollständig im Docker Build-Container — **kein lokales Java oder Maven nötig**.
 
 ### Spring Boot — das Framework
 Das Herzstück. Spring Boot bündelt mehrere Sub-Frameworks:
@@ -107,7 +107,7 @@ V9__create_audit_log.sql
 Beim Start führt Spring Boot automatisch alle noch nicht ausgeführten Migrations aus. So hat jedes Teammitglied automatisch dieselbe Datenbankstruktur.
 
 ### Docker & Docker Compose — lokale Entwicklung
-Docker lässt PostgreSQL in einem isolierten Container laufen — kein manuelles Installieren nötig. Das `dev.ps1`-Script startet den Container automatisch vor dem Backend.
+Docker Compose startet zwei Container: **PostgreSQL** (Datenbank) und **Spring Boot Backend** (inkl. Maven Build). Kein lokales Java, Maven oder PostgreSQL nötig — einzige Voraussetzung ist Docker Desktop.
 
 ### springdoc-openapi — API-Beschreibung
 Liest den Spring Boot Code und generiert automatisch eine maschinenlesbare Beschreibung aller Endpunkte (`/v3/api-docs`). Das Frontend-Team kann daraus ablesen wie ein API-Call aussehen muss, ohne beim Backend-Team nachzufragen.
@@ -130,17 +130,8 @@ https://domain.de/api/   → Backend (Spring Boot, intern Port 8080)
 
 Folgendes muss auf deinem Rechner installiert sein:
 
-### Java 21+
-```bash
-java -version
-# Erwartet: openjdk 21 ... (oder höher)
-```
-Download: https://adoptium.net (Eclipse Temurin 21 LTS)
-
-> **Hinweis:** Java 24 funktioniert ebenfalls — die `pom.xml` enthält alle nötigen Kompatibilitäts-Fixes für Lombok.
-
 ### Docker
-Wird für die lokale PostgreSQL-Datenbank benötigt.
+Wird für PostgreSQL **und** das Spring Boot Backend benötigt. Kein Java oder Maven lokal nötig.
 ```bash
 docker --version
 docker compose version
@@ -177,31 +168,29 @@ pwsh dev.ps1 start
 ```
 
 Das Script startet automatisch:
-1. Maven Wrapper JAR herunterladen (einmalig beim ersten Clone, braucht Internet)
-2. Den PostgreSQL Docker-Container (wartet bis er `healthy` ist)
-3. Das Spring Boot Backend kompilieren + starten (wartet bis `Started WebshopApplication`)
+1. Den PostgreSQL Docker-Container (wartet bis er `healthy` ist)
+2. Das Spring Boot Backend im Docker-Container bauen + starten (wartet bis `/api/health` antwortet)
 
 Das Backend ist dann erreichbar unter: `http://localhost:8080`
 
-Spring Boot Ausgabe (Downloads, Compile-Log, Startup-Logs) erscheint direkt im Terminal.
+> **Erster Start:** Maven lädt alle Dependencies im Container herunter (~200 MB) — das kann einige Minuten dauern. Danach ist der Layer gecacht und folgende Starts sind deutlich schneller.
 
 **Alle Befehle im Überblick:**
 
 | Befehl | Was passiert |
 |--------|-------------|
-| `pwsh dev.ps1 start` | PostgreSQL + Spring Boot starten |
-| `pwsh dev.ps1 stop` | Spring Boot + PostgreSQL beenden (graceful JMX-Shutdown) |
-| `pwsh dev.ps1 stop --keep-db` | Nur Spring Boot beenden, DB läuft weiter (schnellerer Neustart) |
-| `pwsh dev.ps1 restart` | Stop + Start in einem Schritt |
-| `pwsh dev.ps1 restart --keep-db` | Neustart ohne PostgreSQL-Neustart |
-| `pwsh dev.ps1 rebuild` | `target/` löschen + neu kompilieren + starten |
+| `pwsh dev.ps1 start` | PostgreSQL + Spring Boot Container starten |
+| `pwsh dev.ps1 stop` | Alle Container beenden |
+| `pwsh dev.ps1 stop --keep-db` | Nur Backend-Container beenden, DB läuft weiter (schnellerer Neustart) |
+| `pwsh dev.ps1 restart` | Backend-Container stoppen + neu starten |
+| `pwsh dev.ps1 restart --keep-db` | Backend-Neustart ohne PostgreSQL-Neustart |
+| `pwsh dev.ps1 rebuild` | Docker-Image neu bauen + starten (kein Layer-Cache) |
 | `pwsh dev.ps1 rebuild --keep-db` | Rebuild ohne PostgreSQL-Neustart |
 
 > **Wann `pwsh dev.ps1 rebuild` statt `pwsh dev.ps1 restart`?**
-> Änderungen an `application.properties` oder anderen Ressourcen werden beim normalen
-> Restart manchmal nicht übernommen, weil Maven den kompilierten Cache in `target/`
-> wiederverwendet. `rebuild` löscht `target/` zuerst und erzwingt eine vollständige
-> Neukompilierung — z.B. nach Konfigurationsänderungen.
+> Nach Änderungen an `pom.xml` (neue Dependencies) oder wenn das Docker-Image
+> aus einem anderen Grund neu gebaut werden muss. `rebuild` übergibt `--force-recreate`
+> und `--no-cache` an Docker Compose.
 
 ### Schritt 3 — Testdaten einspielen (einmalig)
 ```bash
@@ -283,6 +272,23 @@ Wenn das Backend läuft:
 | `http://localhost:8080/v3/api-docs` | Maschinenlesbare OpenAPI 3.0 Spec (JSON) |
 
 Alle Endpunkte sind dort aufgelistet — inkl. Request-Body-Schema, Response-Typen und Authentifizierungs-Anforderungen.
+
+### Milestone-Dokumentation für das Frontend-Team
+
+Im `docs/`-Ordner dieses Repos liegt eine ausführliche Dokumentation für jedes Frontend-Milestone:
+
+| Datei | Inhalt |
+|-------|--------|
+| [`docs/ROLLEN.md`](docs/ROLLEN.md) | Rollenkonzept, vollständige Berechtigungsmatrix, Frontend-Patterns |
+| [`docs/milestone-1-auth-benutzerverwaltung.md`](docs/milestone-1-auth-benutzerverwaltung.md) | Issues #1–#7, #9, #56, #57 |
+| [`docs/milestone-2-produktkatalog.md`](docs/milestone-2-produktkatalog.md) | Issues #8, #10, #13–#18, #20, #23–#26, #28, #31, #34, #46, #47 |
+| [`docs/milestone-3-warenkorb-checkout.md`](docs/milestone-3-warenkorb-checkout.md) | Issues #39–#42, #44, #45 |
+| [`docs/milestone-4-bestellhistorie.md`](docs/milestone-4-bestellhistorie.md) | Issues #48–#53, #55 |
+| [`docs/milestone-5-crm-vertrieb.md`](docs/milestone-5-crm-vertrieb.md) | Issues #24, #26–#27, #29, #33–#38, #43, #54 |
+| [`docs/milestone-6-administration-audit.md`](docs/milestone-6-administration-audit.md) | Issues #19, #58–#62 |
+| [`docs/milestone-8-kundenservice.md`](docs/milestone-8-kundenservice.md) | Issues #11, #12, #21, #22, #30, #32 |
+
+Jede Datei enthält: exakte Endpunkte, Request/Response-Felder, benötigte Rolle und Frontend-Codebeispiele.
 
 ---
 

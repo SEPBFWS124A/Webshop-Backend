@@ -34,17 +34,19 @@ public class UserService {
     /** US #5 — Update email address. */
     @Transactional
     public void changeEmail(User currentUser, ChangeEmailRequest changeEmailRequest) {
-        if (userRepository.existsByEmail(changeEmailRequest.newEmail())) {
+        if (userRepository.existsByEmailAndActiveTrue(changeEmailRequest.newEmail())) {
             throw new IllegalArgumentException("Email is already in use: " + changeEmailRequest.newEmail());
         }
         currentUser.setEmail(changeEmailRequest.newEmail());
         userRepository.save(currentUser);
     }
 
-    /** US #7 — Soft-delete the account by setting active = false. */
+    /** US #7 — Soft-delete the account: deactivate and anonymize credentials to free unique constraints. */
     @Transactional
     public void deactivateAccount(User currentUser) {
         currentUser.setActive(false);
+        currentUser.setUsername("deleted_" + currentUser.getId());
+        currentUser.setEmail("deleted_" + currentUser.getId() + "@deleted.invalid");
         userRepository.save(currentUser);
     }
 

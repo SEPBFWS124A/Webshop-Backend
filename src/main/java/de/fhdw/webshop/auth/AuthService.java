@@ -38,10 +38,10 @@ public class AuthService {
 
     @Transactional
     public AuthResponse register(RegisterRequest registerRequest) {
-        if (userRepository.existsByUsername(registerRequest.username())) {
+        if (userRepository.existsByUsernameAndActiveTrue(registerRequest.username())) {
             throw new IllegalArgumentException("Username already taken: " + registerRequest.username());
         }
-        if (userRepository.existsByEmail(registerRequest.email())) {
+        if (userRepository.existsByEmailAndActiveTrue(registerRequest.email())) {
             throw new IllegalArgumentException("Email already registered: " + registerRequest.email());
         }
 
