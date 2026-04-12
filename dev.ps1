@@ -1,17 +1,18 @@
-# dev.ps1 - Start, stop, restart or rebuild the Spring Boot backend (incl. Docker/PostgreSQL)
+# dev.ps1 - Start, stop, restart or rebuild the Webshop backend via Docker
 # Usage:  ./dev.bat start   | stop | restart | rebuild
-#         ./dev.bat stop --keep-db     (keeps the PostgreSQL container running)
+#         ./dev.bat stop    --keep-db   (stop backend container, keep PostgreSQL running)
 #         ./dev.bat restart --keep-db
 #         ./dev.bat rebuild --keep-db
 #
-# How it works:
-#   start   -> docker compose up  ->  mvnw compile spring-boot:start  (blocks until app is ready)
-#   stop    -> mvnw spring-boot:stop  (graceful JMX shutdown)  ->  docker compose down
-#   restart -> stop + start
-#   rebuild -> stop + delete target/ + start  (forces full recompile)
+# Requirements: Docker Desktop (no Java or Maven needed locally)
 #
-# mvnw is called directly from PowerShell - NOT via cmd.exe - so paths with special
-# characters (e.g. ! in folder names) are handled correctly.
+# How it works:
+#   start   -> docker compose up -d --build
+#              (first run: Maven downloads ~200 MB of dependencies inside the container)
+#              Polls /api/health until the app responds, then prints the ready message.
+#   stop    -> docker compose down  (or stop only backend with --keep-db)
+#   restart -> stop backend + start backend
+#   rebuild -> docker compose up -d --build --force-recreate
 
 param(
     [Parameter(Mandatory)][ValidateSet("start","stop","restart","rebuild")]
@@ -21,49 +22,11 @@ param(
 
 $Root = $PSScriptRoot
 $Port = 8080
-
-# mvnw.cmd v3.3.2 no longer passes -Dmaven.multiModuleProjectDirectory to the JVM,
-# but Maven 3.9.x requires it. Setting it via MAVEN_OPTS is the official workaround.
-# PowerShell handles the path correctly even when it contains ! characters.
-$env:MAVEN_OPTS = "$($env:MAVEN_OPTS) -Dmaven.multiModuleProjectDirectory=`"$Root`"".Trim()
+$HealthUrl = "http://localhost:$Port/api/health"
 
 # --- helpers -----------------------------------------------------------------
 
-function Get-AppPid {
-    Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
-        Select-Object -ExpandProperty OwningProcess -First 1
-}
-
-function Initialize-MavenWrapper {
-    $wrapperJar = "$Root\.mvn\wrapper\maven-wrapper.jar"
-    if (Test-Path $wrapperJar) { return $true }
-
-    # mvnw.cmd has a bug: it sets WRAPPER_URL inside a cmd.exe block, but %WRAPPER_URL%
-    # is expanded at parse-time (before the FOR loop runs), so the URL is always empty.
-    # We download the JAR correctly from PowerShell instead.
-    $wrapperUrl = Get-Content "$Root\.mvn\wrapper\maven-wrapper.properties" |
-        Where-Object { $_ -match "^wrapperUrl=" } |
-        ForEach-Object { ($_ -split "=", 2)[1].Trim() }
-
-    Write-Host "Maven wrapper JAR not found - downloading..."
-    try {
-        Invoke-WebRequest -Uri $wrapperUrl -OutFile $wrapperJar -UseBasicParsing
-        Write-Host "Maven wrapper JAR downloaded."
-        return $true
-    } catch {
-        Write-Host "ERROR: Download failed: $_"
-        Write-Host "  Manual fix:"
-        Write-Host "  Invoke-WebRequest -Uri '$wrapperUrl' -OutFile '.mvn\wrapper\maven-wrapper.jar'"
-        return $false
-    }
-}
-
-function Test-Prerequisites {
-    if (-not (Get-Command java -ErrorAction SilentlyContinue)) {
-        Write-Host "ERROR: 'java' not found in PATH."
-        Write-Host "  Install Java 21: https://adoptium.net"
-        return $false
-    }
+function Test-DockerRunning {
     docker info 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Write-Host "ERROR: Docker is not running. Start Docker Desktop and retry."
@@ -72,38 +35,41 @@ function Test-Prerequisites {
     return $true
 }
 
-function Wait-ForPostgres {
-    Write-Host "Waiting for PostgreSQL to be healthy..." -NoNewline
-    for ($i = 0; $i -lt 30; $i++) {
-        $health = docker inspect "--format={{.State.Health.Status}}" webshop-postgres 2>$null
-        if ($health -eq "healthy") { Write-Host " ready."; return $true }
+function Wait-ForBackend {
+    Write-Host "Waiting for backend to be ready..." -NoNewline
+    for ($i = 0; $i -lt 90; $i++) {
+        try {
+            $response = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+            if ($response.StatusCode -eq 200) {
+                Write-Host " ready."
+                return $true
+            }
+        } catch {
+            # not ready yet
+        }
         Write-Host -NoNewline "."
         Start-Sleep -Seconds 2
     }
     Write-Host " timed out!"
+    Write-Host "Check container logs: docker logs webshop-backend"
     return $false
+}
+
+function Show-SeedHint {
+    Write-Host ""
+    Write-Host "--- Seed data (optional, run once) ---"
+    Write-Host "  docker exec -i webshop-postgres psql -U webshop -d webshop < src/main/resources/db/dev-seed.sql"
+    Write-Host ""
 }
 
 # --- stop --------------------------------------------------------------------
 
 function Stop-Backend {
-    $appPid = Get-AppPid
-    if ($appPid) {
-        Write-Host "Stopping Spring Boot..."
-        # Graceful shutdown via the Maven plugin (uses JMX internally)
-        & "$Root\mvnw.cmd" spring-boot:stop --quiet
-        if ($LASTEXITCODE -ne 0) {
-            # Fallback: kill the Java process that owns port 8080
-            Write-Host "JMX stop failed - killing process $appPid..."
-            Stop-Process -Id $appPid -Force -ErrorAction SilentlyContinue
-        }
-        Write-Host "Spring Boot stopped."
+    if ($KeepDb) {
+        Write-Host "Stopping backend container (keeping PostgreSQL running)..."
+        docker compose -f "$Root\docker-compose.yml" stop backend
     } else {
-        Write-Host "Spring Boot is not running."
-    }
-
-    if (-not $KeepDb) {
-        Write-Host "Stopping PostgreSQL container..."
+        Write-Host "Stopping all containers..."
         docker compose -f "$Root\docker-compose.yml" down
     }
 }
@@ -111,72 +77,59 @@ function Stop-Backend {
 # --- start -------------------------------------------------------------------
 
 function Start-Backend {
-    if (Get-AppPid) {
-        Write-Host "Spring Boot is already running on port $Port. Use './dev.bat stop' first."
-        return
-    }
+    if (-not (Test-DockerRunning)) { return }
 
-    if (-not (Test-Prerequisites)) { return }
-    if (-not (Initialize-MavenWrapper)) { return }
-
-    # Start PostgreSQL if not already running
-    $containerState = docker inspect "--format={{.State.Status}}" webshop-postgres 2>$null
-    if ($containerState -ne "running") {
-        Write-Host "Starting PostgreSQL container..."
-        docker compose -f "$Root\docker-compose.yml" up -d
-    } else {
-        Write-Host "PostgreSQL container already running."
-    }
-
-    if (-not (Wait-ForPostgres)) {
-        Write-Host "ERROR: PostgreSQL did not become healthy. Aborting."
-        return
-    }
-
-    # spring-boot:start forks Spring Boot into a background JVM, then BLOCKS here
-    # until the application context is fully loaded (via JMX handshake).
-    # Maven output (downloads, compilation, Spring Boot startup logs) is printed
-    # directly to this terminal. Returns only when the app is ready - or fails.
-    #
-    # First run: Maven downloads ~200 MB of dependencies. This can take several
-    # minutes. Subsequent runs use the local ~/.m2 cache and start in ~20 seconds.
     Write-Host ""
-    Write-Host "Starting Spring Boot (first run downloads dependencies - may take a few minutes)..."
+    Write-Host "Building and starting backend..."
+    Write-Host "(First run: Maven downloads dependencies inside the container - may take a few minutes)"
     Write-Host "-------------------------------------------------------------------------------"
-    # compile is required before spring-boot:start (unlike spring-boot:run, start does not compile)
-    & "$Root\mvnw.cmd" compile spring-boot:start
 
-    if ($LASTEXITCODE -eq 0) {
+    if ($KeepDb) {
+        # PostgreSQL is already running - only start/rebuild the backend service
+        docker compose -f "$Root\docker-compose.yml" up -d --build backend
+    } else {
+        docker compose -f "$Root\docker-compose.yml" up -d --build
+    }
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "ERROR: docker compose up failed."
+        return
+    }
+
+    if (Wait-ForBackend) {
         Write-Host "-------------------------------------------------------------------------------"
         Write-Host "Backend is up at     http://localhost:$Port"
         Write-Host "Swagger UI:          http://localhost:$Port/swagger-ui/index.html"
-        Write-Host ""
+        Show-SeedHint
         Write-Host "Run './dev.bat stop' to shut down."
-    } else {
-        Write-Host "-------------------------------------------------------------------------------"
-        Write-Host "ERROR: Spring Boot failed to start (exit code $LASTEXITCODE)."
-        Write-Host "Scroll up to see the error in the Maven output above."
     }
 }
 
 # --- rebuild -----------------------------------------------------------------
 
-function Reset-Backend {
-    Stop-Backend
+function Rebuild-Backend {
+    Write-Host "Forcing full rebuild (no layer cache)..."
+    if (-not (Test-DockerRunning)) { return }
 
-    Write-Host "Deleting target/ (forces full recompile)..."
-    $targetPath = "$Root\target"
-    if (Test-Path $targetPath) {
-        Remove-Item -Recurse -Force $targetPath -ErrorAction SilentlyContinue
-        if (Test-Path $targetPath) {
-            Write-Host "WARNING: Could not fully delete target/ (OneDrive lock?). Continuing anyway."
-        } else {
-            Write-Host "target/ deleted."
-        }
+    if ($KeepDb) {
+        docker compose -f "$Root\docker-compose.yml" up -d --build --force-recreate backend
+    } else {
+        docker compose -f "$Root\docker-compose.yml" down
+        docker compose -f "$Root\docker-compose.yml" up -d --build --force-recreate
     }
 
-    Start-Sleep -Seconds 1
-    Start-Backend
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "ERROR: docker compose rebuild failed."
+        return
+    }
+
+    if (Wait-ForBackend) {
+        Write-Host "-------------------------------------------------------------------------------"
+        Write-Host "Backend is up at     http://localhost:$Port"
+        Write-Host "Swagger UI:          http://localhost:$Port/swagger-ui/index.html"
+        Show-SeedHint
+        Write-Host "Run './dev.bat stop' to shut down."
+    }
 }
 
 # --- dispatch ----------------------------------------------------------------
@@ -185,5 +138,5 @@ switch ($Command) {
     "start"   { Start-Backend }
     "stop"    { Stop-Backend }
     "restart" { Stop-Backend; Start-Sleep -Seconds 1; Start-Backend }
-    "rebuild" { Reset-Backend }
+    "rebuild" { Rebuild-Backend }
 }
