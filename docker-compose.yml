@@ -16,5 +16,23 @@ services:
       timeout: 5s
       retries: 5
 
+  backend:
+    build: .
+    container_name: webshop-backend
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/webshop
+      SPRING_DATASOURCE_USERNAME: webshop
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-localdev}
+      APP_JWT_SECRET: ${JWT_SECRET:-fallback-secret-change-in-production-32chars}
+      APP_CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173}
+      SPRING_MAIL_HOST: ${MAIL_HOST:-localhost}
+      SPRING_MAIL_PORT: ${MAIL_PORT:-1025}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres_data:

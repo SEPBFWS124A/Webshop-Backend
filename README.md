@@ -46,8 +46,8 @@ Jede Anfrage wird über einen JWT-Token authentifiziert (außer Login/Register).
 
 | Technologie | Zweck | Version |
 |---|---|---|
-| Java | Programmiersprache | 21 |
-| Maven Wrapper | Build-Tool (kein globales Maven nötig) | 3.9.9 |
+| Java | Programmiersprache (läuft im Docker-Container) | 21 |
+| Maven | Build-Tool (läuft im Docker-Container, kein lokales Maven nötig) | 3.9.9 |
 | Spring Boot | Framework (Web, Security, JPA) | 3.4.4 |
 | PostgreSQL | Datenbank | 16 |
 | Flyway | Datenbank-Migrations | - |
@@ -128,19 +128,10 @@ https://domain.de/api/   → Backend (Spring Boot, intern Port 8080)
 
 ## 4. Voraussetzungen
 
-Folgendes muss auf deinem Rechner installiert sein:
+Einzige Voraussetzung: **Docker Desktop**
 
-### Java 21+
-```bash
-java -version
-# Erwartet: openjdk 21 ... (oder höher)
-```
-Download: https://adoptium.net (Eclipse Temurin 21 LTS)
+Das Backend (Spring Boot + Java 21) und die Datenbank (PostgreSQL) laufen vollständig in Docker-Containern — kein Java und kein Maven lokal nötig.
 
-> **Hinweis:** Java 24 funktioniert ebenfalls — die `pom.xml` enthält alle nötigen Kompatibilitäts-Fixes für Lombok.
-
-### Docker Desktop
-Wird für die lokale PostgreSQL-Datenbank benötigt.
 ```bash
 docker --version
 docker compose version
@@ -169,36 +160,36 @@ cd Webshop-Backend
 ./dev.bat start
 ```
 
-Das Script startet automatisch:
-1. Maven Wrapper JAR herunterladen (einmalig beim ersten Clone, braucht Internet)
-2. Den PostgreSQL Docker-Container (wartet bis er `healthy` ist)
-3. Das Spring Boot Backend kompilieren + starten (wartet bis `Started WebshopApplication`)
+Das Script baut und startet alle Container automatisch:
+1. PostgreSQL-Container starten (wartet bis er `healthy` ist)
+2. Spring Boot-Image bauen (Maven läuft im Container — kein Java lokal nötig)
+3. Backend-Container starten und auf `/api/health` warten
 
 Das Backend ist dann erreichbar unter: `http://localhost:8080`
 
-Spring Boot Ausgabe (Downloads, Compile-Log, Startup-Logs) erscheint direkt im Terminal.
+> **Erster Start:** Maven lädt alle Dependencies (~200 MB) **innerhalb des Containers** herunter.
+> Das kann beim ersten Mal einige Minuten dauern. Nachfolgende Starts nutzen den Docker Layer-Cache
+> und sind deutlich schneller.
 
 **Alle Befehle im Überblick:**
 
 | Befehl | Was passiert |
 |--------|-------------|
-| `./dev.bat start` | PostgreSQL + Spring Boot starten |
-| `./dev.bat stop` | Spring Boot + PostgreSQL beenden (graceful JMX-Shutdown) |
-| `./dev.bat stop --keep-db` | Nur Spring Boot beenden, DB läuft weiter (schnellerer Neustart) |
-| `./dev.bat restart` | Stop + Start in einem Schritt |
+| `./dev.bat start` | PostgreSQL + Backend bauen und starten |
+| `./dev.bat stop` | Alle Container beenden |
+| `./dev.bat stop --keep-db` | Nur Backend-Container beenden, PostgreSQL läuft weiter |
+| `./dev.bat restart` | Backend-Container neu starten |
 | `./dev.bat restart --keep-db` | Neustart ohne PostgreSQL-Neustart |
-| `./dev.bat rebuild` | `target/` löschen + neu kompilieren + starten |
-| `./dev.bat rebuild --keep-db` | Rebuild ohne PostgreSQL-Neustart |
+| `./dev.bat rebuild` | Alle Container neu bauen (kein Layer-Cache) + starten |
+| `./dev.bat rebuild --keep-db` | Rebuild Backend ohne PostgreSQL-Neustart |
 
 > **Wann `./dev.bat rebuild` statt `./dev.bat restart`?**
-> Änderungen an `application.properties` oder anderen Ressourcen werden beim normalen
-> Restart manchmal nicht übernommen, weil Maven den kompilierten Cache in `target/`
-> wiederverwendet. `rebuild` löscht `target/` zuerst und erzwingt eine vollständige
-> Neukompilierung — z.B. nach Konfigurationsänderungen.
+> Nach Änderungen am `Dockerfile` oder wenn der Layer-Cache einen veralteten Stand hat.
+> Für normale Code-Änderungen reicht `restart`.
 
 ### Schritt 3 — Testdaten einspielen (einmalig)
-```powershell
-Get-Content src/main/resources/db/dev-seed.sql | docker exec -i webshop-postgres psql -U webshop -d webshop
+```bat
+docker exec -i webshop-postgres psql -U webshop -d webshop < src/main/resources/db/dev-seed.sql
 ```
 
 ### Schritt 4 — Verifizieren
