@@ -64,8 +64,8 @@ Jede Anfrage wird über einen JWT-Token authentifiziert (außer Login/Register).
 ### Java 21 — die Sprache
 Die Basis von allem. Java ist stark typisiert, was bei einem größeren Team Fehler früh erkennt. Version 21 ist die aktuelle LTS-Version (Long Term Support) — die empfohlene stabile Version für neue Projekte.
 
-### Maven Wrapper — das Build-Tool
-Entspricht `npm` im Frontend. Verwaltet Abhängigkeiten (`pom.xml` = `package.json`), baut das Projekt und führt Tests aus. Der Wrapper (`mvnw` / `mvnw.cmd`) lädt Maven automatisch herunter — **kein globales Maven nötig**.
+### Maven — das Build-Tool
+Entspricht `npm` im Frontend. Verwaltet Abhängigkeiten (`pom.xml` = `package.json`), baut das Projekt und führt Tests aus. Maven läuft vollständig **innerhalb des Docker-Containers** — kein lokales Java oder Maven nötig. In der CI-Pipeline (GitHub Actions) läuft Maven direkt, da dort Java verfügbar ist.
 
 ### Spring Boot — das Framework
 Das Herzstück. Spring Boot bündelt mehrere Sub-Frameworks:
@@ -343,6 +343,23 @@ HTTP-Antwort ← Controller ← Service ← Repository ← Datenbank
 ## 8. API-Dokumentation (OpenAPI + Swagger UI)
 
 Das Backend generiert automatisch eine **OpenAPI Spec** — eine maschinenlesbare Beschreibung aller Endpunkte — und stellt optional eine **Swagger UI** bereit, mit der Endpunkte direkt im Browser getestet werden können.
+
+### Milestone-Dokumentation für das Frontend-Team
+
+Im `docs/`-Ordner dieses Repos liegt eine ausführliche Dokumentation für jedes Frontend-Milestone:
+
+| Datei | Inhalt |
+|-------|--------|
+| [`docs/ROLLEN.md`](docs/ROLLEN.md) | Rollenkonzept, vollständige Berechtigungsmatrix, Frontend-Patterns |
+| [`docs/milestone-1-auth-benutzerverwaltung.md`](docs/milestone-1-auth-benutzerverwaltung.md) | Issues #1–#7, #9, #56, #57 |
+| [`docs/milestone-2-produktkatalog.md`](docs/milestone-2-produktkatalog.md) | Issues #8, #10, #13–#18, #20, #23–#26, #28, #31, #34, #46, #47 |
+| [`docs/milestone-3-warenkorb-checkout.md`](docs/milestone-3-warenkorb-checkout.md) | Issues #39–#42, #44, #45 |
+| [`docs/milestone-4-bestellhistorie.md`](docs/milestone-4-bestellhistorie.md) | Issues #48–#53, #55 |
+| [`docs/milestone-5-crm-vertrieb.md`](docs/milestone-5-crm-vertrieb.md) | Issues #24, #26–#27, #29, #33–#38, #43, #54 |
+| [`docs/milestone-6-administration-audit.md`](docs/milestone-6-administration-audit.md) | Issues #19, #58–#62 |
+| [`docs/milestone-8-kundenservice.md`](docs/milestone-8-kundenservice.md) | Issues #11, #12, #21, #22, #30, #32 |
+
+Jede Datei enthält: exakte Endpunkte, Request/Response-Felder, benötigte Rolle und Frontend-Codebeispiele.
 
 ### Swagger UI
 
