@@ -33,7 +33,8 @@ Spring Boot Backend für den Webshop. Stellt eine REST API bereit, die vom React
 Browser
   └── Frontend (React + Vite, Port 5173)
         └──[HTTP / REST API / JSON]──► Backend (Spring Boot, Port 8080)
-                                            └──[JPA / SQL]──► PostgreSQL (Port 5432)
+                                            ├──[JPA / SQL]──► PostgreSQL (Port 5432)
+                                            └──[REST]──────► Ollama (Port 11434, lokal)
 ```
 
 Das Frontend schickt HTTP-Anfragen an das Backend (z.B. `GET /api/products`).
@@ -54,6 +55,7 @@ Jede Anfrage wird über einen JWT-Token authentifiziert (außer Login/Register).
 | JWT (jjwt) | Authentifizierung | 0.12.6 |
 | springdoc-openapi | OpenAPI Spec generieren | 2.8.6 |
 | Docker + Compose | Lokale Entwicklungsumgebung | - |
+| Ollama | Lokale KI-Laufzeitumgebung für Shoppi | latest |
 | NGINX | Reverse Proxy + HTTPS (Produktion) | - |
 | GitHub Actions | CI/CD-Pipelines | - |
 
@@ -111,6 +113,19 @@ Docker Compose startet zwei Container: **PostgreSQL** (Datenbank) und **Spring B
 
 ### springdoc-openapi — API-Beschreibung
 Liest den Spring Boot Code und generiert automatisch eine maschinenlesbare Beschreibung aller Endpunkte (`/v3/api-docs`). Das Frontend-Team kann daraus ablesen wie ein API-Call aussehen muss, ohne beim Backend-Team nachzufragen.
+
+### Ollama — lokale KI-Laufzeitumgebung
+
+Ollama führt KI-Sprachmodelle lokal auf dem Server aus. Keine Daten verlassen den Server — kein Drittanbieter wie OpenAI oder Google Cloud. Das Backend kommuniziert intern über `http://ollama:11434`.
+
+Das Modell `gemma4:e4b` wird einmalig gezogen (einmalig, ~3 GB):
+```bash
+docker exec webshop-ollama ollama pull gemma4:e4b
+```
+
+**Shoppi** ist der KI-Assistent des Webshops (`POST /api/chat/message`, öffentlich, auth-aware).
+
+---
 
 ### GitHub Actions — CI/CD
 Zwei Pipelines:
@@ -192,13 +207,19 @@ Das Backend ist dann erreichbar unter: `http://localhost:8080`
 > aus einem anderen Grund neu gebaut werden muss. `rebuild` übergibt `--force-recreate`
 > und `--no-cache` an Docker Compose.
 
-### Schritt 3 — Testdaten einspielen (einmalig)
+### Schritt 3 — Ollama-Modell ziehen (einmalig, nur für Shoppi KI-Assistent)
+```bash
+docker exec webshop-ollama ollama pull gemma4:e4b
+```
+Dieser Download (~3 GB) ist nur einmalig nötig. Das Modell wird im Docker-Volume `ollama_data` gecacht.
+
+### Schritt 4 — Testdaten einspielen (einmalig)
 ```bash
 docker exec -i webshop-postgres psql -U webshop -d webshop \
   < src/main/resources/db/dev-seed.sql
 ```
 
-### Schritt 4 — Verifizieren
+### Schritt 5 — Verifizieren
 ```bash
 curl http://localhost:8080/api/health
 # Erwartet: {"status":"UP"}
@@ -237,6 +258,11 @@ src/
     │   ├── customer/                       ← Kundenübersicht (Mitarbeiter-Sicht)
     │   ├── standingorder/                  ← Daueraufträge
     │   ├── notification/                   ← E-Mail-Versand, Scheduler
+    │   ├── chat/                           ← Shoppi KI-Assistent (Ollama)
+    │   │   ├── ChatController.java         ← POST /api/chat/message
+    │   │   ├── ChatService.java
+    │   │   ├── OllamaClient.java
+    │   │   └── dto/
     │   └── admin/                          ← Admin-Endpunkte, Audit-Log
     │
     └── resources/
@@ -316,6 +342,8 @@ Alle Variablen können in einer `.env`-Datei im Root-Verzeichnis gesetzt werden 
 | `MAIL_PORT` | `587` | SMTP-Port |
 | `MAIL_USERNAME` | — | SMTP-Benutzername |
 | `MAIL_PASSWORD` | — | SMTP-Passwort / App-Passwort |
+| `OLLAMA_BASE_URL` | `http://ollama:11434` | Ollama API URL (intern im Docker-Netzwerk) |
+| `OLLAMA_MODEL` | `gemma4:e4b` | KI-Modell für Shoppi |
 
 ---
 
@@ -442,6 +470,20 @@ curl -X POST http://localhost:8080/api/customers/1/discounts \
 # Umsatzstatistik
 curl "http://localhost:8080/api/customers/1/revenue?from=2026-01-01&to=2026-12-31" \
   -H "Authorization: Bearer $SALES_TOKEN"
+```
+
+### Shoppi KI-Assistent
+```bash
+# Unauthentifiziert (nur Produktkatalog-Kontext)
+curl -s -X POST http://localhost:8080/api/chat/message \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Welche Produkte habt ihr?","history":[]}' | python3 -m json.tool
+
+# Als eingeloggter Kunde (mit persönlichem Kontext)
+curl -s -X POST http://localhost:8080/api/chat/message \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Was habe ich im Warenkorb?","history":[]}' | python3 -m json.tool
 ```
 
 ### Admin-Endpunkte

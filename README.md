@@ -33,7 +33,8 @@ Spring Boot Backend für den Webshop. Stellt eine REST API bereit, die vom React
 Browser
   └── Frontend (React + Vite, Port 5173)
         └──[HTTP / REST API / JSON]──► Backend (Spring Boot, Port 8080)
-                                            └──[JPA / SQL]──► PostgreSQL (Port 5432)
+                                            ├──[JPA / SQL]──► PostgreSQL (Port 5432)
+                                            └──[REST]──────► Ollama (Port 11434, lokal)
 ```
 
 Das Frontend schickt HTTP-Anfragen an das Backend (z.B. `GET /api/products`).
@@ -54,6 +55,7 @@ Jede Anfrage wird über einen JWT-Token authentifiziert (außer Login/Register).
 | JWT (jjwt) | Authentifizierung | 0.12.6 |
 | springdoc-openapi | OpenAPI Spec generieren | 2.8.6 |
 | Docker + Compose | Lokale Entwicklungsumgebung | - |
+| Ollama | Lokale KI-Laufzeitumgebung für Shoppi | latest |
 | NGINX | Reverse Proxy + HTTPS (Produktion) | - |
 | GitHub Actions | CI/CD-Pipelines | - |
 
@@ -112,6 +114,19 @@ Docker lässt PostgreSQL in einem isolierten Container laufen — kein manuelles
 ### springdoc-openapi — API-Beschreibung
 Liest den Spring Boot Code und generiert automatisch eine maschinenlesbare Beschreibung aller Endpunkte (`/v3/api-docs`). Das Frontend-Team kann daraus ablesen wie ein API-Call aussehen muss, ohne beim Backend-Team nachzufragen.
 
+### Ollama — lokale KI-Laufzeitumgebung
+
+Ollama führt KI-Sprachmodelle lokal auf dem Server aus. Dadurch werden keine Daten an Drittanbieter wie OpenAI oder Google Cloud gesendet. Das Backend kommuniziert intern über `http://ollama:11434` mit dem Ollama-Container.
+
+Das verwendete Modell `gemma4:e4b` (Google DeepMind) wird beim ersten Start manuell gezogen (einmalig, ~3 GB):
+```bash
+docker exec webshop-ollama ollama pull gemma4:e4b
+```
+
+**Shoppi** ist der KI-Assistent des Webshops. Der Endpunkt `POST /api/chat/message` ist öffentlich, aber auth-aware: eingeloggte Kunden erhalten einen personalisierten Kontext (Warenkorb, Bestellhistorie, Profil) im System-Prompt.
+
+---
+
 ### GitHub Actions — CI/CD
 Zwei Pipelines:
 - **CI**: Bei jedem Pull Request wird automatisch `mvn test` ausgeführt.
@@ -162,8 +177,9 @@ cd Webshop-Backend
 
 Das Script baut und startet alle Container automatisch:
 1. PostgreSQL-Container starten (wartet bis er `healthy` ist)
-2. Spring Boot-Image bauen (Maven läuft im Container — kein Java lokal nötig)
-3. Backend-Container starten und auf `/api/health` warten
+2. Ollama-Container starten
+3. Spring Boot-Image bauen (Maven läuft im Container — kein Java lokal nötig)
+4. Backend-Container starten und auf `/api/health` warten
 
 Das Backend ist dann erreichbar unter: `http://localhost:8080`
 
@@ -187,12 +203,18 @@ Das Backend ist dann erreichbar unter: `http://localhost:8080`
 > Nach Änderungen am `Dockerfile` oder wenn der Layer-Cache einen veralteten Stand hat.
 > Für normale Code-Änderungen reicht `restart`.
 
-### Schritt 3 — Testdaten einspielen (einmalig)
+### Schritt 3 — Ollama-Modell ziehen (einmalig, nur für Shoppi KI-Assistent)
+```bash
+docker exec webshop-ollama ollama pull gemma4:e4b
+```
+Dieser Download (~3 GB) ist nur einmalig nötig. Das Modell wird im Docker-Volume `ollama_data` gecacht.
+
+### Schritt 4 — Testdaten einspielen (einmalig)
 ```bat
 docker exec -i webshop-postgres psql -U webshop -d webshop < src/main/resources/db/dev-seed.sql
 ```
 
-### Schritt 4 — Verifizieren
+### Schritt 5 — Verifizieren
 ```bash
 curl http://localhost:8080/api/health
 # Erwartet: {"status":"UP"}
@@ -283,6 +305,15 @@ src/
     │   │   ├── EmailService.java
     │   │   ├── NotificationScheduler.java  ← @Scheduled (montags 07:00)
     │   │   └── dto/
+    │   │
+    │   ├── chat/                           ← Shoppi KI-Assistent
+    │   │   ├── ChatController.java         ← POST /api/chat/message (public, auth-aware)
+    │   │   ├── ChatService.java            ← System-Prompt bauen + Ollama aufrufen
+    │   │   ├── OllamaClient.java           ← HTTP-Client für Ollama REST API
+    │   │   └── dto/
+    │   │       ├── ChatMessageRequest.java
+    │   │       ├── ChatMessageResponse.java
+    │   │       └── ConversationEntry.java
     │   │
     │   └── admin/                          ← Admin-Endpunkte & Audit-Log
     │       ├── AuditLog.java
@@ -622,6 +653,47 @@ Rabatt-Body:
 
 ---
 
+#### Shoppi KI-Assistent (`/api/chat`)
+
+| Aktion | Methode | URL | Body | Auth |
+|---|---|---|---|---|
+| Nachricht senden | POST | `/api/chat/message` | `{message, history[]}` | Optional (JWT für Kontext) |
+
+Request-Body:
+```json
+{
+  "message": "Was habe ich im Warenkorb?",
+  "history": [
+    { "role": "user", "content": "Hallo" },
+    { "role": "assistant", "content": "Hallo! Ich bin Shoppi..." }
+  ]
+}
+```
+
+Antwort:
+```json
+{ "reply": "Du hast aktuell 2 Artikel im Warenkorb: ..." }
+```
+
+- **Ohne JWT:** Shoppi kennt nur den öffentlichen Produktkatalog.
+- **Mit JWT (CUSTOMER-Rolle):** Shoppi erhält zusätzlich Profil, Warenkorb und letzte 5 Bestellungen im System-Prompt.
+- Das Modell läuft lokal via Ollama — keine Daten verlassen den Server.
+
+```powershell
+# Unauthentifiziert
+Invoke-RestMethod -Method Post http://localhost:8080/api/chat/message `
+  -ContentType "application/json" `
+  -Body '{"message":"Welche Produkte habt ihr?","history":[]}'
+
+# Als eingeloggter Kunde
+Invoke-RestMethod -Method Post http://localhost:8080/api/chat/message `
+  -Headers @{Authorization="Bearer $TOKEN"} `
+  -ContentType "application/json" `
+  -Body '{"message":"Was habe ich im Warenkorb?","history":[]}'
+```
+
+---
+
 #### Admin-Endpunkte (`/api/admin`)
 
 | Aktion | Methode | URL | Rolle |
@@ -703,6 +775,10 @@ CORS_ALLOWED_ORIGINS=http://localhost:5173
 # Mail (für Benachrichtigungen)
 MAIL_HOST=localhost
 MAIL_PORT=1025
+
+# Shoppi KI-Assistent (Ollama)
+OLLAMA_BASE_URL=http://ollama:11434
+OLLAMA_MODEL=gemma4:e4b
 ```
 
 ---

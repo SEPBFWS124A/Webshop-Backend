@@ -60,6 +60,10 @@ function Show-SeedHint {
     Write-Host "--- Seed data (optional, run once) ---"
     Write-Host "  docker exec -i webshop-postgres psql -U webshop -d webshop < src/main/resources/db/dev-seed.sql"
     Write-Host ""
+    Write-Host "--- Shoppi KI-Assistent (Ollama model, run once) ---"
+    Write-Host "  docker exec webshop-ollama ollama pull gemma4:e4b"
+    Write-Host "  (This downloads ~3 GB on first run. The model is cached in the ollama_data volume.)"
+    Write-Host ""
 }
 
 # --- stop --------------------------------------------------------------------
