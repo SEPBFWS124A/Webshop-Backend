@@ -123,6 +123,14 @@ Das Modell `gemma4:e4b` wird einmalig gezogen (einmalig, ~3 GB):
 docker exec webshop-ollama ollama pull gemma4:e4b
 ```
 
+**GPU-Beschleunigung:** `dev.ps1` erkennt beim Start automatisch die verbaute GPU:
+
+| GPU | Verhalten |
+|---|---|
+| NVIDIA | `docker-compose.gpu-nvidia.yml` wird automatisch eingebunden |
+| AMD | `docker-compose.gpu-amd.yml` wird eingebunden (ROCm, funktioniert auf Linux) |
+| Intel / Keine | CPU-Modus mit Info-Meldung |
+
 **Shoppi** ist der KI-Assistent des Webshops (`POST /api/chat/message`, öffentlich, auth-aware).
 
 ---

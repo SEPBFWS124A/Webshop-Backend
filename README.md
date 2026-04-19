@@ -123,6 +123,15 @@ Das verwendete Modell `gemma4:e4b` (Google DeepMind) wird beim ersten Start manu
 docker exec webshop-ollama ollama pull gemma4:e4b
 ```
 
+**GPU-Beschleunigung:** `dev.ps1` erkennt beim Start automatisch die verbaute GPU und lädt das passende Docker-Compose-Override:
+
+| GPU | Verhalten |
+|---|---|
+| NVIDIA | `docker-compose.gpu-nvidia.yml` wird automatisch eingebunden (NVIDIA Container Toolkit nötig) |
+| AMD | Info-Meldung — ROCm funktioniert nur unter Linux, auf Windows läuft Ollama auf CPU |
+| Intel | Info-Meldung — kein GPU-Support im Docker-Container auf Windows, CPU-Fallback |
+| Keine | CPU-Modus |
+
 **Shoppi** ist der KI-Assistent des Webshops. Der Endpunkt `POST /api/chat/message` ist öffentlich, aber auth-aware: eingeloggte Kunden erhalten einen personalisierten Kontext (Warenkorb, Bestellhistorie, Profil) im System-Prompt.
 
 ---
@@ -334,6 +343,11 @@ src/
         └── db/
             ├── migration/                  ← Flyway SQL-Migrations (V1–V9)
             └── dev-seed.sql                ← Testdaten für lokale Entwicklung
+
+docker-compose.yml                          ← Basis: PostgreSQL + Ollama (CPU) + Backend
+docker-compose.gpu-nvidia.yml              ← Override: NVIDIA GPU für Ollama (auto-geladen)
+docker-compose.gpu-amd.yml                 ← Override: AMD GPU / ROCm für Ollama (Linux, auto-geladen)
+dev.ps1                                     ← Dev-Script: erkennt GPU automatisch und wählt Override
 ```
 
 ### Wie ein Package aufgebaut ist

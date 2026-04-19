@@ -72,6 +72,11 @@ public class ChatService {
     private void appendProductCatalogContext(StringBuilder builder) {
         try {
             List<ProductResponse> allProducts = productService.listProducts(null, null, null);
+            if (allProducts.isEmpty()) {
+                builder.append("[PRODUKTKATALOG]: Derzeit sind keine Produkte im Katalog vorhanden. " +
+                        "Weise den Nutzer darauf hin, falls er nach Produkten fragt.\n\n");
+                return;
+            }
             builder.append("[PRODUKTKATALOG - alle ").append(allProducts.size()).append(" Artikel]:\n");
             for (ProductResponse product : allProducts) {
                 builder.append("- ")
