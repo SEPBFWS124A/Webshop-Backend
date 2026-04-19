@@ -213,6 +213,14 @@ docker exec webshop-ollama ollama pull gemma4:e4b
 ```
 Dieser Download (~3 GB) ist nur einmalig nötig. Das Modell wird im Docker-Volume `ollama_data` gecacht.
 
+> **Fehler: „pull model manifest: 412 — requires a newer version of Ollama"?**
+> Das lokale Ollama-Image ist veraltet (z.B. von einer früheren Installation). Image updaten und Container neu starten:
+> ```bash
+> docker pull ollama/ollama:latest
+> docker compose up -d --no-deps ollama
+> docker exec webshop-ollama ollama pull gemma4:e4b
+> ```
+
 ### Schritt 4 — Testdaten einspielen (einmalig)
 ```bash
 docker exec -i webshop-postgres psql -U webshop -d webshop \
