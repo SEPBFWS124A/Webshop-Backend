@@ -12,15 +12,14 @@ import de.fhdw.webshop.order.dto.PlaceOrderRequest;
 import de.fhdw.webshop.product.ProductService;
 import de.fhdw.webshop.user.User;
 import jakarta.persistence.EntityNotFoundException;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -41,13 +40,23 @@ public class OrderService {
                 .toList();
     }
 
+    public long countOrdersForCustomer(Long customerId) {
+        return orderRepository.countByCustomerId(customerId);
+    }
+
+    public Instant findLatestOrderTimestamp(Long customerId) {
+        return orderRepository.findFirstByCustomerIdOrderByCreatedAtDesc(customerId)
+                .map(Order::getCreatedAt)
+                .orElse(null);
+    }
+
     public OrderResponse getOrder(Long orderId, Long customerId) {
         Order order = orderRepository.findByIdAndCustomerId(orderId, customerId)
                 .orElseThrow(() -> new EntityNotFoundException("Order not found: " + orderId));
         return toResponse(order);
     }
 
-    /** US #42 — Convert the current cart into a confirmed order. Coupon reduces the order subtotal. */
+    /** US #42 - Convert the current cart into a confirmed order. Coupon reduces the order subtotal. */
     @Transactional
     public OrderResponse placeOrder(User customer, PlaceOrderRequest placeOrderRequest) {
         List<CartItem> cartItems = cartRepository.findByUserId(customer.getId());
@@ -78,7 +87,6 @@ public class OrderService {
             subtotal = subtotal.add(unitPrice.multiply(BigDecimal.valueOf(cartItem.getQuantity())));
         }
 
-        // Apply coupon discount to the subtotal (after item-level discounts)
         if (coupon != null) {
             subtotal = applyDiscount(subtotal, coupon.getDiscountPercent());
         }
@@ -96,7 +104,11 @@ public class OrderService {
             coupon.setUsed(true);
             coupon.setUsedAt(Instant.now());
             couponRepository.save(coupon);
-            auditLogService.record(customer, "APPLY_COUPON", "Coupon", coupon.getId(),
+            auditLogService.record(
+                    customer,
+                    "APPLY_COUPON",
+                    "Coupon",
+                    coupon.getId(),
                     AuditInitiator.USER,
                     "code=" + coupon.getCode() + ", orderId=" + savedOrder.getId());
         }
@@ -113,6 +125,7 @@ public class OrderService {
         if (couponCode == null || couponCode.isBlank()) {
             return null;
         }
+
         Coupon coupon = couponRepository.findByCode(couponCode)
                 .orElseThrow(() -> new IllegalArgumentException("Coupon code not found: " + couponCode));
 
@@ -132,6 +145,7 @@ public class OrderService {
         if (discountPercent == null || discountPercent.compareTo(BigDecimal.ZERO) == 0) {
             return price;
         }
+
         BigDecimal multiplier = BigDecimal.ONE.subtract(discountPercent.divide(BigDecimal.valueOf(100)));
         return price.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
     }
@@ -146,8 +160,7 @@ public class OrderService {
                         orderItem.getQuantity(),
                         orderItem.getPriceAtOrderTime(),
                         orderItem.getPriceAtOrderTime()
-                                .multiply(BigDecimal.valueOf(orderItem.getQuantity()))
-                ))
+                                .multiply(BigDecimal.valueOf(orderItem.getQuantity()))))
                 .toList();
 
         return new OrderResponse(
@@ -158,7 +171,6 @@ public class OrderService {
                 order.getShippingCost(),
                 order.getCouponCode(),
                 order.getCreatedAt(),
-                itemResponses
-        );
+                itemResponses);
     }
 }

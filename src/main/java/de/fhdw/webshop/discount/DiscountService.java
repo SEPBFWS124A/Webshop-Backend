@@ -10,13 +10,12 @@ import de.fhdw.webshop.product.ProductService;
 import de.fhdw.webshop.user.User;
 import de.fhdw.webshop.user.UserRepository;
 import jakarta.persistence.EntityNotFoundException;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -28,7 +27,7 @@ public class DiscountService implements ProductService.DiscountLookupPort {
     private final ProductService productService;
     private final AuditLogService auditLogService;
 
-    /** Implementation of DiscountLookupPort — returns the best active discount percent for a product. */
+    /** Implementation of DiscountLookupPort - returns the best active discount percent for a product. */
     @Override
     public BigDecimal findBestActiveDiscountPercent(Long customerId, Long productId) {
         List<Discount> activeDiscounts = discountRepository.findActiveDiscounts(customerId, productId, LocalDate.now());
@@ -38,7 +37,7 @@ public class DiscountService implements ProductService.DiscountLookupPort {
                 .orElse(BigDecimal.ZERO);
     }
 
-    /** US #33, #54 — Create or update a time-limited or unlimited discount for a customer. */
+    /** US #33, #54 - Create or update a time-limited or unlimited discount for a customer. */
     @Transactional
     public DiscountResponse createDiscount(Long customerId, CreateDiscountRequest req, User salesEmployee) {
         User customer = loadCustomer(customerId);
@@ -46,10 +45,10 @@ public class DiscountService implements ProductService.DiscountLookupPort {
         Discount discount = discountRepository
                 .findByCustomerIdAndProductId(customerId, req.productId())
                 .orElseGet(() -> {
-                    Discount d = new Discount();
-                    d.setCustomer(customer);
-                    d.setProduct(productService.loadProduct(req.productId()));
-                    return d;
+                    Discount newDiscount = new Discount();
+                    newDiscount.setCustomer(customer);
+                    newDiscount.setProduct(productService.loadProduct(req.productId()));
+                    return newDiscount;
                 });
 
         discount.setDiscountPercent(req.discountPercent());
@@ -58,18 +57,23 @@ public class DiscountService implements ProductService.DiscountLookupPort {
         discount.setCreatedByUser(salesEmployee);
 
         Discount saved = discountRepository.save(discount);
-        auditLogService.record(salesEmployee, "CREATE_DISCOUNT", "Discount", saved.getId(),
+        auditLogService.record(
+                salesEmployee,
+                "CREATE_DISCOUNT",
+                "Discount",
+                saved.getId(),
                 AuditInitiator.USER,
                 "customerId=" + customerId + ", productId=" + req.productId() + ", percent=" + req.discountPercent());
         return toDiscountResponse(saved);
     }
 
-    /** US #24 — Assign a coupon to a specific customer. */
+    /** US #24 - Assign a coupon to a specific customer. */
     @Transactional
     public CouponResponse createCoupon(Long customerId, CreateCouponRequest req, User salesEmployee) {
         if (couponRepository.findByCode(req.code()).isPresent()) {
             throw new IllegalArgumentException("Coupon code already exists: " + req.code());
         }
+
         User customer = loadCustomer(customerId);
 
         Coupon coupon = new Coupon();
@@ -80,13 +84,17 @@ public class DiscountService implements ProductService.DiscountLookupPort {
         coupon.setCreatedByUser(salesEmployee);
 
         Coupon saved = couponRepository.save(coupon);
-        auditLogService.record(salesEmployee, "CREATE_COUPON", "Coupon", saved.getId(),
+        auditLogService.record(
+                salesEmployee,
+                "CREATE_COUPON",
+                "Coupon",
+                saved.getId(),
                 AuditInitiator.USER,
                 "code=" + req.code() + ", customerId=" + customerId + ", percent=" + req.discountPercent());
         return toCouponResponse(saved);
     }
 
-    /** Delete a discount — only allowed for the owning customer's discounts. */
+    /** Delete a discount - only allowed for the owning customer's discounts. */
     @Transactional
     public void deleteDiscount(Long discountId, Long customerId, User salesEmployee) {
         Discount discount = discountRepository.findById(discountId)
@@ -94,13 +102,18 @@ public class DiscountService implements ProductService.DiscountLookupPort {
         if (!discount.getCustomer().getId().equals(customerId)) {
             throw new IllegalArgumentException("Discount does not belong to customer: " + customerId);
         }
+
         discountRepository.delete(discount);
-        auditLogService.record(salesEmployee, "DELETE_DISCOUNT", "Discount", discountId,
+        auditLogService.record(
+                salesEmployee,
+                "DELETE_DISCOUNT",
+                "Discount",
+                discountId,
                 AuditInitiator.USER,
                 "customerId=" + customerId + ", productId=" + discount.getProduct().getId());
     }
 
-    /** Delete a coupon — only allowed for the owning customer's coupons. */
+    /** Delete a coupon - only allowed for the owning customer's coupons. */
     @Transactional
     public void deleteCoupon(Long couponId, Long customerId, User salesEmployee) {
         Coupon coupon = couponRepository.findById(couponId)
@@ -108,8 +121,13 @@ public class DiscountService implements ProductService.DiscountLookupPort {
         if (!coupon.getCustomer().getId().equals(customerId)) {
             throw new IllegalArgumentException("Coupon does not belong to customer: " + customerId);
         }
+
         couponRepository.delete(coupon);
-        auditLogService.record(salesEmployee, "DELETE_COUPON", "Coupon", couponId,
+        auditLogService.record(
+                salesEmployee,
+                "DELETE_COUPON",
+                "Coupon",
+                couponId,
                 AuditInitiator.USER,
                 "code=" + coupon.getCode() + ", customerId=" + customerId);
     }
@@ -141,8 +159,7 @@ public class DiscountService implements ProductService.DiscountLookupPort {
                 discount.getProduct().getName(),
                 discount.getDiscountPercent(),
                 discount.getValidFrom(),
-                discount.getValidUntil()
-        );
+                discount.getValidUntil());
     }
 
     private CouponResponse toCouponResponse(Coupon coupon) {
@@ -153,7 +170,6 @@ public class DiscountService implements ProductService.DiscountLookupPort {
                 coupon.getDiscountPercent(),
                 coupon.getValidUntil(),
                 coupon.isUsed(),
-                coupon.getUsedAt()
-        );
+                coupon.getUsedAt());
     }
 }
