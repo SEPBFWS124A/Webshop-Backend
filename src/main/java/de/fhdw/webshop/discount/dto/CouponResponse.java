@@ -1,14 +1,15 @@
 package de.fhdw.webshop.discount.dto;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 
-public record DiscountResponse(
+public record CouponResponse(
         Long id,
         Long customerId,
-        Long productId,
-        String productName,
+        String code,
         BigDecimal discountPercent,
-        LocalDate validFrom,
-        LocalDate validUntil
+        LocalDate validUntil,
+        boolean used,
+        Instant usedAt
 ) {}

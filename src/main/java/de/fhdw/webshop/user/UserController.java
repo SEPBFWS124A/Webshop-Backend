@@ -1,11 +1,17 @@
 package de.fhdw.webshop.user;
 
+import de.fhdw.webshop.discount.DiscountService;
+import de.fhdw.webshop.discount.dto.CouponResponse;
+import de.fhdw.webshop.discount.dto.DiscountResponse;
 import de.fhdw.webshop.user.dto.*;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/users")
@@ -13,6 +19,7 @@ import org.springframework.web.bind.annotation.*;
 public class UserController {
 
     private final UserService userService;
+    private final DiscountService discountService;
 
     /** US #9 — Return own profile including customer number. */
     @GetMapping("/me")
@@ -57,5 +64,19 @@ public class UserController {
                                                   @Valid @RequestBody PaymentMethodRequest paymentMethodRequest) {
         userService.savePaymentMethod(currentUser, paymentMethodRequest);
         return ResponseEntity.noContent().build();
+    }
+
+    /** Customer views their own active discounts. */
+    @GetMapping("/me/discounts")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<List<DiscountResponse>> getMyDiscounts(@AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(discountService.listDiscountsForCustomer(currentUser.getId()));
+    }
+
+    /** Customer views their own coupons. */
+    @GetMapping("/me/coupons")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<List<CouponResponse>> getMyCoupons(@AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(discountService.listCouponsForCustomer(currentUser.getId()));
     }
 }
