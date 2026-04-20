@@ -26,6 +26,7 @@ einfach einen Haufen Dateien vor sich sieht.
 13. [dev start / stop / restart / rebuild — was passiert wirklich?](#13-dev-start--stop--restart--rebuild--was-passiert-wirklich)
 14. [target/ — warum gibt es diesen Ordner?](#14-target--warum-gibt-es-diesen-ordner)
 15. [GitHub Actions — CI/CD erklärt](#15-github-actions--cicd-erklärt)
+16. [Monitoring & Alerting — Architektur und Implementierung](#16-monitoring--alerting--architektur-und-implementierung)
 
 ---
 
@@ -1055,3 +1056,110 @@ und in der Pipeline als `${{ secrets.VPS_HOST }}` verwendet.
 | `VPS_HOST` | SSH-Zieladresse |
 | `VPS_USER` | SSH-Benutzername |
 | `VPS_SSH_KEY` | Privater SSH-Key (niemals teilen!) |
+
+---
+
+## 16. Monitoring & Alerting — Architektur und Implementierung
+
+### Netzwerk-Architektur
+
+```
+Internet
+   │
+   ▼ Port 8080 (öffentlich)
+backend:8080  — REST API (normaler Traffic)
+backend:8081  — Actuator / Prometheus-Endpunkt (NICHT öffentlich)
+       │ Docker-internes Netzwerk
+       ▼
+prometheus:9090  (NICHT öffentlich — kein Ports-Mapping in docker-compose.yml)
+       │ Docker-internes Netzwerk
+       ▼
+grafana:3000  →  Host 127.0.0.1:3001  (nur localhost, kein öffentlicher Zugriff)
+```
+
+**Warum separater Management-Port?**
+Port 8081 ist in `docker-compose.yml` bewusst nicht in `ports:` eingetragen.
+Nur Container im selben Docker-Netzwerk können `backend:8081` erreichen.
+Von außerhalb des Containers gilt: Connection refused.
+
+### Spring Boot Actuator + Micrometer
+
+`pom.xml` fügt zwei Dependencies hinzu:
+```xml
+<dependency>spring-boot-starter-actuator</dependency>      <!-- Actuator-Endpunkte -->
+<dependency>micrometer-registry-prometheus</dependency>    <!-- Prometheus-Format -->
+```
+
+`application.properties`:
+```properties
+management.server.port=8081
+management.endpoints.web.exposure.include=health,info,prometheus
+management.endpoint.prometheus.access=unrestricted
+```
+
+Micrometer instrumentiert automatisch — ohne Eingriff in Feature-Code:
+- `http.server.requests` — HTTP-Request-Counts, Latenz, Status-Codes
+- `jvm.memory.used/max` — Heap und Non-Heap
+- `jvm.gc.pause` — GC-Pausen
+- `jvm.threads.live` — aktive Threads
+- `hikaricp.connections.*` — DB-Connection-Pool
+
+### Prometheus-Konfiguration (`monitoring/prometheus.yml`)
+
+```yaml
+scrape_configs:
+  - job_name: "webshop-backend"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["backend:8081"]   ← interner Docker-Hostname
+```
+
+Prometheus fragt alle 15 Sekunden `backend:8081/actuator/prometheus` ab und speichert die Zeitreihendaten in seinem lokalen Volume (`prometheus_data`).
+
+### Grafana Provisioning
+
+Grafana liest beim Start automatisch aus `monitoring/grafana/provisioning/`:
+
+```
+datasources/prometheus.yml   → Verbindet Grafana mit prometheus:9090 (intern)
+dashboards/dashboards.yml    → Sagt Grafana, wo die JSON-Dashboards liegen
+dashboards/jvm-overview.json         → JVM-Dashboard (Heap, GC, Threads)
+dashboards/http-requests.json        → HTTP-Dashboard (Rate, Fehler, Latenz)
+dashboards/spring-boot-overview.json → Übersichts-Dashboard (Status, Uptime, Pool)
+```
+
+Kein manuelles Klicken in der Grafana-UI nötig — Dashboards sind sofort beim ersten Start verfügbar.
+
+### Alert-System (`NotificationScheduler`)
+
+Zwei neue `@Scheduled`-Methoden lesen Metriken direkt via `MeterRegistry`:
+
+**`checkHighErrorRate()`** — läuft alle 15 Minuten:
+```java
+Counter errorCounter = meterRegistry.find("http.server.requests")
+    .tag("outcome", "SERVER_ERROR").counter();
+double errorsInInterval = currentCount - lastSnapshot;
+if (errorsInInterval >= errorRateThreshold) emailService.sendAdminAlert(...);
+```
+Differenzbildung nötig, weil Micrometer kumulative Counter führt.
+
+**`checkJvmHeapUsage()`** — läuft alle 30 Minuten:
+```java
+double usedPercent = 100.0 * usedBytes / maxBytes;
+if (usedPercent >= heapUsageThresholdPercent) emailService.sendAdminAlert(...);
+```
+
+**`EmailService.sendAdminAlert()`** — neue Methode:
+- Liest `alert.admin-email` aus `application.properties`
+- Leer → nur `log.warn()`, keine E-Mail (kein Crash)
+- Konfigurierbar via Umgebungsvariable `ALERT_ADMIN_EMAIL`
+
+### Konfigurierbare Schwellenwerte
+
+| Property | Env-Variable | Standard | Bedeutung |
+|---|---|---|---|
+| `alert.admin-email` | `ALERT_ADMIN_EMAIL` | leer | Empfänger-E-Mail für Alerts |
+| `alert.error-rate.threshold` | `ALERT_ERROR_RATE_THRESHOLD` | 10 | 5xx-Fehler pro 15 min |
+| `alert.heap-usage.threshold-percent` | `ALERT_HEAP_USAGE_THRESHOLD_PERCENT` | 85 | JVM Heap % |
+
+Alle drei Werte können via Docker-Compose `environment:` oder `.env`-Datei überschrieben werden.

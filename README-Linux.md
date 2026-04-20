@@ -25,6 +25,7 @@ Spring Boot Backend für den Webshop. Stellt eine REST API bereit, die vom React
 12. [Lokales Testen (curl-Beispiele)](#12-lokales-testen-curl-beispiele)
 13. [User Story Abdeckung](#13-user-story-abdeckung)
 14. [Deployment](#14-deployment)
+15. [Monitoring & Alerting](#15-monitoring--alerting)
 
 ---
 
@@ -645,4 +646,41 @@ ssh-keygen -t ed25519 -C "github-actions"
 
 # Öffentlichen Key auf den Server kopieren
 ssh-copy-id deploy@DEINE-IP
+```
+
+---
+
+## 15. Monitoring & Alerting
+
+### Grafana starten
+
+Grafana startet automatisch mit `./dev.sh start`.
+
+```
+URL:       http://localhost:3001
+Benutzer:  admin
+Passwort:  admin
+```
+
+### Vorgefertigte Dashboards
+
+| Dashboard | Metriken |
+|---|---|
+| **JVM Overview** | Heap-Auslastung (%), GC-Pausen, Threads, Loaded Classes |
+| **HTTP Requests** | Request-Rate, 4xx/5xx-Fehlerquote, Latenz p50/p95/p99 |
+| **Spring Boot Overview** | App-Status, Uptime, DB-Pool, 5xx-Fehler (15 min) |
+
+### Sicherheit
+
+- Actuator/Prometheus läuft auf Port **8081** — nicht in Docker `ports:` gemappt → von außen nicht erreichbar
+- Prometheus (Port 9090) ebenfalls intern — nur Grafana hat Zugriff
+- Grafana ist nur auf `127.0.0.1:3001` gebunden
+
+### Alerting per E-Mail (optional)
+
+```bash
+# In .env oder docker-compose.yml:
+ALERT_ADMIN_EMAIL=admin@example.com
+ALERT_ERROR_RATE_THRESHOLD=10        # 5xx-Fehler pro 15 min
+ALERT_HEAP_USAGE_THRESHOLD_PERCENT=85
 ```

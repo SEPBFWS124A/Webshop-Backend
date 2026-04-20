@@ -3,6 +3,7 @@ package de.fhdw.webshop.notification;
 import de.fhdw.webshop.user.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
@@ -18,6 +19,9 @@ public class EmailService {
 
     private final JavaMailSender javaMailSender;
 
+    @Value("${alert.admin-email:}")
+    private String adminEmail;
+
     /** US #37 — Sales employee sends a free-form email to a customer. */
     public void sendEmailToCustomer(User customer, String subject, String body) {
         sendEmail(customer.getEmail(), subject, body);
@@ -28,6 +32,15 @@ public class EmailService {
         sendEmail(user.getEmail(),
                 "Your password has been changed",
                 "Your webshop account password was recently changed. If this was not you, please contact support.");
+    }
+
+    /** Sends a monitoring alert to the configured admin email address. */
+    public void sendAdminAlert(String subject, String body) {
+        if (adminEmail == null || adminEmail.isBlank()) {
+            log.warn("Admin alert suppressed (alert.admin-email not configured): {}", subject);
+            return;
+        }
+        sendEmail(adminEmail, subject, body);
     }
 
     /** Internal helper — logs and sends. */
