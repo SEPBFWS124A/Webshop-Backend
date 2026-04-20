@@ -55,17 +55,17 @@ function Get-OllamaComposeFiles {
 
     switch ($gpuVendor) {
         "nvidia" {
-            Write-Host "GPU detected: NVIDIA — enabling GPU acceleration for Ollama."
+            Write-Host "GPU detected: NVIDIA - enabling GPU acceleration for Ollama."
             $composeFiles += "`"$RootPath\docker-compose.gpu-nvidia.yml`""
         }
         "amd" {
-            Write-Host "GPU detected: AMD — GPU acceleration requires ROCm (Linux only). Running Ollama on CPU."
+            Write-Host "GPU detected: AMD - GPU acceleration requires ROCm (Linux only). Running Ollama on CPU."
         }
         "intel" {
-            Write-Host "GPU detected: Intel — GPU acceleration for Ollama in Docker is not supported on Windows. Running on CPU."
+            Write-Host "GPU detected: Intel - GPU acceleration for Ollama in Docker is not supported on Windows. Running on CPU."
         }
         default {
-            Write-Host "No dedicated GPU detected — Ollama will run on CPU."
+            Write-Host "No dedicated GPU detected - Ollama will run on CPU."
         }
     }
 
@@ -215,7 +215,7 @@ function Start-Backend {
     if (-not (Test-DockerRunning)) { return }
 
     if (Test-RebuildNeeded) {
-        Write-Host "Source changes detected since last build — rebuilding automatically."
+        Write-Host "Source changes detected since last build - rebuilding automatically."
         Write-Host "-------------------------------------------------------------------------------"
         Rebuild-Backend
         return
