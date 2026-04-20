@@ -80,6 +80,10 @@ public class DiscountService implements ProductService.DiscountLookupPort {
                 .toList();
     }
 
+    public List<Coupon> listCouponsForCustomer(Long customerId) {
+        return couponRepository.findByCustomerId(customerId);
+    }
+
     private User loadCustomer(Long customerId) {
         return userRepository.findById(customerId)
                 .orElseThrow(() -> new EntityNotFoundException("Customer not found: " + customerId));

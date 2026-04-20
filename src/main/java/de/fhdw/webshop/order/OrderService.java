@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.util.List;
 
 @Service
@@ -31,6 +32,16 @@ public class OrderService {
                 .stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    public long countOrdersForCustomer(Long customerId) {
+        return orderRepository.countByCustomerId(customerId);
+    }
+
+    public Instant findLatestOrderTimestamp(Long customerId) {
+        return orderRepository.findFirstByCustomerIdOrderByCreatedAtDesc(customerId)
+                .map(Order::getCreatedAt)
+                .orElse(null);
     }
 
     public OrderResponse getOrder(Long orderId, Long customerId) {
