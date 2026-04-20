@@ -53,6 +53,9 @@ public class ChatService {
 
                 Wenn du etwas nicht weißt, sage es ehrlich.
 
+                Du kannst Markdown-Formatierung verwenden (z. B. **Fettdruck**, Listen mit `-`, Überschriften mit `##`),
+                um Antworten übersichtlicher zu gestalten. Setze Markdown gezielt ein, nicht übermäßig.
+
                 """);
 
         appendProductCatalogContext(systemPromptBuilder);

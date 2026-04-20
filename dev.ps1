@@ -3,11 +3,14 @@
 #         ./dev.bat stop    --keep-db   (stop backend container, keep PostgreSQL running)
 #         ./dev.bat restart --keep-db
 #         ./dev.bat rebuild --keep-db
+#         ./dev.bat         (no argument: shows help and prompts interactively)
 #
 # Requirements: Docker Desktop (no Java or Maven needed locally)
 #
 # How it works:
 #   start   -> docker compose up -d --build
+#              Auto-detects source changes (src/, pom.xml, Dockerfile) and switches
+#              to a full rebuild automatically if any file is newer than the last image.
 #              (first run: Maven downloads ~200 MB of dependencies inside the container)
 #              Polls /api/health until the app responds, then prints the ready message.
 #   stop    -> docker compose down  (or stop only backend with --keep-db)
@@ -15,8 +18,7 @@
 #   rebuild -> docker compose up -d --build --force-recreate
 
 param(
-    [Parameter(Mandatory)][ValidateSet("start","stop","restart","rebuild")]
-    [string]$Command,
+    [string]$Command = "",
     [switch]$KeepDb
 )
 
@@ -79,6 +81,88 @@ function Test-DockerRunning {
     return $true
 }
 
+function Show-Usage {
+    Write-Host ""
+    Write-Host "Usage:  ./dev.bat <command> [--keep-db]"
+    Write-Host ""
+    Write-Host "Commands:"
+    Write-Host "  start    Start all containers (auto-detects if rebuild is needed)"
+    Write-Host "  stop     Stop all containers"
+    Write-Host "  restart  Stop backend, then start backend"
+    Write-Host "  rebuild  Force full rebuild (recreates containers, no layer cache)"
+    Write-Host ""
+    Write-Host "Options:"
+    Write-Host "  --keep-db   Keep PostgreSQL running (combine with stop/restart/rebuild)"
+    Write-Host ""
+}
+
+function Read-CommandInteractive {
+    Show-Usage
+    $inputCommand = (Read-Host "Enter command (start/stop/restart/rebuild)").Trim().ToLower()
+
+    if ($inputCommand -notin @("start", "stop", "restart", "rebuild")) {
+        Write-Host "ERROR: Unknown command '$inputCommand'."
+        exit 1
+    }
+
+    $keepDbAnswer = (Read-Host "Keep PostgreSQL running? [y/N]").Trim().ToLower()
+    if ($keepDbAnswer -in @("y", "j")) {
+        $script:KeepDb = $true
+    }
+
+    return $inputCommand
+}
+
+function Get-BackendImageCreated {
+    $imageId = docker inspect webshop-backend --format "{{.Image}}" 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $imageId) { return $null }
+
+    $createdString = docker inspect $imageId --format "{{.Created}}" 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $createdString) { return $null }
+
+    try {
+        return [datetime]::Parse(
+            $createdString,
+            $null,
+            [System.Globalization.DateTimeStyles]::RoundtripKind
+        )
+    } catch {
+        return $null
+    }
+}
+
+function Test-RebuildNeeded {
+    $imageCreated = Get-BackendImageCreated
+    if ($null -eq $imageCreated) { return $false }
+
+    $trackedPaths = @(
+        (Join-Path $Root "src"),
+        (Join-Path $Root "pom.xml"),
+        (Join-Path $Root "Dockerfile")
+    )
+
+    foreach ($trackedPath in $trackedPaths) {
+        if (-not (Test-Path $trackedPath)) { continue }
+
+        $pathItem = Get-Item $trackedPath
+        $filesToCheck = if ($pathItem.PSIsContainer) {
+            Get-ChildItem -Path $trackedPath -Recurse -File
+        } else {
+            @($pathItem)
+        }
+
+        foreach ($fileItem in $filesToCheck) {
+            if ($fileItem.LastWriteTimeUtc -gt $imageCreated) {
+                $relativePath = $fileItem.FullName.Substring($Root.Length).TrimStart('\', '/')
+                Write-Host "Changed since last build: $relativePath"
+                return $true
+            }
+        }
+    }
+
+    return $false
+}
+
 function Wait-ForBackend {
     Write-Host "Waiting for backend to be ready..." -NoNewline
     for ($i = 0; $i -lt 90; $i++) {
@@ -129,6 +213,13 @@ function Stop-Backend {
 
 function Start-Backend {
     if (-not (Test-DockerRunning)) { return }
+
+    if (Test-RebuildNeeded) {
+        Write-Host "Source changes detected since last build — rebuilding automatically."
+        Write-Host "-------------------------------------------------------------------------------"
+        Rebuild-Backend
+        return
+    }
 
     Write-Host ""
     Write-Host "Building and starting backend..."
@@ -187,6 +278,15 @@ function Rebuild-Backend {
 }
 
 # --- dispatch ----------------------------------------------------------------
+
+if (-not $Command) {
+    $Command = Read-CommandInteractive
+}
+
+if ($Command -notin @("start", "stop", "restart", "rebuild")) {
+    Write-Host "ERROR: Unknown command '$Command'. Run './dev.bat' without arguments for help."
+    exit 1
+}
 
 switch ($Command) {
     "start"   { Start-Backend }

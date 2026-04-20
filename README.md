@@ -228,7 +228,7 @@ Dieser Download (~10 GB) ist nur einmalig nötig. Das Modell wird im Docker-Volu
 
 ### Schritt 4 — Testdaten einspielen (einmalig)
 ```bat
-docker exec -i webshop-postgres psql -U webshop -d webshop < src/main/resources/db/dev-seed.sql
+Get-Content src/main/resources/db/dev-seed.sql | docker exec -i webshop-postgres psql -U webshop -d webshop
 ```
 
 ### Schritt 5 — Verifizieren
@@ -700,6 +700,7 @@ Antwort:
 - **Ohne JWT:** Shoppi kennt nur den öffentlichen Produktkatalog.
 - **Mit JWT (CUSTOMER-Rolle):** Shoppi erhält zusätzlich Profil, Warenkorb und letzte 5 Bestellungen im System-Prompt.
 - Das Modell läuft lokal via Ollama — keine Daten verlassen den Server.
+- **Markdown:** Der System-Prompt informiert das Modell, dass es Markdown verwenden kann (Fettdruck, Listen, Überschriften). Das Frontend rendert Bot-Antworten als Markdown. Der System-Prompt ist in `ChatService.java` (`buildSystemPrompt()`) konfigurierbar.
 
 ```powershell
 # Unauthentifiziert
