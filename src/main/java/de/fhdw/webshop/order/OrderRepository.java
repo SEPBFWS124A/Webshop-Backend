@@ -12,6 +12,10 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     List<Order> findByCustomerIdOrderByCreatedAtDesc(Long customerId);
 
+    long countByCustomerId(Long customerId);
+
+    Optional<Order> findFirstByCustomerIdOrderByCreatedAtDesc(Long customerId);
+
     Optional<Order> findByIdAndCustomerId(Long orderId, Long customerId);
 
     /** US #29 — Orders for a customer within a date range (for revenue statistics). */

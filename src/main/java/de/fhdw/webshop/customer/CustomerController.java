@@ -4,6 +4,7 @@ import de.fhdw.webshop.cart.CartService;
 import de.fhdw.webshop.cart.dto.AddToCartRequest;
 import de.fhdw.webshop.cart.dto.CartResponse;
 import de.fhdw.webshop.discount.DiscountService;
+import de.fhdw.webshop.discount.Coupon;
 import de.fhdw.webshop.discount.dto.CreateCouponRequest;
 import de.fhdw.webshop.discount.dto.CreateDiscountRequest;
 import de.fhdw.webshop.discount.dto.DiscountResponse;
@@ -16,15 +17,24 @@ import de.fhdw.webshop.user.UserRepository;
 import de.fhdw.webshop.user.UserService;
 import de.fhdw.webshop.notification.EmailService;
 import de.fhdw.webshop.notification.dto.SendEmailRequest;
+import de.fhdw.webshop.user.UserRole;
+import de.fhdw.webshop.user.UserType;
 import de.fhdw.webshop.user.dto.UserProfileResponse;
 import jakarta.persistence.EntityNotFoundException;
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -64,6 +74,87 @@ public class CustomerController {
         return ResponseEntity.ok(new UserProfileResponse(
                 customer.getId(), customer.getUsername(), customer.getEmail(),
                 customer.getRole(), customer.getUserType(), customer.getCustomerNumber()));
+    }
+
+    /** Customer cockpit â€” aggregated 360-degree customer view for employees and sales staff. */
+    @GetMapping("/{id}/dashboard")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<CustomerCockpitResponse> getCustomerDashboard(
+            @PathVariable Long id,
+            @RequestParam(required = false) LocalDate from,
+            @RequestParam(required = false) LocalDate to,
+            Authentication authentication) {
+        User customer = userService.loadById(id);
+        UserProfileResponse customerProfile = new UserProfileResponse(
+                customer.getId(), customer.getUsername(), customer.getEmail(),
+                customer.getRole(), customer.getUserType(), customer.getCustomerNumber());
+
+        boolean canViewSalesData = authentication.getAuthorities().stream()
+                .anyMatch(authority ->
+                        authority.getAuthority().equals("ROLE_SALES_EMPLOYEE")
+                                || authority.getAuthority().equals("ROLE_ADMIN"));
+        LocalDate resolvedTo = to != null ? to : LocalDate.now();
+        LocalDate resolvedFrom = from != null ? from : resolvedTo.minusDays(90);
+        boolean businessCustomer = customer.getUserType() == UserType.BUSINESS;
+
+        CartResponse cart = cartService.getCart(id);
+        long totalOrderCount = orderService.countOrdersForCustomer(id);
+        Instant latestOrderAt = orderService.findLatestOrderTimestamp(id);
+        List<DiscountResponse> allDiscounts = discountService.listDiscountsForCustomer(id);
+        List<CustomerCouponResponse> allCoupons = discountService.listCouponsForCustomer(id).stream()
+                .map(this::toCustomerCouponResponse)
+                .toList();
+
+        CustomerBusinessInfoResponse businessInfo = canViewSalesData
+                ? businessInfoRepository.findByUserId(id).map(this::toBusinessInfoResponse).orElse(null)
+                : null;
+
+        List<OrderResponse> recentOrders = canViewSalesData
+                ? orderService.listOrdersForCustomer(id).stream().limit(5).toList()
+                : List.of();
+
+        RevenueStatisticsResponse revenue = canViewSalesData
+                ? statisticsService.getCustomerRevenue(id, resolvedFrom, resolvedTo)
+                : null;
+
+        List<DiscountResponse> discounts = canViewSalesData ? allDiscounts : List.of();
+
+        List<CustomerCouponResponse> coupons = canViewSalesData ? allCoupons : List.of();
+
+        List<String> alerts = buildAlerts(
+                latestOrderAt,
+                cart.total(),
+                totalOrderCount,
+                allDiscounts,
+                allCoupons
+        );
+        String behaviorSummary = buildBehaviorSummary(
+                businessCustomer,
+                totalOrderCount,
+                latestOrderAt,
+                cart.total(),
+                allDiscounts,
+                allCoupons
+        );
+
+        return ResponseEntity.ok(new CustomerCockpitResponse(
+                customerProfile,
+                businessInfo,
+                cart,
+                recentOrders,
+                revenue,
+                discounts,
+                coupons,
+                behaviorSummary,
+                alerts,
+                businessCustomer,
+                totalOrderCount,
+                latestOrderAt,
+                resolvedFrom,
+                resolvedTo,
+                canViewSalesData,
+                canViewSalesData
+        ));
     }
 
     /** US #11 — View a customer's cart on their behalf. */
@@ -146,5 +237,80 @@ public class CustomerController {
         BusinessInfo businessInfo = businessInfoRepository.findByUserId(id)
                 .orElseThrow(() -> new EntityNotFoundException("No business info found for customer: " + id));
         return ResponseEntity.ok(businessInfo);
+    }
+
+    private CustomerBusinessInfoResponse toBusinessInfoResponse(BusinessInfo businessInfo) {
+        return new CustomerBusinessInfoResponse(
+                businessInfo.getCompanyName(),
+                businessInfo.getIndustry(),
+                businessInfo.getCompanySize()
+        );
+    }
+
+    private CustomerCouponResponse toCustomerCouponResponse(Coupon coupon) {
+        return new CustomerCouponResponse(
+                coupon.getId(),
+                coupon.getCode(),
+                coupon.getDiscountPercent(),
+                coupon.getValidUntil(),
+                coupon.isUsed()
+        );
+    }
+
+    private List<String> buildAlerts(Instant latestOrderAt,
+                                     BigDecimal cartTotal,
+                                     long totalOrderCount,
+                                     List<DiscountResponse> discounts,
+                                     List<CustomerCouponResponse> coupons) {
+        List<String> alerts = new ArrayList<>();
+        Instant ninetyDaysAgo = Instant.now().minus(90, ChronoUnit.DAYS);
+        BigDecimal safeCartTotal = cartTotal != null ? cartTotal : BigDecimal.ZERO;
+        boolean hasActivePromotion = !discounts.isEmpty() || coupons.stream().anyMatch(coupon -> !coupon.used());
+
+        if (latestOrderAt == null || latestOrderAt.isBefore(ninetyDaysAgo)) {
+            alerts.add("Kein Kauf in den letzten 90 Tagen");
+        }
+
+        if (safeCartTotal.compareTo(new BigDecimal("500")) >= 0
+                && (totalOrderCount == 0 || latestOrderAt == null || latestOrderAt.isBefore(Instant.now().minus(30, ChronoUnit.DAYS)))) {
+            alerts.add("Hoher Warenkorb, aber keine aktuelle Bestellung");
+        }
+
+        if (hasActivePromotion) {
+            alerts.add("Aktiver Rabatt oder Coupon vorhanden");
+        }
+
+        return alerts;
+    }
+
+    private String buildBehaviorSummary(boolean businessCustomer,
+                                        long totalOrderCount,
+                                        Instant latestOrderAt,
+                                        BigDecimal cartTotal,
+                                        List<DiscountResponse> discounts,
+                                        List<CustomerCouponResponse> coupons) {
+        BigDecimal safeCartTotal = cartTotal != null ? cartTotal : BigDecimal.ZERO;
+        boolean hasActivePromotion = !discounts.isEmpty() || coupons.stream().anyMatch(coupon -> !coupon.used());
+
+        if (totalOrderCount == 0) {
+            if (safeCartTotal.compareTo(BigDecimal.ZERO) > 0) {
+                return "Es gibt noch keine abgeschlossene Bestellung, aber bereits eine aktive Warenkorb-Absicht.";
+            }
+            return "Bisher liegt noch kein Kauf vor. Hier lohnt sich ein klarer Erstkauf-Impuls.";
+        }
+
+        if (latestOrderAt != null && latestOrderAt.isBefore(Instant.now().minus(90, ChronoUnit.DAYS))) {
+            return "Der Kunde war frueher aktiv, hat aber seit ueber 90 Tagen keine Bestellung mehr abgeschlossen.";
+        }
+
+        if (businessCustomer) {
+            return "Unternehmenskunde mit bestehender Kaufhistorie. Beratung sollte auf Business-Kontext und Folgebedarf ausgerichtet sein.";
+        }
+
+        if (hasActivePromotion) {
+            return "Es laufen bereits Vertriebsmaßnahmen. Jetzt ist ein guter Zeitpunkt fuer eine konkrete Nachfassaktion.";
+        }
+
+        return "Der Kunde zeigt ein stabiles Kaufverhalten und kann gezielt mit passenden Artikeln oder Serviceangeboten angesprochen werden.";
     }
 }
