@@ -1176,19 +1176,18 @@ curl http://localhost:8081/actuator/prometheus  # → Connection refused
 
 ### Alerting per E-Mail
 
-Alerts werden per E-Mail an `alert.admin-email` gesendet (konfigurierbar via Umgebungsvariable `ALERT_ADMIN_EMAIL`).
+Alerts werden per E-Mail an alle Adressen in `ALERT_ADMIN_EMAIL` gesendet (kommagetrennte Liste). Ohne konfigurierte Adresse werden Alerts nur als `log.warn` ausgegeben. Ist `ALERT_ADMIN_EMAIL` nicht gesetzt, wird `MAIL_USERNAME` als Empfänger verwendet (self-send).
 
 | Alert | Schwellenwert | Intervall |
 |---|---|---|
-| HTTP 5xx Fehlerquote | `ALERT_ERROR_RATE_THRESHOLD` (Standard: 10) | alle 15 min |
-| JVM Heap-Auslastung | `ALERT_HEAP_USAGE_THRESHOLD_PERCENT` (Standard: 85 %) | alle 30 min |
-
-Ohne konfigurierte E-Mail-Adresse werden Alerts nur als `log.warn` ausgegeben.
+| HTTP 5xx Fehlerquote | `ALERT_ERROR_RATE_THRESHOLD` (Standard: 5) | alle 15 min |
+| JVM Heap-Auslastung | `ALERT_HEAP_USAGE_THRESHOLD_PERCENT` (Standard: 80 %) | alle 30 min |
 
 ### Umgebungsvariablen (Alerting)
 
 ```properties
-ALERT_ADMIN_EMAIL=admin@example.com
-ALERT_ERROR_RATE_THRESHOLD=10
-ALERT_HEAP_USAGE_THRESHOLD_PERCENT=85
+# Einzelne Adresse oder kommagetrennte Liste:
+ALERT_ADMIN_EMAIL=admin@example.com,ops@example.com
+ALERT_ERROR_RATE_THRESHOLD=5
+ALERT_HEAP_USAGE_THRESHOLD_PERCENT=80
 ```

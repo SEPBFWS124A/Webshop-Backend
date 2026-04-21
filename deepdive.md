@@ -1150,16 +1150,16 @@ if (usedPercent >= heapUsageThresholdPercent) emailService.sendAdminAlert(...);
 ```
 
 **`EmailService.sendAdminAlert()`** — neue Methode:
-- Liest `alert.admin-email` aus `application.properties`
+- Liest `alert.admin-email` aus `application.properties` (kommagetrennte Empfängerliste)
 - Leer → nur `log.warn()`, keine E-Mail (kein Crash)
-- Konfigurierbar via Umgebungsvariable `ALERT_ADMIN_EMAIL`
+- Konfigurierbar via Umgebungsvariable `ALERT_ADMIN_EMAIL`; fehlt diese, wird `MAIL_USERNAME` als Empfänger verwendet (self-send)
 
 ### Konfigurierbare Schwellenwerte
 
 | Property | Env-Variable | Standard | Bedeutung |
 |---|---|---|---|
-| `alert.admin-email` | `ALERT_ADMIN_EMAIL` | leer | Empfänger-E-Mail für Alerts |
-| `alert.error-rate.threshold` | `ALERT_ERROR_RATE_THRESHOLD` | 10 | 5xx-Fehler pro 15 min |
-| `alert.heap-usage.threshold-percent` | `ALERT_HEAP_USAGE_THRESHOLD_PERCENT` | 85 | JVM Heap % |
+| `alert.admin-email` | `ALERT_ADMIN_EMAIL` | = `MAIL_USERNAME` | Kommagetrennte Empfänger-Adressen |
+| `alert.error-rate.threshold` | `ALERT_ERROR_RATE_THRESHOLD` | 5 | 5xx-Fehler pro 15 min |
+| `alert.heap-usage.threshold-percent` | `ALERT_HEAP_USAGE_THRESHOLD_PERCENT` | 80 | JVM Heap % |
 
-Alle drei Werte können via Docker-Compose `environment:` oder `.env`-Datei überschrieben werden.
+Alle Werte können via `.env`-Datei oder Docker-Compose `environment:` überschrieben werden.

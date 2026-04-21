@@ -70,12 +70,12 @@ Internet → backend:8080 (API, öffentlich)
 
 Liest den kumulativen `http.server.requests`-Counter (Tag `outcome=SERVER_ERROR`) aus der `MeterRegistry`.
 Bildet die Differenz zum letzten Intervall-Snapshot.
-Bei Überschreitung von `alert.error-rate.threshold` (Standard: 10) → `EmailService.sendAdminAlert()`.
+Bei Überschreitung von `alert.error-rate.threshold` (Standard: 5) → `EmailService.sendAdminAlert()`.
 
 ### `checkJvmHeapUsage()` — alle 30 Minuten
 
 Liest `jvm.memory.used` und `jvm.memory.max` (Tag `area=heap`).
-Bei Überschreitung von `alert.heap-usage.threshold-percent` (Standard: 85 %) → `EmailService.sendAdminAlert()`.
+Bei Überschreitung von `alert.heap-usage.threshold-percent` (Standard: 80 %) → `EmailService.sendAdminAlert()`.
 
 ---
 
@@ -84,9 +84,10 @@ Bei Überschreitung von `alert.heap-usage.threshold-percent` (Standard: 85 %) �
 ```properties
 # application.properties / Umgebungsvariablen
 management.server.port=8081
-alert.admin-email=${ALERT_ADMIN_EMAIL:}
-alert.error-rate.threshold=${ALERT_ERROR_RATE_THRESHOLD:10}
-alert.heap-usage.threshold-percent=${ALERT_HEAP_USAGE_THRESHOLD_PERCENT:85}
+# Kommagetrennte Empfängerliste. Standard: MAIL_USERNAME (self-send).
+alert.admin-email=${ALERT_ADMIN_EMAIL:${spring.mail.username:}}
+alert.error-rate.threshold=${ALERT_ERROR_RATE_THRESHOLD:5}
+alert.heap-usage.threshold-percent=${ALERT_HEAP_USAGE_THRESHOLD_PERCENT:80}
 ```
 
 ---
@@ -100,6 +101,7 @@ Dashboards (auto-provisioned):
   - JVM Overview
   - HTTP Requests
   - Spring Boot Overview
+  - Ollama Overview
 ```
 
 ---

@@ -2,6 +2,7 @@ package de.fhdw.webshop.admin;
 
 import de.fhdw.webshop.auth.JwtTokenProvider;
 import de.fhdw.webshop.auth.dto.AuthResponse;
+import de.fhdw.webshop.notification.EmailService;
 import de.fhdw.webshop.user.User;
 import de.fhdw.webshop.user.UserRepository;
 import de.fhdw.webshop.user.dto.UserProfileResponse;
@@ -24,6 +25,7 @@ public class AdminController {
     private final AuditLogRepository auditLogRepository;
     private final AuditLogService auditLogService;
     private final JwtTokenProvider jwtTokenProvider;
+    private final EmailService emailService;
 
     /** US #59, #60 — List all users, optionally filtered by search term. */
     @GetMapping("/users")
@@ -77,5 +79,16 @@ public class AdminController {
     @GetMapping("/audit-log")
     public ResponseEntity<List<AuditLog>> getAuditLog() {
         return ResponseEntity.ok(auditLogRepository.findAllByOrderByTimestampDesc());
+    }
+
+    /** Sends a test alert email to verify the alerting configuration. */
+    @PostMapping("/alerts/test")
+    public ResponseEntity<Void> sendTestAlert() {
+        emailService.sendAdminAlert(
+                "Test Alert — Webshop Monitoring",
+                "Dies ist eine Test-Benachrichtigung.\n\n"
+                + "Die Alert-Konfiguration funktioniert korrekt.\n"
+                + "Empfänger, SMTP-Host und Zugangsdaten sind gültig.");
+        return ResponseEntity.noContent().build();
     }
 }

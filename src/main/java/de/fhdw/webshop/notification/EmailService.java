@@ -19,8 +19,11 @@ public class EmailService {
 
     private final JavaMailSender javaMailSender;
 
+    @Value("${spring.mail.username:}")
+    private String mailFrom;
+
     @Value("${alert.admin-email:}")
-    private String adminEmail;
+    private String adminEmailsRaw;
 
     /** US #37 — Sales employee sends a free-form email to a customer. */
     public void sendEmailToCustomer(User customer, String subject, String body) {
@@ -34,19 +37,25 @@ public class EmailService {
                 "Your webshop account password was recently changed. If this was not you, please contact support.");
     }
 
-    /** Sends a monitoring alert to the configured admin email address. */
+    /** Sends a monitoring alert to all configured admin email addresses. */
     public void sendAdminAlert(String subject, String body) {
-        if (adminEmail == null || adminEmail.isBlank()) {
+        if (adminEmailsRaw == null || adminEmailsRaw.isBlank()) {
             log.warn("Admin alert suppressed (alert.admin-email not configured): {}", subject);
             return;
         }
-        sendEmail(adminEmail, subject, body);
+        String[] recipients = adminEmailsRaw.split(",");
+        for (String recipient : recipients) {
+            sendEmail(recipient.strip(), subject, body);
+        }
     }
 
     /** Internal helper — logs and sends. */
     public void sendEmail(String toAddress, String subject, String body) {
         try {
             SimpleMailMessage message = new SimpleMailMessage();
+            if (!mailFrom.isBlank()) {
+                message.setFrom(mailFrom);
+            }
             message.setTo(toAddress);
             message.setSubject(subject);
             message.setText(body);

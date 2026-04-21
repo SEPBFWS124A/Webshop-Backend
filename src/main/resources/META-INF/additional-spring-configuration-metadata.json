@@ -3,7 +3,7 @@
     {
       "name": "alert.admin-email",
       "type": "java.lang.String",
-      "description": "Email address that receives monitoring alerts. Leave empty to suppress alert emails."
+      "description": "Comma-separated list of email addresses that receive monitoring alerts. Defaults to spring.mail.username (self-send). Leave empty to suppress alert emails."
     },
     {
       "name": "alert.error-rate.threshold",

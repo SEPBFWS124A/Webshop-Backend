@@ -679,8 +679,10 @@ Passwort:  admin
 ### Alerting per E-Mail (optional)
 
 ```bash
-# In .env oder docker-compose.yml:
-ALERT_ADMIN_EMAIL=admin@example.com
-ALERT_ERROR_RATE_THRESHOLD=10        # 5xx-Fehler pro 15 min
-ALERT_HEAP_USAGE_THRESHOLD_PERCENT=85
+# In .env (kommagetrennte Empfänger möglich):
+ALERT_ADMIN_EMAIL=admin@example.com,ops@example.com
+ALERT_ERROR_RATE_THRESHOLD=5         # 5xx-Fehler pro 15 min
+ALERT_HEAP_USAGE_THRESHOLD_PERCENT=80
 ```
+
+Fehlt `ALERT_ADMIN_EMAIL`, wird `MAIL_USERNAME` als Empfänger verwendet (self-send).
