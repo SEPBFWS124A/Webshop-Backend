@@ -6,14 +6,15 @@ import java.time.LocalDate;
 import java.util.List;
 
 public record StandingOrderResponse(
-        Long id,
-        IntervalType intervalType,
-        Integer intervalDays,
-        Integer dayOfWeek,
-        Integer dayOfMonth,
-        Integer monthOfYear,
-        LocalDate nextExecutionDate,
-        boolean active,
-        Instant createdAt,
-        List<StandingOrderItemResponse> items
+    Long id,
+    IntervalType intervalType,
+    Integer intervalValue,
+    Integer dayOfWeek,
+    Integer dayOfMonth,
+    Integer monthOfYear,
+    boolean countBackwards,
+    LocalDate nextExecutionDate,
+    boolean active,
+    Instant createdAt,
+    List<StandingOrderItemResponse> items
 ) {}

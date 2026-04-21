@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -16,6 +17,7 @@ import java.util.List;
 @Setter
 @NoArgsConstructor
 public class StandingOrder {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -25,11 +27,11 @@ public class StandingOrder {
     private User customer;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "interval_type", nullable = false)
-    private IntervalType intervalType = IntervalType.DAYS;
+    @Column(name = "interval_type")
+    private IntervalType intervalType;
 
-    @Column(name = "interval_days")
-    private Integer intervalDays;
+    @Column(name = "interval_value")
+    private Integer intervalValue;
 
     @Column(name = "day_of_week")
     private Integer dayOfWeek;
@@ -39,6 +41,9 @@ public class StandingOrder {
 
     @Column(name = "month_of_year")
     private Integer monthOfYear;
+
+    @Column(name = "count_backwards")
+    private boolean countBackwards;
 
     @Column(name = "next_execution_date", nullable = false)
     private LocalDate nextExecutionDate;

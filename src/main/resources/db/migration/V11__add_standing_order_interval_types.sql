@@ -1,19 +1,18 @@
--- Erweitert Daueraufträge um flexible Intervall-Typen
-ALTER TABLE standing_orders
-    ADD COLUMN interval_type  VARCHAR(20) NOT NULL DEFAULT 'DAYS',
-    ADD COLUMN day_of_week    INT,        -- 1=Montag, 7=Sonntag
-    ADD COLUMN day_of_month   INT,        -- 1-31
-    ADD COLUMN month_of_year  INT;        -- 1-12
+-- Tabelle anpassen: Spaltennamen vereinheitlichen und flexible Intervalle ermöglichen
+ALTER TABLE standing_orders ADD COLUMN IF NOT EXISTS interval_type VARCHAR(20) NOT NULL DEFAULT 'DAYS';
+ALTER TABLE standing_orders ADD COLUMN IF NOT EXISTS interval_value INT;
+ALTER TABLE standing_orders ADD COLUMN IF NOT EXISTS day_of_week INT;
+ALTER TABLE standing_orders ADD COLUMN IF NOT EXISTS day_of_month INT;
+ALTER TABLE standing_orders ADD COLUMN IF NOT EXISTS month_of_year INT;
+ALTER TABLE standing_orders ADD COLUMN IF NOT EXISTS count_backwards BOOLEAN DEFAULT FALSE;
 
--- Validierung der Typen
-ALTER TABLE standing_orders
-    ADD CONSTRAINT chk_interval_type
-        CHECK (interval_type IN ('DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY', 'DAYS'));
+-- Constraint an das Java-Enum IntervalType anpassen
+ALTER TABLE standing_orders DROP CONSTRAINT IF EXISTS chk_interval_type;
+ALTER TABLE standing_orders ADD CONSTRAINT chk_interval_type 
+    CHECK (interval_type IN ('DAYS', 'WEEKS', 'MONTHS', 'YEARS'));
 
--- interval_days darf jetzt NULL sein (wird nur bei 'DAYS' benötigt)
-ALTER TABLE standing_orders ALTER COLUMN interval_days DROP NOT NULL;
-
--- Alten Constraint entfernen und durch flexiblen ersetzen
-ALTER TABLE standing_orders DROP CONSTRAINT IF EXISTS standing_orders_interval_days_check;
-ALTER TABLE standing_orders ADD CONSTRAINT chk_interval_days
-        CHECK (interval_days IS NULL OR interval_days > 0);
+-- Falls noch eine alte Spalte existiert, diese entfernen
+ALTER TABLE standing_orders DROP COLUMN IF EXISTS interval_days;
+-- Bestehende Aufträge auf einen Standardwert setzen, damit es nicht kracht
+UPDATE standing_orders SET interval_type = 'DAYS' WHERE interval_type IS NULL;
+UPDATE standing_orders SET interval_value = 1 WHERE interval_value IS NULL;
