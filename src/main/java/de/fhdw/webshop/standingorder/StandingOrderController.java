@@ -58,7 +58,8 @@ public class StandingOrderController {
         return ResponseEntity.noContent().build();
     }
 
-    @PatchMapping("/{id}/toggle")
+    /** US #52 — Pausieren/Aktivieren eines Dauerauftrags. */
+    @PutMapping("/{id}/toggle") // Geändert von Patch auf Put
     @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<StandingOrderResponse> toggleStandingOrder(
         @PathVariable Long id,

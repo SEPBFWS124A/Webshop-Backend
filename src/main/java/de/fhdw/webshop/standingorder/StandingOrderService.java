@@ -108,11 +108,11 @@ public class StandingOrderService {
     }
 
     @Transactional
-    public void cancel(Long id, Long customerId) {
-        StandingOrder so = repository.findByIdAndCustomerId(id, customerId)
+    public void cancel(Long standingOrderId, Long customerId) {
+        StandingOrder so = repository.findByIdAndCustomerId(standingOrderId, customerId)
                 .orElseThrow(() -> new EntityNotFoundException("Dauerauftrag nicht gefunden"));
-        so.setActive(false);
-        repository.save(so);
+        
+        repository.delete(so); // <--- Jetzt wird er wirklich gelöscht
     }
 
     /**
@@ -218,8 +218,12 @@ public class StandingOrderService {
         StandingOrder so = repository.findByIdAndCustomerId(id, customerId)
                 .orElseThrow(() -> new EntityNotFoundException("Dauerauftrag nicht gefunden"));
         
-        so.setActive(!so.isActive()); // Schaltet von true auf false oder umgekehrt
-        return mapToResponse(repository.save(so));
+        so.setActive(!so.isActive());
+        
+        // Wir speichern und erzwingen das Schreiben in die DB
+        StandingOrder saved = repository.saveAndFlush(so); 
+        
+        return mapToResponse(saved);
     }
 
     private BigDecimal applyDiscount(BigDecimal price, BigDecimal discountPercent) {
