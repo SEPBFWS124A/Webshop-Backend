@@ -49,12 +49,21 @@ public class StandingOrderController {
         return ResponseEntity.ok(standingOrderService.update(id, currentUser.getId(), updateStandingOrderRequest));
     }
 
-    /** US #52 — Cancel a standing order. */
+    /** Permanently delete a standing order. */
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('CUSTOMER')")
-    public ResponseEntity<Void> cancelStandingOrder(@PathVariable Long id,
-                                                    @AuthenticationPrincipal User currentUser) {
-        standingOrderService.cancel(id, currentUser.getId());
+    public ResponseEntity<Void> deleteStandingOrder(@PathVariable Long id,
+        @AuthenticationPrincipal User currentUser) {
+        standingOrderService.delete(id, currentUser.getId());
         return ResponseEntity.noContent().build();
+    }
+
+    /** Toggle active/inactive status. */
+    @PutMapping("/{id}/active")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<StandingOrderResponse> toggleStandingOrderActive(
+            @PathVariable Long id,
+            @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(standingOrderService.toggleActive(id, currentUser.getId()));
     }
 }

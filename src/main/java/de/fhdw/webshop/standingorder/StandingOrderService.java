@@ -57,12 +57,19 @@ public class StandingOrderService {
         return toResponse(standingOrderRepository.save(standingOrder));
     }
 
-    /** US #52 — Cancel a standing order. */
+    /** Permanently delete a standing order. */
     @Transactional
-    public void cancel(Long standingOrderId, Long customerId) {
+    public void delete(Long standingOrderId, Long customerId) {
         StandingOrder standingOrder = loadForCustomer(standingOrderId, customerId);
-        standingOrder.setActive(false);
-        standingOrderRepository.save(standingOrder);
+        standingOrderRepository.delete(standingOrder);
+    }
+
+    /** Toggle active/inactive status. */
+    @Transactional
+    public StandingOrderResponse toggleActive(Long standingOrderId, Long customerId) {
+        StandingOrder standingOrder = loadForCustomer(standingOrderId, customerId);
+        standingOrder.setActive(!standingOrder.isActive());
+        return toResponse(standingOrderRepository.save(standingOrder));
     }
 
     /** Called by the scheduler: execute all due standing orders and advance their next execution date. */
