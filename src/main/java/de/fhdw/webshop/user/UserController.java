@@ -27,6 +27,12 @@ public class UserController {
         return ResponseEntity.ok(userService.getProfile(currentUser));
     }
 
+    /** Returns the saved checkout defaults for address and payment method. */
+    @GetMapping("/me/checkout-profile")
+    public ResponseEntity<CheckoutProfileResponse> getCheckoutProfile(@AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(userService.getCheckoutProfile(currentUser));
+    }
+
     /** US #4 — Change password. */
     @PutMapping("/me/password")
     public ResponseEntity<Void> changePassword(@AuthenticationPrincipal User currentUser,
