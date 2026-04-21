@@ -1,5 +1,8 @@
 package de.fhdw.webshop.notification;
 
+import de.fhdw.webshop.alerting.AlertEventType;
+import de.fhdw.webshop.alerting.BusinessEmailService;
+
 import de.fhdw.webshop.order.OrderItem;
 import de.fhdw.webshop.order.OrderRepository;
 import de.fhdw.webshop.product.Product;
@@ -33,7 +36,7 @@ public class NotificationScheduler {
 
     private final ProductRepository productRepository;
     private final OrderRepository orderRepository;
-    private final EmailService emailService;
+    private final BusinessEmailService businessEmailService;
     private final MeterRegistry meterRegistry;
 
     @Value("${alert.error-rate.threshold:10}")
@@ -80,7 +83,7 @@ public class NotificationScheduler {
                     + "Please check the application logs and Grafana dashboard.",
                     (int) errorsInInterval, errorRateThreshold);
             try {
-                emailService.sendAdminAlert(subject, body);
+                businessEmailService.sendAlert(AlertEventType.HIGH_ERROR_RATE, subject, body);
                 log.warn("Alert sent: {} HTTP 5xx errors exceeded threshold of {}", (int) errorsInInterval, errorRateThreshold);
             } catch (Exception exception) {
                 log.error("Failed to send high error rate alert email", exception);
@@ -125,7 +128,7 @@ public class NotificationScheduler {
                     + "This may indicate a memory leak. Please check the Grafana JVM dashboard.",
                     usedPercent, usedMb, maxMb, heapUsageThresholdPercent);
             try {
-                emailService.sendAdminAlert(subject, body);
+                businessEmailService.sendAlert(AlertEventType.HIGH_HEAP_USAGE, subject, body);
                 log.warn("Alert sent: JVM heap at {}% exceeded threshold of {}%", usedPercent, heapUsageThresholdPercent);
             } catch (Exception exception) {
                 log.error("Failed to send JVM heap alert email", exception);

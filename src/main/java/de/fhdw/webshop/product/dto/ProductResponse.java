@@ -10,6 +10,7 @@ public record ProductResponse(
         String imageUrl,
         BigDecimal recommendedRetailPrice,
         String category,
+        int stock,
         boolean purchasable,
         boolean promoted,
         Instant createdAt

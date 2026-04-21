@@ -21,6 +21,16 @@ public class UserService {
         return toProfileResponse(currentUser);
     }
 
+    public CheckoutProfileResponse getCheckoutProfile(User currentUser) {
+        DeliveryAddressResponse deliveryAddress = deliveryAddressRepository.findFirstByUserId(currentUser.getId())
+                .map(this::toDeliveryAddressResponse)
+                .orElse(null);
+        PaymentMethodResponse paymentMethod = paymentMethodRepository.findFirstByUserId(currentUser.getId())
+                .map(this::toPaymentMethodResponse)
+                .orElse(null);
+        return new CheckoutProfileResponse(deliveryAddress, paymentMethod);
+    }
+
     /** US #4 — Change password after verifying the current one. */
     @Transactional
     public void changePassword(User currentUser, ChangePasswordRequest changePasswordRequest) {
@@ -70,6 +80,7 @@ public class UserService {
     /** US #44 — Save or replace the preferred payment method. */
     @Transactional
     public void savePaymentMethod(User currentUser, PaymentMethodRequest paymentMethodRequest) {
+        String storedDetails = PaymentMethodSupport.toStoredDetails(paymentMethodRequest);
         PaymentMethod paymentMethod = paymentMethodRepository
                 .findFirstByUserId(currentUser.getId())
                 .orElseGet(() -> {
@@ -78,7 +89,7 @@ public class UserService {
                     return newPaymentMethod;
                 });
         paymentMethod.setMethodType(paymentMethodRequest.methodType());
-        paymentMethod.setMaskedDetails(paymentMethodRequest.maskedDetails());
+        paymentMethod.setMaskedDetails(storedDetails);
         paymentMethodRepository.save(paymentMethod);
     }
 
@@ -96,5 +107,18 @@ public class UserService {
                 user.getUserType(),
                 user.getCustomerNumber()
         );
+    }
+
+    private DeliveryAddressResponse toDeliveryAddressResponse(DeliveryAddress deliveryAddress) {
+        return new DeliveryAddressResponse(
+                deliveryAddress.getStreet(),
+                deliveryAddress.getCity(),
+                deliveryAddress.getPostalCode(),
+                deliveryAddress.getCountry()
+        );
+    }
+
+    private PaymentMethodResponse toPaymentMethodResponse(PaymentMethod paymentMethod) {
+        return new PaymentMethodResponse(paymentMethod.getMethodType(), paymentMethod.getMaskedDetails());
     }
 }

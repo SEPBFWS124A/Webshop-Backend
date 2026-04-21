@@ -26,13 +26,13 @@ public class EmailService {
     private String adminEmailsRaw;
 
     /** US #37 — Sales employee sends a free-form email to a customer. */
-    public void sendEmailToCustomer(User customer, String subject, String body) {
-        sendEmail(customer.getEmail(), subject, body);
+    public boolean sendEmailToCustomer(User customer, String subject, String body) {
+        return sendEmail(customer.getEmail(), subject, body);
     }
 
     /** Sends a password-change confirmation to the user. */
-    public void sendPasswordChangedNotification(User user) {
-        sendEmail(user.getEmail(),
+    public boolean sendPasswordChangedNotification(User user) {
+        return sendEmail(user.getEmail(),
                 "Your password has been changed",
                 "Your webshop account password was recently changed. If this was not you, please contact support.");
     }
@@ -50,8 +50,12 @@ public class EmailService {
     }
 
     /** Internal helper — logs and sends. */
-    public void sendEmail(String toAddress, String subject, String body) {
+    public boolean sendEmail(String toAddress, String subject, String body) {
         try {
+            if (toAddress == null || toAddress.isBlank()) {
+                log.warn("Skipping email because no recipient address was provided for subject {}", subject);
+                return false;
+            }
             SimpleMailMessage message = new SimpleMailMessage();
             if (!mailFrom.isBlank()) {
                 message.setFrom(mailFrom);
@@ -61,8 +65,10 @@ public class EmailService {
             message.setText(body);
             javaMailSender.send(message);
             log.info("Email sent to {}: {}", toAddress, subject);
+            return true;
         } catch (Exception exception) {
             log.error("Failed to send email to {}: {}", toAddress, exception.getMessage());
+            return false;
         }
     }
 }

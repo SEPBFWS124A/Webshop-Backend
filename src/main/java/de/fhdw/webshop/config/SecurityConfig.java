@@ -44,6 +44,11 @@ public class SecurityConfig {
                         // Product browsing is public (US #8 – customers can view catalogue without account)
                         .requestMatchers(HttpMethod.GET, "/api/products").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/products/{id}").permitAll()
+                        .requestMatchers("/api/address-lookup").permitAll()
+                        .requestMatchers("/api/address-lookup/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/orders/checkout").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/orders/guest").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/orders/guest/preview").permitAll()
                         // OpenAPI spec + Swagger UI – accessible without login during development
                         .requestMatchers("/v3/api-docs/**").permitAll()
                         .requestMatchers("/swagger-ui/**").permitAll()
