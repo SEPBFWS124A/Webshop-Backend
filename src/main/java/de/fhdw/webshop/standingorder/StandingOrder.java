@@ -5,20 +5,17 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Recurring order that fires automatically every intervalDays days (US #51–#53, #55). */
 @Entity
 @Table(name = "standing_orders")
 @Getter
 @Setter
 @NoArgsConstructor
 public class StandingOrder {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -27,8 +24,21 @@ public class StandingOrder {
     @JoinColumn(name = "customer_id", nullable = false)
     private User customer;
 
-    @Column(name = "interval_days", nullable = false)
-    private int intervalDays;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "interval_type", nullable = false)
+    private IntervalType intervalType = IntervalType.DAYS;
+
+    @Column(name = "interval_days")
+    private Integer intervalDays;
+
+    @Column(name = "day_of_week")
+    private Integer dayOfWeek;
+
+    @Column(name = "day_of_month")
+    private Integer dayOfMonth;
+
+    @Column(name = "month_of_year")
+    private Integer monthOfYear;
 
     @Column(name = "next_execution_date", nullable = false)
     private LocalDate nextExecutionDate;
