@@ -50,6 +50,7 @@ public class ProductService {
         product.setImageUrl(productRequest.imageUrl());
         product.setRecommendedRetailPrice(productRequest.recommendedRetailPrice());
         product.setCategory(productRequest.category());
+        product.setStock(25);
         return toResponse(productRepository.save(product));
     }
 
@@ -121,6 +122,7 @@ public class ProductService {
                 product.getImageUrl(),
                 product.getRecommendedRetailPrice(),
                 product.getCategory(),
+                product.getStock(),
                 product.isPurchasable(),
                 product.isPromoted(),
                 product.getCreatedAt()
