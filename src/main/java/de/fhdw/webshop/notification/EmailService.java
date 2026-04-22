@@ -17,7 +17,7 @@ import java.util.List;
  * All outgoing emails are redirected to the configured default recipients (isDefault=true)
  * so that no real customer or external addresses ever receive messages in this university project.
  * The originally intended recipient is noted in the email body for transparency.
- * If no default recipients are configured, the email is sent back to the sending address (mailFrom)
+ * If no default recipients are configured, the email is sent back to the sending address (fromAddress)
  * to ensure customer addresses are never reached under any circumstances.
  */
 @Service
@@ -28,8 +28,8 @@ public class EmailService {
     private final JavaMailSender javaMailSender;
     private final KnownEmailAddressRepository knownEmailAddressRepository;
 
-    @Value("${spring.mail.username:}")
-    private String mailFrom;
+    @Value("${app.mail.from:noreply@webshop.local}")
+    private String fromAddress;
 
     @Value("${alert.admin-email:}")
     private String adminEmailsRaw;
@@ -61,7 +61,7 @@ public class EmailService {
     /**
      * Sends an email — always redirected to default recipients (isDefault=true).
      * The originally intended address is prepended to the body for transparency.
-     * Falls back to mailFrom (the sending account itself) if no default recipients are configured,
+     * Falls back to fromAddress (the sending account itself) if no default recipients are configured,
      * ensuring external addresses are never contacted under any circumstances.
      */
     public boolean sendEmail(String intendedAddress, String subject, String body) {
@@ -74,9 +74,8 @@ public class EmailService {
         String redirectedBody = buildRedirectedBody(intendedAddress, body);
 
         if (defaultRecipients.isEmpty()) {
-            String safeAddress = (mailFrom != null && !mailFrom.isBlank()) ? mailFrom : intendedAddress;
-            log.warn("No default recipients configured — redirecting to sending address {}", safeAddress);
-            return dispatchEmail(safeAddress, subject, redirectedBody);
+            log.warn("No default recipients configured — redirecting to sending address {}", fromAddress);
+            return dispatchEmail(fromAddress, subject, redirectedBody);
         }
 
         boolean allSucceeded = true;
@@ -100,9 +99,7 @@ public class EmailService {
     private boolean dispatchEmail(String toAddress, String subject, String body) {
         try {
             SimpleMailMessage message = new SimpleMailMessage();
-            if (mailFrom != null && !mailFrom.isBlank()) {
-                message.setFrom(mailFrom);
-            }
+            message.setFrom(fromAddress);
             message.setTo(toAddress);
             message.setSubject(subject);
             message.setText(body);
