@@ -13,11 +13,16 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * Sends transactional emails via JavaMailSender (configured in application.properties).
- * All outgoing emails are redirected to the configured default recipients (isDefault=true)
- * so that no real customer or external addresses ever receive messages in this university project.
- * The originally intended recipient is noted in the email body for transparency.
- * If no default recipients are configured, the email is sent back to the sending address (fromAddress)
+ * Sends transactional emails via JavaMailSender (configured in
+ * application.properties).
+ * All outgoing emails are redirected to the configured default recipients
+ * (isDefault=true)
+ * so that no real customer or external addresses ever receive messages in this
+ * university project.
+ * The originally intended recipient is noted in the email body for
+ * transparency.
+ * If no default recipients are configured, the email is sent back to the
+ * sending address (fromAddress)
  * to ensure customer addresses are never reached under any circumstances.
  */
 @Service
@@ -61,7 +66,8 @@ public class EmailService {
     /**
      * Sends an email — always redirected to default recipients (isDefault=true).
      * The originally intended address is prepended to the body for transparency.
-     * Falls back to fromAddress (the sending account itself) if no default recipients are configured,
+     * Falls back to fromAddress (the sending account itself) if no default
+     * recipients are configured,
      * ensuring external addresses are never contacted under any circumstances.
      */
     public boolean sendEmail(String intendedAddress, String subject, String body) {
