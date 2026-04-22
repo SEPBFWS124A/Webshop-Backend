@@ -8,5 +8,7 @@ public interface KnownEmailAddressRepository extends JpaRepository<KnownEmailAdd
 
     List<KnownEmailAddress> findAllByOrderByLabelAsc();
 
+    List<KnownEmailAddress> findAllByIsDefaultTrue();
+
     boolean existsByEmail(String email);
 }

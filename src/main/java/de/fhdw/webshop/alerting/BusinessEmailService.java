@@ -14,6 +14,7 @@ import java.util.List;
 public class BusinessEmailService {
 
     private final AlertEventConfigRepository alertEventConfigRepository;
+    private final KnownEmailAddressRepository knownEmailAddressRepository;
     private final EmailService emailService;
 
     @Value("${alert.admin-email:}")
@@ -43,6 +44,17 @@ public class BusinessEmailService {
         }
 
         for (KnownEmailAddress recipient : recipients) {
+            emailService.sendEmail(recipient.getEmail(), subject, body);
+        }
+    }
+
+    public void sendTestAlert(String subject, String body) {
+        List<KnownEmailAddress> defaultRecipients = knownEmailAddressRepository.findAllByIsDefaultTrue();
+        if (defaultRecipients.isEmpty()) {
+            log.warn("Test alert suppressed — no default recipients configured (ALERT_ADMIN_EMAIL not set)");
+            return;
+        }
+        for (KnownEmailAddress recipient : defaultRecipients) {
             emailService.sendEmail(recipient.getEmail(), subject, body);
         }
     }
