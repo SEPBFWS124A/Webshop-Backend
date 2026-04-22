@@ -255,4 +255,9 @@ public class StandingOrderService {
                 items
         );
     }
+
+    // Im StandingOrderService.java
+    public List<Product> getAllProductsForSelection() {
+        return productRepository.findAll();
+    }
 }
