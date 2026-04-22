@@ -206,12 +206,15 @@ Das Backend ist dann erreichbar unter: `http://localhost:8080`
 | `./dev.bat stop --keep-db` | Nur Backend-Container beenden, PostgreSQL läuft weiter |
 | `./dev.bat restart` | Backend-Container neu starten |
 | `./dev.bat restart --keep-db` | Neustart ohne PostgreSQL-Neustart |
-| `./dev.bat rebuild` | Alle Container neu bauen (kein Layer-Cache) + starten |
-| `./dev.bat rebuild --keep-db` | Rebuild Backend ohne PostgreSQL-Neustart |
+| `./dev.bat rebuild` | Alle Container neu bauen (kein Layer-Cache) + PostgreSQL-Volume löschen (frische DB) |
+| `./dev.bat rebuild --keep-db` | Rebuild Backend ohne PostgreSQL-Neustart, Volume bleibt erhalten |
 
 > **Wann `./dev.bat rebuild` statt `./dev.bat restart`?**
 > Nach Änderungen am `Dockerfile` oder wenn der Layer-Cache einen veralteten Stand hat.
 > Für normale Code-Änderungen reicht `restart`.
+>
+> **Achtung:** `rebuild` (ohne `--keep-db`) löscht das PostgreSQL-Volume → alle Daten gehen verloren.
+> Testdaten danach erneut einspielen (Schritt 4).
 
 ### Schritt 3 — Ollama-Modell ziehen (einmalig, nur für Shoppi KI-Assistent)
 ```bash
@@ -319,9 +322,25 @@ src/
     │   │   ├── StandingOrderScheduler.java  ← @Scheduled (täglich 06:00)
     │   │   └── dto/
     │   │
-    │   ├── notification/                   ← E-Mail & Benachrichtigungen
-    │   │   ├── EmailService.java
+    │   ├── notification/                   ← E-Mail & System-Benachrichtigungen
+    │   │   ├── EmailService.java           ← sendet alle E-Mails; leitet intern an Default-Empfänger um
     │   │   ├── NotificationScheduler.java  ← @Scheduled (montags 07:00)
+    │   │   ├── SystemNotification.java     ← In-App-Benachrichtigungen
+    │   │   ├── SystemNotificationService.java
+    │   │   ├── SystemNotificationController.java ← /api/notifications
+    │   │   └── dto/
+    │   │
+    │   ├── alerting/                       ← Business-Alerting & E-Mail-Konfiguration
+    │   │   ├── AlertEventType.java         ← Enum aller konfigurierbaren Alert-Typen
+    │   │   ├── AlertEventConfig.java       ← Entity: pro Event-Typ ein/aus + Empfänger
+    │   │   ├── AlertEventConfigRepository.java
+    │   │   ├── AlertConfigService.java
+    │   │   ├── AlertConfigController.java  ← /api/admin/alerting/events, /emails
+    │   │   ├── KnownEmailAddress.java      ← Entity: bekannte Adressen (isDefault=true = Redirect-Ziel)
+    │   │   ├── KnownEmailAddressRepository.java
+    │   │   ├── BusinessEmailService.java   ← sendet Alerts pro Event-Typ an konfigurierte Empfänger
+    │   │   ├── AlertingDataInitializer.java ← befüllt AlertEventConfig-Zeilen beim ersten Start
+    │   │   ├── RecipientStrategy.java      ← Enum: ALL_DEFAULT / SPECIFIC
     │   │   └── dto/
     │   │
     │   ├── chat/                           ← Shoppi KI-Assistent
@@ -342,7 +361,7 @@ src/
     └── resources/
         ├── application.properties
         └── db/
-            ├── migration/                  ← Flyway SQL-Migrations (V1–V9)
+            ├── migration/                  ← Flyway SQL-Migrations (V1–V18)
             └── dev-seed.sql                ← Testdaten für lokale Entwicklung
 
 docker-compose.yml                          ← Basis: PostgreSQL + Ollama (CPU) + Backend
@@ -384,10 +403,19 @@ HTTP-Antwort ← Controller ← Service ← Repository ← Datenbank
 | V7 | `orders`, `order_items` (price_at_order_time, quantity) |
 | V8 | `standing_orders`, `standing_order_items` |
 | V9 | `audit_log` (user_id, action, entity_type, initiated_by [USER/ADMIN/SYSTEM]) |
+| V10 | Mock-Daten (Produkte, Nutzer, Bestellungen für Entwicklung) |
+| V11 | `cart_items` + `orders` erweitern: Stock-Validierung, Checkout-Felder |
+| V12 | `orders.shipping_method` (Standard/Express) |
+| V13 | `system_notifications` (In-App-Benachrichtigungen für Kunden) |
+| V14 | `standing_orders.interval_type` (DAILY/WEEKLY/MONTHLY/…) |
+| V15 | `follow_up_orders`, `follow_up_order_items` |
+| V16 | Mock-Bestellungen für Reporting/Statistiken |
+| V17 | `alert_event_configs`, `known_email_addresses`, `alert_event_config_recipients` (Alerting) |
+| V18 | Mock-System-Benachrichtigungen |
 
 ### Neue Migration erstellen
 1. Neue Datei unter `src/main/resources/db/migration/` anlegen
-2. Nächste freie Nummer verwenden: `V10__beschreibung.sql`
+2. Nächste freie Nummer verwenden: `V19__beschreibung.sql`
 3. Backend neu starten → Flyway führt die Migration automatisch aus
 
 **Wichtig:** Bestehende Migration-Dateien **niemals ändern** — immer eine neue anlegen.
@@ -412,6 +440,8 @@ Im `docs/`-Ordner dieses Repos liegt eine ausführliche Dokumentation für jedes
 | [`docs/milestone-5-crm-vertrieb.md`](docs/milestone-5-crm-vertrieb.md) | Issues #24, #26–#27, #29, #33–#38, #43, #54 |
 | [`docs/milestone-6-administration-audit.md`](docs/milestone-6-administration-audit.md) | Issues #19, #58–#62 |
 | [`docs/milestone-8-kundenservice.md`](docs/milestone-8-kundenservice.md) | Issues #11, #12, #21, #22, #30, #32 |
+| [`docs/milestone-monitoring-alerting.md`](docs/milestone-monitoring-alerting.md) | Monitoring, Alerting, Admin-UI |
+| [`docs/email-integration.md`](docs/email-integration.md) | E-Mail-System: Redirect-Mechanismus, EmailService, BusinessEmailService, Anbindung neuer Features |
 
 Jede Datei enthält: exakte Endpunkte, Request/Response-Felder, benötigte Rolle und Frontend-Codebeispiele.
 
@@ -728,6 +758,22 @@ Invoke-RestMethod -Method Post http://localhost:8080/api/chat/message `
 | Identität annehmen | POST | `/api/admin/impersonate/{userId}` | ADMIN |
 | Audit-Log | GET | `/api/admin/audit-log` | ADMIN |
 
+#### Alerting-Endpunkte (`/api/admin/alerting`)
+
+| Aktion | Methode | URL | Rolle |
+|---|---|---|---|
+| Alert-Events laden | GET | `/api/admin/alerting/events` | ADMIN |
+| Alert-Event konfigurieren | PUT | `/api/admin/alerting/events/{eventType}` | ADMIN |
+| Bekannte E-Mail-Adressen laden | GET | `/api/admin/alerting/emails` | ADMIN |
+| E-Mail-Adresse hinzufügen | POST | `/api/admin/alerting/emails` | ADMIN |
+| E-Mail-Adresse löschen | DELETE | `/api/admin/alerting/emails/{id}` | ADMIN |
+
+`PUT /api/admin/alerting/events/{eventType}` Body: `{ "enabled": true, "recipientStrategy": "ALL_DEFAULT" }` (`recipientStrategy`: `ALL_DEFAULT` oder `SPECIFIC`).
+
+`POST /api/admin/alerting/emails` Body: `{ "email": "admin@example.com", "label": "Admin", "isDefault": true }`.
+
+Adressen mit `isDefault=true` dienen als Redirect-Ziel für **alle** ausgehenden E-Mails (Uni-Projekt-Schutzmaßnahme — keine echten Kunden-E-Mail-Adressen werden kontaktiert).
+
 ---
 
 ### Fehlerbehandlung
@@ -799,6 +845,15 @@ CORS_ALLOWED_ORIGINS=http://localhost:5173
 # Mail (für Benachrichtigungen)
 MAIL_HOST=localhost
 MAIL_PORT=1025
+MAIL_FROM=noreply@webshop.local
+MAIL_SMTP_AUTH=false
+MAIL_SMTP_STARTTLS=false
+MAIL_SMTP_SSL_ENABLE=false
+
+# Alerting (Empfänger für Monitoring-Alerts)
+ALERT_ADMIN_EMAIL=admin@example.com
+ALERT_ERROR_RATE_THRESHOLD=10
+ALERT_HEAP_USAGE_THRESHOLD_PERCENT=85
 
 # Shoppi KI-Assistent (Ollama)
 OLLAMA_BASE_URL=http://ollama:11434
@@ -1176,18 +1231,26 @@ curl http://localhost:8081/actuator/prometheus  # → Connection refused
 
 ### Alerting per E-Mail
 
-Alerts werden per E-Mail an alle Adressen in `ALERT_ADMIN_EMAIL` gesendet (kommagetrennte Liste). Ohne konfigurierte Adresse werden Alerts nur als `log.warn` ausgegeben. Ist `ALERT_ADMIN_EMAIL` nicht gesetzt, wird `MAIL_USERNAME` als Empfänger verwendet (self-send).
+Alerts werden über `BusinessEmailService` versendet. Jeder Alert-Typ (`AlertEventType`) hat eine eigene Konfigurationszeile in der Datenbank — der Admin kann pro Typ festlegen ob er aktiv ist und an welche `KnownEmailAddress`-Einträge er geht.
+
+**Wichtig — E-Mail-Umleitung (Uni-Projekt):**
+`EmailService` leitet **alle** ausgehenden E-Mails (Kunden-Transaktionen, Alerts, Passwortänderungen) an die konfigurierten `isDefault=true`-Adressen um. Die ursprünglich vorgesehene Empfängeradresse wird im E-Mail-Body dokumentiert. Sind keine Default-Adressen konfiguriert, sendet das System an die eigene Absenderadresse (`APP_MAIL_FROM`) — externe Adressen werden niemals kontaktiert. Einrichtung: `KnownEmailAddress` per Admin-UI unter `/admin/alerting` anlegen und `isDefault=true` setzen.
 
 | Alert | Schwellenwert | Intervall |
 |---|---|---|
-| HTTP 5xx Fehlerquote | `ALERT_ERROR_RATE_THRESHOLD` (Standard: 5) | alle 15 min |
-| JVM Heap-Auslastung | `ALERT_HEAP_USAGE_THRESHOLD_PERCENT` (Standard: 80 %) | alle 30 min |
+| HTTP 5xx Fehlerquote | `ALERT_ERROR_RATE_THRESHOLD` (Standard: 10) | alle 15 min |
+| JVM Heap-Auslastung | `ALERT_HEAP_USAGE_THRESHOLD_PERCENT` (Standard: 85 %) | alle 30 min |
 
 ### Umgebungsvariablen (Alerting)
 
 ```properties
-# Einzelne Adresse oder kommagetrennte Liste:
+# Empfänger-Adressen für Monitoring-Alerts (Fallback wenn keine DB-Konfiguration):
 ALERT_ADMIN_EMAIL=admin@example.com,ops@example.com
-ALERT_ERROR_RATE_THRESHOLD=5
-ALERT_HEAP_USAGE_THRESHOLD_PERCENT=80
+ALERT_ERROR_RATE_THRESHOLD=10
+ALERT_HEAP_USAGE_THRESHOLD_PERCENT=85
+
+# Absenderadresse (Fallback wenn keine isDefault-Adresse konfiguriert):
+MAIL_FROM=noreply@webshop.local
 ```
+
+Alternativ werden Empfänger über die Admin-UI (`/admin/alerting`) in der Datenbank konfiguriert — das hat Vorrang vor `ALERT_ADMIN_EMAIL`. Weitere Details: [`docs/email-integration.md`](docs/email-integration.md).

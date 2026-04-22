@@ -71,6 +71,8 @@ Webshop-Backend/
 │   ├── ROLLEN.md              ← Rollenkonzept + vollständige Berechtigungsmatrix
 │   ├── milestone-1-auth-benutzerverwaltung.md
 │   ├── milestone-2-produktkatalog.md
+│   ├── milestone-monitoring-alerting.md ← Monitoring, Alerting, Admin-UI
+│   ├── email-integration.md   ← E-Mail-System, Redirect-Mechanismus, Anbindung neuer Features
 │   └── ...                    ← eine Datei pro Frontend-Milestone
 ├── mvnw / mvnw.cmd            ← Maven Wrapper (wird von GitHub Actions CI genutzt)
 ├── .mvn/wrapper/
@@ -334,7 +336,16 @@ src/main/resources/db/migration/
 ├── V6__create_cart.sql
 ├── V7__create_orders.sql
 ├── V8__create_standing_orders.sql
-└── V9__create_audit_log.sql
+├── V9__create_audit_log.sql
+├── V10__mock_data.sql
+├── V11__extend_cart_checkout_and_stock.sql
+├── V12__add_shipping_method_to_orders.sql
+├── V13__create_system_notifications.sql
+├── V14__add_standing_order_interval_types.sql
+├── V15__create_follow_up_orders.sql
+├── V16__mock_reporting_orders.sql
+├── V17__create_alerting_tables.sql
+└── V18__mock_system_notifications.sql
 ```
 
 Beim Start prüft Flyway die Tabelle `flyway_schema_history` in der Datenbank.
@@ -401,7 +412,12 @@ de.fhdw.webshop/
 ├── discount/        ← Rabatte und Coupons
 ├── customer/        ← Mitarbeiter-Endpunkte für Kundenverwaltung
 ├── standingorder/   ← Daueraufträge
-├── notification/    ← E-Mail und automatische Benachrichtigungen
+├── followuporder/   ← Folgebestellungen
+├── notification/    ← E-Mail, System-Benachrichtigungen, Scheduler
+├── alerting/        ← Business-Alerting, bekannte E-Mail-Adressen, Admin-Konfiguration
+├── recommendation/  ← Shoppi-Produktempfehlungen
+├── address/         ← Adress-Lookup (PLZ-Validierung)
+├── chat/            ← Shoppi KI-Assistent
 └── admin/           ← Admin-Endpunkte und Audit-Log
 ```
 
@@ -715,9 +731,16 @@ CRUD-Endpunkte unter `/api/standing-orders`.
 ### notification/
 
 **`EmailService.java`**
-Versendet E-Mails über JavaMailSender (konfiguriert in `application.properties`
-mit MAIL_HOST/PORT). Lokal läuft kein echter Mail-Server — man kann
-[MailHog](https://github.com/mailhog/MailHog) als lokalen Mail-Catcher verwenden.
+Versendet E-Mails über `JavaMailSender`. Alle ausgehenden E-Mails werden an die
+konfigurierten `isDefault=true`-Adressen aus `KnownEmailAddressRepository` umgeleitet —
+die ursprünglich vorgesehene Empfängeradresse wird im E-Mail-Body dokumentiert.
+Das ist eine bewusste Schutzmaßnahme für das Uni-Projekt: echte Kundenemails werden
+nie kontaktiert. Sind keine Default-Adressen konfiguriert, sendet das System an die
+eigene Absenderadresse (`APP_MAIL_FROM`). Drei öffentliche Methoden:
+- `sendEmail(intendedAddress, subject, body)` — allgemeine Methode, alle anderen delegieren hierhin
+- `sendEmailToCustomer(customer, subject, body)` — Wrapper für Kunden-E-Mails
+- `sendPasswordChangedNotification(user)` — Passwortänderungs-Bestätigung
+- `sendAdminAlert(subject, body)` — Monitoring-Alerts an `ALERT_ADMIN_EMAIL`
 
 **`NotificationScheduler.java`**
 ```java
@@ -759,6 +782,52 @@ Datenbankzugriff auf `audit_log`.
 - `POST /api/admin/impersonate/{userId}` — generiert einen JWT der als ein anderer User
   funktioniert (wird im Audit-Log mit `initiatedBy = ADMIN` protokolliert)
 - `GET /api/admin/audit-log` — Transaktionshistorie
+
+---
+
+### alerting/
+
+**`AlertEventType.java`**
+Enum aller konfigurierbaren Alert-Typen (z.B. `HIGH_ERROR_RATE`, `HIGH_HEAP_USAGE`).
+Jeder Wert entspricht einer Zeile in `alert_event_configs`.
+
+**`AlertEventConfig.java`**
+Entity für `alert_event_configs`. Speichert pro Event-Typ: `enabled` (an/aus),
+`recipientStrategy` (`ALL_DEFAULT` = alle Default-Adressen, `SPECIFIC` = eigene Liste)
+und eine Liste von `KnownEmailAddress`-Empfängern. Wird beim ersten Start durch
+`AlertingDataInitializer` mit Zeilen für alle bekannten `AlertEventType`-Werte befüllt.
+
+**`KnownEmailAddress.java`**
+Entity für `known_email_addresses`. Speichert `email`, `label` und `isDefault`.
+Adressen mit `isDefault=true` dienen als Redirect-Ziel für **alle** ausgehenden
+E-Mails in `EmailService` — kein Kunden-E-Mail-Versand ohne explizite Konfiguration.
+
+**`BusinessEmailService.java`**
+Versendet Business-Alerts pro `AlertEventType`. Liest die Konfiguration aus
+`AlertEventConfig`: wenn aktiviert, werden die konfigurierten Empfänger benachrichtigt.
+Enthält auch `sendTestAlert()` für manuellen Test aus der Admin-UI.
+
+**`AlertConfigController.java`**
+REST-Endpunkte unter `/api/admin/alerting/` (alle ADMIN-geschützt):
+- `GET /events` — alle Alert-Typ-Konfigurationen laden
+- `PUT /events/{eventType}` — einzelnen Alert-Typ aktivieren/deaktivieren
+- `GET /emails` — alle bekannten E-Mail-Adressen
+- `POST /emails` — neue Adresse hinzufügen
+- `DELETE /emails/{id}` — Adresse entfernen
+
+**`AlertingDataInitializer.java`**
+`@Component` mit `@PostConstruct`: legt beim Start fehlende `AlertEventConfig`-Zeilen
+in der Datenbank an. Wird nur einmal ausgeführt — bestehende Konfigurationen bleiben
+unverändert.
+
+**`RecipientStrategy.java`**
+Enum: `ALL_DEFAULT` (alle `isDefault=true`-Adressen) oder `SPECIFIC` (nur die
+direkt am `AlertEventConfig` hängenden Adressen).
+
+**`dto/`**
+- `AddKnownEmailRequest.java` — `{ email, label, isDefault }`
+- `UpdateAlertEventConfigRequest.java` — `{ enabled, recipientStrategy }`
+- `AlertEventConfigResponse.java` / `KnownEmailAddressResponse.java`
 
 ---
 
@@ -933,15 +1002,27 @@ dev.ps1 restart
 
 ```
 dev.ps1 rebuild
-  └── docker compose up -d --build --force-recreate
-        → --force-recreate: Container immer neu erstellen
-        → kein Layer-Cache: Maven lädt Dependencies neu (wie erster Start)
+  ├── (ohne --keep-db):
+  │     docker compose down
+  │     docker volume rm <postgres_data>   → Datenbank-Volume gelöscht (frische DB!)
+  │     docker compose up -d --build --force-recreate
+  │
+  └── (mit --keep-db):
+        docker compose up -d --build --force-recreate backend
+        → PostgreSQL-Volume bleibt erhalten, Daten bleiben erhalten
+```
+
+**Wichtig:** `rebuild` ohne `--keep-db` löscht das PostgreSQL-Volume — alle Daten
+gehen verloren. Testdaten danach erneut einspielen:
+```powershell
+Get-Content src/main/resources/db/dev-seed.sql | docker exec -i webshop-postgres psql -U webshop -d webshop
 ```
 
 **Wann rebuild nötig:**
 - `Dockerfile` geändert
 - `pom.xml` geändert und der Layer-Cache hat einen alten Stand
 - Build-Fehler die sich nicht durch `restart` beheben lassen
+- Saubere Datenbank für Tests gewünscht
 
 ---
 
@@ -1130,36 +1211,63 @@ dashboards/spring-boot-overview.json → Übersichts-Dashboard (Status, Uptime, 
 
 Kein manuelles Klicken in der Grafana-UI nötig — Dashboards sind sofort beim ersten Start verfügbar.
 
-### Alert-System (`NotificationScheduler`)
+### Alert-System (`NotificationScheduler` + `BusinessEmailService`)
 
-Zwei neue `@Scheduled`-Methoden lesen Metriken direkt via `MeterRegistry`:
+Zwei `@Scheduled`-Methoden in `NotificationScheduler` lesen Metriken direkt via `MeterRegistry`:
 
 **`checkHighErrorRate()`** — läuft alle 15 Minuten:
 ```java
 Counter errorCounter = meterRegistry.find("http.server.requests")
     .tag("outcome", "SERVER_ERROR").counter();
 double errorsInInterval = currentCount - lastSnapshot;
-if (errorsInInterval >= errorRateThreshold) emailService.sendAdminAlert(...);
+if (errorsInInterval >= errorRateThreshold)
+    businessEmailService.sendAlert(AlertEventType.HIGH_ERROR_RATE, subject, body);
 ```
 Differenzbildung nötig, weil Micrometer kumulative Counter führt.
 
 **`checkJvmHeapUsage()`** — läuft alle 30 Minuten:
 ```java
 double usedPercent = 100.0 * usedBytes / maxBytes;
-if (usedPercent >= heapUsageThresholdPercent) emailService.sendAdminAlert(...);
+if (usedPercent >= heapUsageThresholdPercent)
+    businessEmailService.sendAlert(AlertEventType.HIGH_HEAP_USAGE, subject, body);
 ```
 
-**`EmailService.sendAdminAlert()`** — neue Methode:
-- Liest `alert.admin-email` aus `application.properties` (kommagetrennte Empfängerliste)
-- Leer → nur `log.warn()`, keine E-Mail (kein Crash)
-- Konfigurierbar via Umgebungsvariable `ALERT_ADMIN_EMAIL`; fehlt diese, wird `MAIL_USERNAME` als Empfänger verwendet (self-send)
+**`BusinessEmailService.sendAlert(eventType, subject, body)`:**
+1. Liest `AlertEventConfig` für den übergebenen `eventType` aus der Datenbank
+2. Wenn deaktiviert → nur `log.debug()`, kein Versand
+3. Wenn `recipientStrategy = ALL_DEFAULT` → sendet an alle `KnownEmailAddress` mit `isDefault=true`
+4. Wenn `recipientStrategy = SPECIFIC` → sendet an die direkt konfigurierten Empfänger
+5. Keine Konfiguration → Fallback auf `ALERT_ADMIN_EMAIL` aus `.env`
+
+**E-Mail-Umleitung (Uni-Projekt):**
+`EmailService.sendEmail()` leitet unabhängig vom Aufrufkontext alle E-Mails an
+`isDefault=true`-Adressen um. Der ursprüngliche Empfänger erscheint im Body-Header:
+```
+================================================================
+[Universitätsprojekt – E-Mail-Umleitung aktiv]
+Ursprünglicher Empfänger: kunde@example.com
+================================================================
+
+[eigentlicher E-Mail-Inhalt]
+```
+Sind keine Default-Adressen konfiguriert, geht die E-Mail an `APP_MAIL_FROM` (Selbstversand).
+So können alle Email-Features sicher getestet werden ohne echte Adressen zu kontaktieren.
 
 ### Konfigurierbare Schwellenwerte
 
 | Property | Env-Variable | Standard | Bedeutung |
 |---|---|---|---|
-| `alert.admin-email` | `ALERT_ADMIN_EMAIL` | = `MAIL_USERNAME` | Kommagetrennte Empfänger-Adressen |
-| `alert.error-rate.threshold` | `ALERT_ERROR_RATE_THRESHOLD` | 5 | 5xx-Fehler pro 15 min |
-| `alert.heap-usage.threshold-percent` | `ALERT_HEAP_USAGE_THRESHOLD_PERCENT` | 80 | JVM Heap % |
+| `app.mail.from` | `APP_MAIL_FROM` | `noreply@webshop.local` | Absenderadresse + Fallback wenn keine Default-Empfänger |
+| `alert.admin-email` | `ALERT_ADMIN_EMAIL` | — | Kommagetrennte Fallback-Empfänger (wenn keine DB-Konfiguration) |
+| `alert.error-rate.threshold` | `ALERT_ERROR_RATE_THRESHOLD` | 10 | 5xx-Fehler pro 15 min |
+| `alert.heap-usage.threshold-percent` | `ALERT_HEAP_USAGE_THRESHOLD_PERCENT` | 85 | JVM Heap % |
 
 Alle Werte können via `.env`-Datei oder Docker-Compose `environment:` überschrieben werden.
+Empfänger-Konfiguration per Admin-UI hat Vorrang vor `.env`-Variablen.
+
+### Admin-UI für Alerting
+
+Die React-Seite `/admin/alerting` nutzt die Endpunkte unter `/api/admin/alerting/`:
+- **E-Mail-Adressen verwalten** — Adressen mit `isDefault=true` als globale Redirect-Ziele setzen
+- **Alert-Events konfigurieren** — pro Typ aktivieren/deaktivieren, Empfängerstrategie wählen
+- **Test-Alert senden** — prüft ob E-Mail-Versand grundsätzlich funktioniert
