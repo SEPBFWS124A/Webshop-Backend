@@ -193,6 +193,11 @@ show_seed_hint() {
     echo "  docker exec webshop-ollama ollama pull gemma4:e4b"
     echo "  (This downloads ~10 GB on first run. Model is cached in the ollama_data volume.)"
     echo ""
+    echo "--- Monitoring & Alerting ---"
+    echo "  Grafana:    http://localhost:3001  (admin / admin)"
+    echo "  Dashboards: JVM Overview, HTTP Requests, Spring Boot Overview"
+    echo "  Prometheus scrapes backend:8081 internally - not reachable from outside Docker."
+    echo ""
 }
 
 show_usage() {

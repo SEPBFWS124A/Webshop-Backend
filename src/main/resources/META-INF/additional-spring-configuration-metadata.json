@@ -1,0 +1,21 @@
+{
+  "properties": [
+    {
+      "name": "alert.admin-email",
+      "type": "java.lang.String",
+      "description": "Comma-separated list of email addresses that receive monitoring alerts. Defaults to spring.mail.username (self-send). Leave empty to suppress alert emails."
+    },
+    {
+      "name": "alert.error-rate.threshold",
+      "type": "java.lang.Integer",
+      "description": "Number of HTTP 5xx errors in a 15-minute window that triggers an alert email.",
+      "defaultValue": 10
+    },
+    {
+      "name": "alert.heap-usage.threshold-percent",
+      "type": "java.lang.Integer",
+      "description": "JVM heap usage percentage that triggers an alert email.",
+      "defaultValue": 85
+    }
+  ]
+}

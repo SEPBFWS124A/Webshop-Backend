@@ -30,6 +30,8 @@ services:
     container_name: webshop-backend
     ports:
       - "8080:8080"
+      # Port 8081 (management/actuator) is intentionally NOT mapped here.
+      # Prometheus scrapes it via the internal Docker network only.
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/webshop
       SPRING_DATASOURCE_USERNAME: webshop
@@ -47,12 +49,54 @@ services:
       SPRING_MAIL_PROPERTIES_MAIL_SMTP_TIMEOUT: ${MAIL_SMTP_TIMEOUT:-5000}
       SPRING_MAIL_PROPERTIES_MAIL_SMTP_WRITETIMEOUT: ${MAIL_SMTP_WRITE_TIMEOUT:-5000}
       APP_MAIL_FROM: ${MAIL_FROM:-noreply@webshop.local}
+      ALERT_ADMIN_EMAIL: ${ALERT_ADMIN_EMAIL:-}
+      ALERT_ERROR_RATE_THRESHOLD: ${ALERT_ERROR_RATE_THRESHOLD:-10}
+      ALERT_HEAP_USAGE_THRESHOLD_PERCENT: ${ALERT_HEAP_USAGE_THRESHOLD_PERCENT:-85}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
 
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: webshop-prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+    # Port 9090 is intentionally NOT mapped — only Grafana accesses Prometheus internally.
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:latest
+    container_name: webshop-blackbox
+    # Port 9115 intentionally NOT mapped — only Prometheus accesses it internally.
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: webshop-grafana
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   ollama_data:
+  prometheus_data:
+  grafana_data:

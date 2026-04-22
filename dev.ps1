@@ -195,6 +195,11 @@ function Show-SeedHint {
     Write-Host "  docker exec webshop-ollama ollama pull gemma4:e4b"
     Write-Host "  (This downloads ~10 GB on first run. The model is cached in the ollama_data volume.)"
     Write-Host ""
+    Write-Host "--- Monitoring & Alerting ---"
+    Write-Host "  Grafana:    http://localhost:3001  (admin / admin)"
+    Write-Host "  Dashboards: JVM Overview, HTTP Requests, Spring Boot Overview"
+    Write-Host "  Prometheus scrapes backend:8081 internally - not reachable from outside Docker."
+    Write-Host ""
 }
 
 # --- stop --------------------------------------------------------------------
