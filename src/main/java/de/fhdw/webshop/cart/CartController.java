@@ -2,6 +2,7 @@ package de.fhdw.webshop.cart;
 
 import de.fhdw.webshop.cart.dto.AddToCartRequest;
 import de.fhdw.webshop.cart.dto.CartResponse;
+import de.fhdw.webshop.cart.dto.UpdateCartItemQuantityRequest;
 import de.fhdw.webshop.user.User;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -20,8 +21,9 @@ public class CartController {
     /** US #41 — View own cart. */
     @GetMapping
     @PreAuthorize("hasRole('CUSTOMER')")
-    public ResponseEntity<CartResponse> getCart(@AuthenticationPrincipal User currentUser) {
-        return ResponseEntity.ok(cartService.getCart(currentUser.getId()));
+    public ResponseEntity<CartResponse> getCart(@AuthenticationPrincipal User currentUser,
+                                                @RequestParam(required = false) String couponCode) {
+        return ResponseEntity.ok(cartService.getCart(currentUser.getId(), couponCode));
     }
 
     /** US #39 — Add an item to own cart. */
@@ -38,6 +40,22 @@ public class CartController {
     public ResponseEntity<CartResponse> removeItem(@AuthenticationPrincipal User currentUser,
                                                    @PathVariable Long productId) {
         return ResponseEntity.ok(cartService.removeItem(currentUser, productId));
+    }
+
+    /** US #73 — Update the quantity of a cart item; quantity 0 removes it. */
+    @PutMapping("/items/{productId}")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<CartResponse> updateItemQuantity(@AuthenticationPrincipal User currentUser,
+                                                           @PathVariable Long productId,
+                                                           @Valid @RequestBody UpdateCartItemQuantityRequest request) {
+        return ResponseEntity.ok(cartService.updateItemQuantity(currentUser, productId, request.quantity()));
+    }
+
+    /** US #76 — Clear the full cart. */
+    @DeleteMapping
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<CartResponse> clearCart(@AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(cartService.clearCart(currentUser.getId()));
     }
 
     /** US #50 — Add all re-orderable items from a previous order into the cart. */

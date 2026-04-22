@@ -7,7 +7,12 @@ import de.fhdw.webshop.order.OrderStatus;
 import de.fhdw.webshop.product.Product;
 import de.fhdw.webshop.product.ProductRepository;
 import de.fhdw.webshop.product.ProductService;
+import de.fhdw.webshop.notification.EmailService;
 import de.fhdw.webshop.standingorder.dto.*;
+import de.fhdw.webshop.user.DeliveryAddress;
+import de.fhdw.webshop.user.DeliveryAddressRepository;
+import de.fhdw.webshop.user.PaymentMethod;
+import de.fhdw.webshop.user.PaymentMethodRepository;
 import de.fhdw.webshop.user.User;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -15,11 +20,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -30,11 +36,16 @@ import java.util.stream.Collectors;
 public class StandingOrderService {
 
     private static final BigDecimal TAX_RATE = new BigDecimal("0.19");
+    private static final BigDecimal SHIPPING_COST = new BigDecimal("4.99");
+    private static final BigDecimal FREE_SHIPPING_THRESHOLD = new BigDecimal("50.00");
 
     private final StandingOrderRepository repository;
     private final ProductRepository productRepository;
     private final OrderRepository orderRepository;
     private final ProductService.DiscountLookupPort discountLookupPort;
+    private final DeliveryAddressRepository deliveryAddressRepository;
+    private final PaymentMethodRepository paymentMethodRepository;
+    private final EmailService emailService;
 
     public List<StandingOrderResponse> listForCustomer(Long customerId) {
         return repository.findByCustomerId(customerId).stream()
@@ -49,8 +60,7 @@ public class StandingOrderService {
         so.setNextExecutionDate(request.firstExecutionDate());
         so.setActive(true);
         so.setCreatedAt(Instant.now());
-        
-        // Mapping der Intervall-Felder aus dem Request
+
         so.setIntervalType(request.intervalType());
         so.setIntervalValue(request.intervalValue());
         so.setDayOfWeek(request.dayOfWeek());
@@ -58,7 +68,6 @@ public class StandingOrderService {
         so.setMonthOfYear(request.monthOfYear());
         so.setCountBackwards(request.countBackwards());
 
-        // WICHTIG: Sicherstellen, dass die Liste initialisiert ist
         if (so.getItems() == null) {
             so.setItems(new ArrayList<>());
         }
@@ -67,7 +76,7 @@ public class StandingOrderService {
             for (var itemReq : request.items()) {
                 Product product = productRepository.findById(itemReq.productId())
                         .orElseThrow(() -> new EntityNotFoundException("Produkt nicht gefunden: " + itemReq.productId()));
-                
+
                 StandingOrderItem item = new StandingOrderItem();
                 item.setProduct(product);
                 item.setQuantity(itemReq.quantity());
@@ -111,13 +120,10 @@ public class StandingOrderService {
     public void cancel(Long standingOrderId, Long customerId) {
         StandingOrder so = repository.findByIdAndCustomerId(standingOrderId, customerId)
                 .orElseThrow(() -> new EntityNotFoundException("Dauerauftrag nicht gefunden"));
-        
-        repository.delete(so); // <--- Jetzt wird er wirklich gelöscht
+
+        repository.delete(so);
     }
 
-    /**
-     * US #55 — Diese Methode behebt den Fehler im StandingOrderScheduler.
-     */
     @Transactional
     public void executeAllDue() {
         log.info("Suche nach fälligen Daueraufträgen...");
@@ -132,51 +138,65 @@ public class StandingOrderService {
     }
 
     private void processSingleStandingOrder(StandingOrder so) {
+        User customer = so.getCustomer();
         Order order = new Order();
-        order.setCustomer(so.getCustomer());
-        order.setStatus(OrderStatus.PENDING);
-        order.setCreatedAt(Instant.now());
-        // Wichtig: In Order.java ist shippingCost 'nullable = false'
-        order.setShippingCost(BigDecimal.ZERO); 
-        
-        List<OrderItem> orderItems = new ArrayList<>();
-        BigDecimal total = BigDecimal.ZERO;
+        order.setCustomer(customer);
+        order.setStatus(OrderStatus.CONFIRMED);
+        order.setOrderNumber(buildStandingOrderOrderNumber());
+        order.setCustomerEmail(customer.getEmail());
+        order.setCustomerName(customer.getUsername());
+
+        deliveryAddressRepository.findFirstByUserId(customer.getId())
+                .ifPresent(addr -> applyDeliveryAddress(order, addr));
+        paymentMethodRepository.findFirstByUserId(customer.getId())
+                .ifPresent(pm -> applyPaymentMethod(order, pm));
+
+        BigDecimal subtotal = BigDecimal.ZERO;
+        List<Product> updatedProducts = new ArrayList<>();
 
         for (StandingOrderItem sItem : so.getItems()) {
-            OrderItem oItem = new OrderItem();
-            oItem.setProduct(sItem.getProduct());
-            oItem.setQuantity(sItem.getQuantity());
-            
-            // 1. Korrektur: getRecommendedRetailPrice() statt getPrice() (aus Product.java)
-            BigDecimal price = sItem.getProduct().getRecommendedRetailPrice();
-            
-            // 2. Korrektur: Falls getDiscountForProduct rot bleibt, 
-            // schau bitte kurz in das Interface 'ProductService.DiscountLookupPort'
-            // ob die Methode dort eventuell 'getDiscount' oder ähnlich heißt.
+            Product product = sItem.getProduct();
+            if (!product.isPurchasable() || product.getStock() <= 0) {
+                continue;
+            }
+            int quantity = Math.min(sItem.getQuantity(), product.getStock());
+            if (quantity <= 0) {
+                continue;
+            }
+
+            BigDecimal price = product.getRecommendedRetailPrice();
             BigDecimal discount = discountLookupPort.findBestActiveDiscountPercent(
-                so.getCustomer().getId(), 
-                sItem.getProduct().getId()
-            );
-            BigDecimal finalPrice = applyDiscount(price, discount);
-            
-            // 3. Korrektur: setPriceAtOrderTime() statt setPriceAtPurchase() (aus OrderItem.java)
-            oItem.setPriceAtOrderTime(finalPrice);
-            oItem.setOrder(order);
-            orderItems.add(oItem);
-            
-            total = total.add(finalPrice.multiply(BigDecimal.valueOf(sItem.getQuantity())));
+                    customer.getId(), product.getId());
+            BigDecimal unitPrice = applyDiscount(price, discount);
+
+            OrderItem orderItem = new OrderItem();
+            orderItem.setOrder(order);
+            orderItem.setProduct(product);
+            orderItem.setQuantity(quantity);
+            orderItem.setPriceAtOrderTime(unitPrice);
+            order.getItems().add(orderItem);
+
+            subtotal = subtotal.add(unitPrice.multiply(BigDecimal.valueOf(quantity)));
+            product.setStock(product.getStock() - quantity);
+            updatedProducts.add(product);
         }
 
-        order.setItems(orderItems);
-        
-        // 4. Korrektur: setTotalPrice() statt setTotalAmount() (aus Order.java)
-        order.setTotalPrice(total);
-        order.setTaxAmount(total.multiply(TAX_RATE).setScale(2, RoundingMode.HALF_UP));
-        
+        if (order.getItems().isEmpty()) {
+            return;
+        }
+
+        BigDecimal shippingCost = calculateShippingCost(subtotal);
+        BigDecimal taxAmount = subtotal.multiply(TAX_RATE).setScale(2, RoundingMode.HALF_UP);
+        order.setShippingCost(shippingCost);
+        order.setTaxAmount(taxAmount);
+        order.setTotalPrice(subtotal.add(taxAmount).add(shippingCost).setScale(2, RoundingMode.HALF_UP));
+
         orderRepository.save(order);
+        productRepository.saveAll(updatedProducts);
 
         updateNextExecutionDate(so);
         repository.save(so);
+        sendStandingOrderConfirmation(order, so);
     }
 
     private void updateNextExecutionDate(StandingOrder so) {
@@ -186,7 +206,6 @@ public class StandingOrderService {
         switch (so.getIntervalType()) {
             case DAYS -> next = next.plusDays(val);
             case WEEKS -> {
-                // Springt X Wochen weiter und setzt den Wochentag exakt
                 next = next.plusWeeks(val);
                 if (so.getDayOfWeek() != null) {
                     next = next.with(java.time.DayOfWeek.of(so.getDayOfWeek()));
@@ -195,10 +214,8 @@ public class StandingOrderService {
             case MONTHS -> {
                 next = next.plusMonths(val);
                 if (so.isCountBackwards()) {
-                    // Vom Ende des Monats zurückzählen
                     next = next.withDayOfMonth(next.lengthOfMonth()).minusDays(so.getDayOfMonth() - 1);
                 } else {
-                    // Normaler Tag im Monat (begrenzt auf Monatslänge, z.B. 31. vs 30.)
                     next = next.withDayOfMonth(Math.min(so.getDayOfMonth(), next.lengthOfMonth()));
                 }
             }
@@ -206,7 +223,8 @@ public class StandingOrderService {
                 next = next.plusYears(val);
                 if (so.getMonthOfYear() != null && so.getDayOfMonth() != null) {
                     next = next.withMonth(so.getMonthOfYear())
-                            .withDayOfMonth(Math.min(so.getDayOfMonth(), next.plusYears(0).withMonth(so.getMonthOfYear()).lengthOfMonth()));
+                            .withDayOfMonth(Math.min(so.getDayOfMonth(),
+                                    next.withMonth(so.getMonthOfYear()).lengthOfMonth()));
                 }
             }
         }
@@ -217,12 +235,10 @@ public class StandingOrderService {
     public StandingOrderResponse toggleActive(Long id, Long customerId) {
         StandingOrder so = repository.findByIdAndCustomerId(id, customerId)
                 .orElseThrow(() -> new EntityNotFoundException("Dauerauftrag nicht gefunden"));
-        
+
         so.setActive(!so.isActive());
-        
-        // Wir speichern und erzwingen das Schreiben in die DB
-        StandingOrder saved = repository.saveAndFlush(so); 
-        
+        StandingOrder saved = repository.saveAndFlush(so);
+
         return mapToResponse(saved);
     }
 
@@ -230,6 +246,60 @@ public class StandingOrderService {
         if (discountPercent == null || discountPercent.compareTo(BigDecimal.ZERO) == 0) return price;
         BigDecimal multiplier = BigDecimal.ONE.subtract(discountPercent.divide(BigDecimal.valueOf(100)));
         return price.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal calculateShippingCost(BigDecimal subtotal) {
+        if (subtotal == null || subtotal.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+        if (subtotal.compareTo(FREE_SHIPPING_THRESHOLD) >= 0) {
+            return BigDecimal.ZERO;
+        }
+        return SHIPPING_COST;
+    }
+
+    private void applyDeliveryAddress(Order order, DeliveryAddress deliveryAddress) {
+        order.setDeliveryStreet(deliveryAddress.getStreet());
+        order.setDeliveryCity(deliveryAddress.getCity());
+        order.setDeliveryPostalCode(deliveryAddress.getPostalCode());
+        order.setDeliveryCountry(deliveryAddress.getCountry());
+    }
+
+    private void applyPaymentMethod(Order order, PaymentMethod paymentMethod) {
+        order.setPaymentMethodType(paymentMethod.getMethodType());
+        order.setPaymentMaskedDetails(paymentMethod.getMaskedDetails());
+    }
+
+    private String buildStandingOrderOrderNumber() {
+        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
+        long suffix = Math.abs(System.nanoTime() % 1_000_000);
+        return "STD-" + timestamp + "-" + String.format("%06d", suffix);
+    }
+
+    private void sendStandingOrderConfirmation(Order order, StandingOrder standingOrder) {
+        StringBuilder body = new StringBuilder()
+                .append("Dein Dauerauftrag wurde automatisch ausgefuehrt.\n\n")
+                .append("Bestellnummer: ").append(order.getOrderNumber()).append('\n')
+                .append("Intervall: alle ").append(standingOrder.getIntervalValue())
+                .append(" ").append(standingOrder.getIntervalType().name().toLowerCase()).append("\n")
+                .append("Gesamtbetrag: ").append(order.getTotalPrice()).append(" EUR\n\n")
+                .append("Artikel:\n");
+
+        for (OrderItem item : order.getItems()) {
+            body.append("- ")
+                    .append(item.getProduct().getName())
+                    .append(" x")
+                    .append(item.getQuantity())
+                    .append(" = ")
+                    .append(item.getPriceAtOrderTime().multiply(BigDecimal.valueOf(item.getQuantity())))
+                    .append(" EUR\n");
+        }
+
+        emailService.sendEmail(
+                order.getCustomerEmail(),
+                "Dauerauftrag " + order.getOrderNumber(),
+                body.toString()
+        );
     }
 
     private StandingOrderResponse mapToResponse(StandingOrder so) {
@@ -256,7 +326,6 @@ public class StandingOrderService {
         );
     }
 
-    // Im StandingOrderService.java
     public List<Product> getAllProductsForSelection() {
         return productRepository.findAll();
     }

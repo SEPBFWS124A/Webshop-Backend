@@ -1,6 +1,8 @@
 package de.fhdw.webshop.chat;
 
 import de.fhdw.webshop.chat.dto.ConversationEntry;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -15,14 +17,17 @@ public class OllamaClient {
 
     private final RestClient restClient;
     private final String modelName;
+    private final MeterRegistry meterRegistry;
 
     public OllamaClient(
             @Value("${ollama.base-url}") String ollamaBaseUrl,
-            @Value("${ollama.model}") String modelName) {
+            @Value("${ollama.model}") String modelName,
+            MeterRegistry meterRegistry) {
         this.restClient = RestClient.builder()
                 .baseUrl(ollamaBaseUrl)
                 .build();
         this.modelName = modelName;
+        this.meterRegistry = meterRegistry;
     }
 
     /**
@@ -38,6 +43,8 @@ public class OllamaClient {
                 "stream", false
         );
 
+        Timer.Sample timerSample = Timer.start(meterRegistry);
+        String outcome = "success";
         try {
             OllamaResponse response = restClient.post()
                     .uri("/api/chat")
@@ -50,8 +57,16 @@ public class OllamaClient {
             }
             return response.message().content();
         } catch (Exception exception) {
+            outcome = "error";
             log.error("Ollama request failed: {}", exception.getMessage());
             return "Entschuldigung, der KI-Assistent ist gerade nicht erreichbar. Bitte versuche es später erneut.";
+        } finally {
+            timerSample.stop(Timer.builder("ollama.chat.duration")
+                    .tag("model", modelName)
+                    .tag("outcome", outcome)
+                    .description("Duration of Ollama chat completion requests")
+                    .publishPercentileHistogram(true)
+                    .register(meterRegistry));
         }
     }
 

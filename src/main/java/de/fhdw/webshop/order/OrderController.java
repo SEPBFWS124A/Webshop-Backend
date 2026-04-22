@@ -1,8 +1,11 @@
 package de.fhdw.webshop.order;
 
 import de.fhdw.webshop.order.dto.OrderResponse;
+import de.fhdw.webshop.order.dto.OrderPreviewResponse;
 import de.fhdw.webshop.order.dto.PlaceOrderRequest;
 import de.fhdw.webshop.user.User;
+import de.fhdw.webshop.user.UserRole;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -38,11 +41,48 @@ public class OrderController {
     }
 
     /** US #42 — Place an order from the current cart contents. */
+    @PostMapping("/preview")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<OrderPreviewResponse> previewOrder(@AuthenticationPrincipal User currentUser,
+                                                             @Valid @RequestBody(required = false) PlaceOrderRequest placeOrderRequest) {
+        return ResponseEntity.ok(orderService.previewOrder(currentUser, placeOrderRequest));
+    }
+
+    /** US #42 — Place an order from the current cart contents. */
     @PostMapping
     @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<OrderResponse> placeOrder(@AuthenticationPrincipal User currentUser,
-                                                    @RequestBody(required = false) PlaceOrderRequest placeOrderRequest) {
+                                                    @Valid @RequestBody(required = false) PlaceOrderRequest placeOrderRequest) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(orderService.placeOrder(currentUser, placeOrderRequest));
+    }
+
+    /** Unified checkout endpoint used by the storefront for both authenticated customers and guests. */
+    @PostMapping("/checkout")
+    public ResponseEntity<OrderResponse> checkout(@AuthenticationPrincipal User currentUser,
+                                                  @Valid @RequestBody PlaceOrderRequest placeOrderRequest) {
+        if (currentUser != null) {
+            if (currentUser.getRole() != UserRole.CUSTOMER) {
+                throw new IllegalArgumentException("Only customer accounts can complete shop checkout");
+            }
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(orderService.placeOrder(currentUser, placeOrderRequest));
+        }
+
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(orderService.placeGuestOrder(placeOrderRequest));
+    }
+
+    /** US #78 — Allow guests to place an order without registration. */
+    @PostMapping("/guest/preview")
+    public ResponseEntity<OrderPreviewResponse> previewGuestOrder(@Valid @RequestBody PlaceOrderRequest placeOrderRequest) {
+        return ResponseEntity.ok(orderService.previewGuestOrder(placeOrderRequest));
+    }
+
+    /** US #78 — Allow guests to place an order without registration. */
+    @PostMapping("/guest")
+    public ResponseEntity<OrderResponse> placeGuestOrder(@Valid @RequestBody PlaceOrderRequest placeOrderRequest) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(orderService.placeGuestOrder(placeOrderRequest));
     }
 }

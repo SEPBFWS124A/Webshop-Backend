@@ -44,12 +44,19 @@ public class SecurityConfig {
                         // Product browsing is public (US #8 – customers can view catalogue without account)
                         .requestMatchers(HttpMethod.GET, "/api/products").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/products/{id}").permitAll()
+                        .requestMatchers("/api/address-lookup").permitAll()
+                        .requestMatchers("/api/address-lookup/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/orders/checkout").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/orders/guest").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/orders/guest/preview").permitAll()
                         // OpenAPI spec + Swagger UI – accessible without login during development
                         .requestMatchers("/v3/api-docs/**").permitAll()
                         .requestMatchers("/swagger-ui/**").permitAll()
                         .requestMatchers("/swagger-ui.html").permitAll()
                         // Health check
                         .requestMatchers("/api/health").permitAll()
+                        // Actuator endpoints — only reachable on internal management port 8081 (not exposed via Docker)
+                        .requestMatchers("/actuator/**").permitAll()
                         // Shoppi chatbot — public, auth-aware (personal context only when authenticated)
                         .requestMatchers(HttpMethod.POST, "/api/chat/message").permitAll()
                         // All other endpoints require authentication
