@@ -9,41 +9,51 @@ import java.util.Optional;
 
 public interface UserRepository extends JpaRepository<User, Long> {
 
-    Optional<User> findByUsername(String username);
+        Optional<User> findByUsername(String username);
 
-    Optional<User> findByUsernameAndActiveTrue(String username);
+        Optional<User> findByUsernameAndActiveTrue(String username);
 
-    Optional<User> findByEmail(String email);
+        Optional<User> findByEmail(String email);
 
-    boolean existsByUsernameAndActiveTrue(String username);
+        boolean existsByUsernameAndActiveTrue(String username);
 
-    boolean existsByEmailAndActiveTrue(String email);
+        boolean existsByEmailAndActiveTrue(String email);
 
-    /**
-     * Returns all active customers, optionally filtered by username or email substring.
-     * Pass "" to skip the search filter — IS NULL on Strings infers bytea in PostgreSQL.
-     */
-    @Query("""
-            SELECT u FROM User u
-            WHERE u.role = 'CUSTOMER'
-              AND u.active = true
-              AND (:searchTerm = ''
-                   OR LOWER(u.username) LIKE LOWER(CONCAT('%', :searchTerm, '%'))
-                   OR LOWER(u.email)    LIKE LOWER(CONCAT('%', :searchTerm, '%')))
-            """)
-    List<User> findActiveCustomers(@Param("searchTerm") String searchTerm);
+        /**
+         * Returns all active customers, optionally filtered by username or email
+         * substring.
+         * Pass "" to skip the search filter — IS NULL on Strings infers bytea in
+         * PostgreSQL.
+         */
+        @Query("""
+                        SELECT u FROM User u
+                        WHERE u.role = 'CUSTOMER'
+                          AND u.active = true
+                          AND (:searchTerm = ''
+                               OR LOWER(u.username) LIKE LOWER(CONCAT('%', :searchTerm, '%'))
+                               OR LOWER(u.email)    LIKE LOWER(CONCAT('%', :searchTerm, '%')))
+                        """)
+        List<User> findActiveCustomers(@Param("searchTerm") String searchTerm);
 
-    /**
-     * Returns all users, optionally filtered by username or email substring (admin view).
-     * Pass "" to skip the search filter — IS NULL on Strings infers bytea in PostgreSQL.
-     */
-    @Query("""
-            SELECT u FROM User u
-            WHERE :searchTerm = ''
-               OR LOWER(u.username) LIKE LOWER(CONCAT('%', :searchTerm, '%'))
-               OR LOWER(u.email)    LIKE LOWER(CONCAT('%', :searchTerm, '%'))
-            """)
-    List<User> findAllUsers(@Param("searchTerm") String searchTerm);
+        /**
+         * Returns all users, optionally filtered by username or email substring (admin
+         * view).
+         * Pass "" to skip the search filter — IS NULL on Strings infers bytea in
+         * PostgreSQL.
+         */
+        @Query("""
+                        SELECT u FROM User u
+                        WHERE :searchTerm = ''
+                           OR LOWER(u.username) LIKE LOWER(CONCAT('%', :searchTerm, '%'))
+                           OR LOWER(u.email)    LIKE LOWER(CONCAT('%', :searchTerm, '%'))
+                        """)
+        List<User> findAllUsers(@Param("searchTerm") String searchTerm);
 
-    Optional<User> findByCustomerNumber(String customerNumber);
+        Optional<User> findByCustomerNumber(String customerNumber);
+
+        /**
+         * US #90 — Alle aktiven Benutzer mit einer bestimmten Rolle (z.B. für
+         * E-Mail-Digest).
+         */
+        List<User> findByRoleAndActiveTrue(UserRole role);
 }
