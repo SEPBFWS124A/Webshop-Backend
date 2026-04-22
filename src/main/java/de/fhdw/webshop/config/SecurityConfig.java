@@ -55,6 +55,8 @@ public class SecurityConfig {
                         .requestMatchers("/swagger-ui.html").permitAll()
                         // Health check
                         .requestMatchers("/api/health").permitAll()
+                        // Actuator endpoints — only reachable on internal management port 8081 (not exposed via Docker)
+                        .requestMatchers("/actuator/**").permitAll()
                         // Shoppi chatbot — public, auth-aware (personal context only when authenticated)
                         .requestMatchers(HttpMethod.POST, "/api/chat/message").permitAll()
                         // All other endpoints require authentication

@@ -24,6 +24,7 @@ Spring Boot Backend für den Webshop. Stellt eine REST API bereit, die vom React
 12. [Lokales Testen (curl-Beispiele)](#12-lokales-testen-curl-beispiele)
 13. [User Story Abdeckung](#13-user-story-abdeckung)
 14. [Deployment](#14-deployment)
+15. [Monitoring & Alerting](#15-monitoring--alerting)
 
 ---
 
@@ -1123,4 +1124,70 @@ CD: ./mvnw package → JAR → SCP → VPS → systemctl restart webshop
         │
         ▼
 Backend läuft auf https://domain.de/api/
+```
+
+---
+
+## 15. Monitoring & Alerting
+
+### Netzwerk-Architektur
+
+```
+Internet
+   │
+   ▼ Port 8080 (öffentlich)
+[backend:8080]  — REST API
+[backend:8081]  — Actuator / Prometheus  (NICHT öffentlich exposed)
+       │ Docker-internes Netzwerk
+       ▼
+[prometheus:9090]  (NICHT öffentlich exposed)
+       │ Docker-internes Netzwerk
+       ▼
+[grafana:3000]  ──►  Host:3001  (nur localhost)
+```
+
+### Grafana starten
+
+Grafana startet automatisch mit `./dev.ps1 start` (oder `./dev.sh start`).
+
+```
+URL:       http://localhost:3001
+Benutzer:  admin
+Passwort:  admin
+```
+
+### Vorgefertigte Dashboards
+
+| Dashboard | Metriken |
+|---|---|
+| **JVM Overview** | Heap-Auslastung (%), Committed/Max, GC-Pausen, Threads, Loaded Classes |
+| **HTTP Requests** | Request-Rate, 4xx/5xx-Fehlerquote, Latenz-Percentile (p50/p95/p99) |
+| **Spring Boot Overview** | App-Status, Uptime, DB-Connection-Pool (HikariCP), 5xx-Fehler (15 min) |
+
+### Prometheus-Metriken direkt abfragen (Docker-intern)
+
+```bash
+# Nur aus dem Docker-Netzwerk erreichbar:
+docker exec webshop-backend curl -s http://backend:8081/actuator/prometheus | head -20
+
+# Von außen NICHT erreichbar (Port 8081 ist nicht gemappt):
+curl http://localhost:8081/actuator/prometheus  # → Connection refused
+```
+
+### Alerting per E-Mail
+
+Alerts werden per E-Mail an alle Adressen in `ALERT_ADMIN_EMAIL` gesendet (kommagetrennte Liste). Ohne konfigurierte Adresse werden Alerts nur als `log.warn` ausgegeben. Ist `ALERT_ADMIN_EMAIL` nicht gesetzt, wird `MAIL_USERNAME` als Empfänger verwendet (self-send).
+
+| Alert | Schwellenwert | Intervall |
+|---|---|---|
+| HTTP 5xx Fehlerquote | `ALERT_ERROR_RATE_THRESHOLD` (Standard: 5) | alle 15 min |
+| JVM Heap-Auslastung | `ALERT_HEAP_USAGE_THRESHOLD_PERCENT` (Standard: 80 %) | alle 30 min |
+
+### Umgebungsvariablen (Alerting)
+
+```properties
+# Einzelne Adresse oder kommagetrennte Liste:
+ALERT_ADMIN_EMAIL=admin@example.com,ops@example.com
+ALERT_ERROR_RATE_THRESHOLD=5
+ALERT_HEAP_USAGE_THRESHOLD_PERCENT=80
 ```

@@ -11,7 +11,6 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Recurring order that fires automatically every intervalDays days (US #51–#53, #55). */
 @Entity
 @Table(name = "standing_orders")
 @Getter
@@ -27,8 +26,24 @@ public class StandingOrder {
     @JoinColumn(name = "customer_id", nullable = false)
     private User customer;
 
-    @Column(name = "interval_days", nullable = false)
-    private int intervalDays;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "interval_type")
+    private IntervalType intervalType;
+
+    @Column(name = "interval_value")
+    private Integer intervalValue;
+
+    @Column(name = "day_of_week")
+    private Integer dayOfWeek;
+
+    @Column(name = "day_of_month")
+    private Integer dayOfMonth;
+
+    @Column(name = "month_of_year")
+    private Integer monthOfYear;
+
+    @Column(name = "count_backwards")
+    private boolean countBackwards;
 
     @Column(name = "next_execution_date", nullable = false)
     private LocalDate nextExecutionDate;

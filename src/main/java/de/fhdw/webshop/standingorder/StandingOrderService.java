@@ -16,27 +16,30 @@ import de.fhdw.webshop.user.PaymentMethodRepository;
 import de.fhdw.webshop.user.User;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.time.LocalDate;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class StandingOrderService {
 
     private static final BigDecimal TAX_RATE = new BigDecimal("0.19");
     private static final BigDecimal SHIPPING_COST = new BigDecimal("4.99");
     private static final BigDecimal FREE_SHIPPING_THRESHOLD = new BigDecimal("50.00");
 
-    private final StandingOrderRepository standingOrderRepository;
-    private final ProductService productService;
+    private final StandingOrderRepository repository;
     private final ProductRepository productRepository;
     private final OrderRepository orderRepository;
     private final ProductService.DiscountLookupPort discountLookupPort;
@@ -45,88 +48,126 @@ public class StandingOrderService {
     private final EmailService emailService;
 
     public List<StandingOrderResponse> listForCustomer(Long customerId) {
-        return standingOrderRepository.findByCustomerId(customerId).stream()
-                .map(this::toResponse)
-                .toList();
+        return repository.findByCustomerId(customerId).stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
     }
 
-    /** US #51 — Create a new standing order. */
     @Transactional
-    public StandingOrderResponse create(User customer, CreateStandingOrderRequest createStandingOrderRequest) {
-        StandingOrder standingOrder = new StandingOrder();
-        standingOrder.setCustomer(customer);
-        standingOrder.setIntervalDays(createStandingOrderRequest.intervalDays());
-        standingOrder.setNextExecutionDate(createStandingOrderRequest.firstExecutionDate());
-        applyItems(standingOrder, createStandingOrderRequest.items());
-        return toResponse(standingOrderRepository.save(standingOrder));
+    public StandingOrderResponse create(User customer, CreateStandingOrderRequest request) {
+        StandingOrder so = new StandingOrder();
+        so.setCustomer(customer);
+        so.setNextExecutionDate(request.firstExecutionDate());
+        so.setActive(true);
+        so.setCreatedAt(Instant.now());
+
+        so.setIntervalType(request.intervalType());
+        so.setIntervalValue(request.intervalValue());
+        so.setDayOfWeek(request.dayOfWeek());
+        so.setDayOfMonth(request.dayOfMonth());
+        so.setMonthOfYear(request.monthOfYear());
+        so.setCountBackwards(request.countBackwards());
+
+        if (so.getItems() == null) {
+            so.setItems(new ArrayList<>());
+        }
+
+        if (request.items() != null) {
+            for (var itemReq : request.items()) {
+                Product product = productRepository.findById(itemReq.productId())
+                        .orElseThrow(() -> new EntityNotFoundException("Produkt nicht gefunden: " + itemReq.productId()));
+
+                StandingOrderItem item = new StandingOrderItem();
+                item.setProduct(product);
+                item.setQuantity(itemReq.quantity());
+                item.setStandingOrder(so);
+                so.getItems().add(item);
+            }
+        }
+
+        return mapToResponse(repository.save(so));
     }
 
-    /** US #53 — Change interval or items of an existing standing order. */
     @Transactional
-    public StandingOrderResponse update(Long standingOrderId, Long customerId,
-                                        UpdateStandingOrderRequest updateStandingOrderRequest) {
-        StandingOrder standingOrder = loadForCustomer(standingOrderId, customerId);
-        standingOrder.setIntervalDays(updateStandingOrderRequest.intervalDays());
-        if (updateStandingOrderRequest.nextExecutionDate() != null) {
-            standingOrder.setNextExecutionDate(updateStandingOrderRequest.nextExecutionDate());
+    public StandingOrderResponse update(Long id, Long customerId, UpdateStandingOrderRequest request) {
+        StandingOrder so = repository.findByIdAndCustomerId(id, customerId)
+                .orElseThrow(() -> new EntityNotFoundException("Dauerauftrag nicht gefunden"));
+
+        so.setIntervalType(request.intervalType());
+        so.setIntervalValue(request.intervalValue());
+        so.setDayOfWeek(request.dayOfWeek());
+        so.setDayOfMonth(request.dayOfMonth());
+        so.setMonthOfYear(request.monthOfYear());
+        so.setCountBackwards(request.countBackwards());
+
+        so.getItems().clear();
+        if (request.items() != null) {
+            for (var itemReq : request.items()) {
+                Product product = productRepository.findById(itemReq.productId())
+                        .orElseThrow(() -> new EntityNotFoundException("Produkt nicht gefunden"));
+                StandingOrderItem item = new StandingOrderItem();
+                item.setProduct(product);
+                item.setQuantity(itemReq.quantity());
+                item.setStandingOrder(so);
+                so.getItems().add(item);
+            }
         }
-        if (updateStandingOrderRequest.items() != null && !updateStandingOrderRequest.items().isEmpty()) {
-            standingOrder.getItems().clear();
-            applyItems(standingOrder, updateStandingOrderRequest.items());
-        }
-        standingOrder.setActive(true);
-        return toResponse(standingOrderRepository.save(standingOrder));
+
+        return mapToResponse(repository.save(so));
     }
 
-    /** US #52 — Cancel a standing order. */
     @Transactional
     public void cancel(Long standingOrderId, Long customerId) {
-        StandingOrder standingOrder = loadForCustomer(standingOrderId, customerId);
-        standingOrder.setActive(false);
-        standingOrderRepository.save(standingOrder);
+        StandingOrder so = repository.findByIdAndCustomerId(standingOrderId, customerId)
+                .orElseThrow(() -> new EntityNotFoundException("Dauerauftrag nicht gefunden"));
+
+        repository.delete(so);
     }
 
-    /** Called by the scheduler: execute all due standing orders and advance their next execution date. */
     @Transactional
     public void executeAllDue() {
-        List<StandingOrder> dueOrders = standingOrderRepository
-                .findByActiveIsTrueAndNextExecutionDateLessThanEqual(LocalDate.now());
-
-        for (StandingOrder standingOrder : dueOrders) {
-            executeStandingOrder(standingOrder);
-            standingOrder.setNextExecutionDate(
-                    standingOrder.getNextExecutionDate().plusDays(standingOrder.getIntervalDays()));
-            standingOrderRepository.save(standingOrder);
+        log.info("Suche nach fälligen Daueraufträgen...");
+        List<StandingOrder> dueOrders = repository.findByActiveIsTrueAndNextExecutionDateLessThanEqual(LocalDate.now());
+        for (StandingOrder so : dueOrders) {
+            try {
+                processSingleStandingOrder(so);
+            } catch (Exception e) {
+                log.error("Fehler bei Dauerauftrag {}: {}", so.getId(), e.getMessage());
+            }
         }
     }
 
-    private void executeStandingOrder(StandingOrder standingOrder) {
-        User customer = standingOrder.getCustomer();
+    private void processSingleStandingOrder(StandingOrder so) {
+        User customer = so.getCustomer();
         Order order = new Order();
         order.setCustomer(customer);
+        order.setStatus(OrderStatus.CONFIRMED);
         order.setOrderNumber(buildStandingOrderOrderNumber());
         order.setCustomerEmail(customer.getEmail());
         order.setCustomerName(customer.getUsername());
 
         deliveryAddressRepository.findFirstByUserId(customer.getId())
-                .ifPresent(deliveryAddress -> applyDeliveryAddress(order, deliveryAddress));
+                .ifPresent(addr -> applyDeliveryAddress(order, addr));
         paymentMethodRepository.findFirstByUserId(customer.getId())
-                .ifPresent(paymentMethod -> applyPaymentMethod(order, paymentMethod));
+                .ifPresent(pm -> applyPaymentMethod(order, pm));
 
         BigDecimal subtotal = BigDecimal.ZERO;
         List<Product> updatedProducts = new ArrayList<>();
-        for (StandingOrderItem standingOrderItem : standingOrder.getItems()) {
-            Product product = standingOrderItem.getProduct();
+
+        for (StandingOrderItem sItem : so.getItems()) {
+            Product product = sItem.getProduct();
             if (!product.isPurchasable() || product.getStock() <= 0) {
                 continue;
             }
-            int quantity = Math.min(standingOrderItem.getQuantity(), product.getStock());
+            int quantity = Math.min(sItem.getQuantity(), product.getStock());
             if (quantity <= 0) {
                 continue;
             }
-            BigDecimal discountPercent = discountLookupPort
-                    .findBestActiveDiscountPercent(customer.getId(), product.getId());
-            BigDecimal unitPrice = applyDiscount(product.getRecommendedRetailPrice(), discountPercent);
+
+            BigDecimal price = product.getRecommendedRetailPrice();
+            BigDecimal discount = discountLookupPort.findBestActiveDiscountPercent(
+                    customer.getId(), product.getId());
+            BigDecimal unitPrice = applyDiscount(price, discount);
 
             OrderItem orderItem = new OrderItem();
             orderItem.setOrder(order);
@@ -146,34 +187,63 @@ public class StandingOrderService {
 
         BigDecimal shippingCost = calculateShippingCost(subtotal);
         BigDecimal taxAmount = subtotal.multiply(TAX_RATE).setScale(2, RoundingMode.HALF_UP);
-        order.setTotalPrice(subtotal.add(taxAmount).add(shippingCost).setScale(2, RoundingMode.HALF_UP));
-        order.setTaxAmount(taxAmount);
         order.setShippingCost(shippingCost);
-        order.setStatus(OrderStatus.CONFIRMED);
+        order.setTaxAmount(taxAmount);
+        order.setTotalPrice(subtotal.add(taxAmount).add(shippingCost).setScale(2, RoundingMode.HALF_UP));
+
         orderRepository.save(order);
         productRepository.saveAll(updatedProducts);
-        sendStandingOrderConfirmation(order, standingOrder);
+
+        updateNextExecutionDate(so);
+        repository.save(so);
+        sendStandingOrderConfirmation(order, so);
     }
 
-    private void applyItems(StandingOrder standingOrder, List<StandingOrderItemRequest> itemRequests) {
-        for (StandingOrderItemRequest itemRequest : itemRequests) {
-            StandingOrderItem standingOrderItem = new StandingOrderItem();
-            standingOrderItem.setStandingOrder(standingOrder);
-            standingOrderItem.setProduct(productService.loadProduct(itemRequest.productId()));
-            standingOrderItem.setQuantity(itemRequest.quantity());
-            standingOrder.getItems().add(standingOrderItem);
+    private void updateNextExecutionDate(StandingOrder so) {
+        LocalDate next = so.getNextExecutionDate();
+        int val = so.getIntervalValue();
+
+        switch (so.getIntervalType()) {
+            case DAYS -> next = next.plusDays(val);
+            case WEEKS -> {
+                next = next.plusWeeks(val);
+                if (so.getDayOfWeek() != null) {
+                    next = next.with(java.time.DayOfWeek.of(so.getDayOfWeek()));
+                }
+            }
+            case MONTHS -> {
+                next = next.plusMonths(val);
+                if (so.isCountBackwards()) {
+                    next = next.withDayOfMonth(next.lengthOfMonth()).minusDays(so.getDayOfMonth() - 1);
+                } else {
+                    next = next.withDayOfMonth(Math.min(so.getDayOfMonth(), next.lengthOfMonth()));
+                }
+            }
+            case YEARS -> {
+                next = next.plusYears(val);
+                if (so.getMonthOfYear() != null && so.getDayOfMonth() != null) {
+                    next = next.withMonth(so.getMonthOfYear())
+                            .withDayOfMonth(Math.min(so.getDayOfMonth(),
+                                    next.withMonth(so.getMonthOfYear()).lengthOfMonth()));
+                }
+            }
         }
+        so.setNextExecutionDate(next);
     }
 
-    private StandingOrder loadForCustomer(Long standingOrderId, Long customerId) {
-        return standingOrderRepository.findByIdAndCustomerId(standingOrderId, customerId)
-                .orElseThrow(() -> new EntityNotFoundException("Standing order not found: " + standingOrderId));
+    @Transactional
+    public StandingOrderResponse toggleActive(Long id, Long customerId) {
+        StandingOrder so = repository.findByIdAndCustomerId(id, customerId)
+                .orElseThrow(() -> new EntityNotFoundException("Dauerauftrag nicht gefunden"));
+
+        so.setActive(!so.isActive());
+        StandingOrder saved = repository.saveAndFlush(so);
+
+        return mapToResponse(saved);
     }
 
     private BigDecimal applyDiscount(BigDecimal price, BigDecimal discountPercent) {
-        if (discountPercent == null || discountPercent.compareTo(BigDecimal.ZERO) == 0) {
-            return price;
-        }
+        if (discountPercent == null || discountPercent.compareTo(BigDecimal.ZERO) == 0) return price;
         BigDecimal multiplier = BigDecimal.ONE.subtract(discountPercent.divide(BigDecimal.valueOf(100)));
         return price.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
     }
@@ -208,9 +278,10 @@ public class StandingOrderService {
 
     private void sendStandingOrderConfirmation(Order order, StandingOrder standingOrder) {
         StringBuilder body = new StringBuilder()
-                .append("Deine gespeicherte Folgebestellung wurde automatisch ausgefuehrt.\n\n")
+                .append("Dein Dauerauftrag wurde automatisch ausgefuehrt.\n\n")
                 .append("Bestellnummer: ").append(order.getOrderNumber()).append('\n')
-                .append("Intervall: alle ").append(standingOrder.getIntervalDays()).append(" Tage\n")
+                .append("Intervall: alle ").append(standingOrder.getIntervalValue())
+                .append(" ").append(standingOrder.getIntervalType().name().toLowerCase()).append("\n")
                 .append("Gesamtbetrag: ").append(order.getTotalPrice()).append(" EUR\n\n")
                 .append("Artikel:\n");
 
@@ -226,25 +297,36 @@ public class StandingOrderService {
 
         emailService.sendEmail(
                 order.getCustomerEmail(),
-                "Folgebestellung " + order.getOrderNumber(),
+                "Dauerauftrag " + order.getOrderNumber(),
                 body.toString()
         );
     }
 
-    private StandingOrderResponse toResponse(StandingOrder standingOrder) {
-        List<StandingOrderItemResponse> itemResponses = standingOrder.getItems().stream()
-                .map(item -> new StandingOrderItemResponse(
-                        item.getId(),
-                        item.getProduct().getId(),
-                        item.getProduct().getName(),
-                        item.getQuantity()))
-                .toList();
+    private StandingOrderResponse mapToResponse(StandingOrder so) {
+        List<StandingOrderItemResponse> items = so.getItems().stream()
+                .map(i -> new StandingOrderItemResponse(
+                        i.getId(),
+                        i.getProduct().getId(),
+                        i.getProduct().getName(),
+                        i.getQuantity()))
+                .collect(Collectors.toList());
+
         return new StandingOrderResponse(
-                standingOrder.getId(),
-                standingOrder.getIntervalDays(),
-                standingOrder.getNextExecutionDate(),
-                standingOrder.isActive(),
-                standingOrder.getCreatedAt(),
-                itemResponses);
+                so.getId(),
+                so.getIntervalType(),
+                so.getIntervalValue(),
+                so.getDayOfWeek(),
+                so.getDayOfMonth(),
+                so.getMonthOfYear(),
+                so.isCountBackwards(),
+                so.getNextExecutionDate(),
+                so.isActive(),
+                so.getCreatedAt(),
+                items
+        );
+    }
+
+    public List<Product> getAllProductsForSelection() {
+        return productRepository.findAll();
     }
 }

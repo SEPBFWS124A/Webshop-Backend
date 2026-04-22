@@ -1,5 +1,6 @@
 package de.fhdw.webshop.standingorder;
 
+import de.fhdw.webshop.product.Product;
 import de.fhdw.webshop.standingorder.dto.CreateStandingOrderRequest;
 import de.fhdw.webshop.standingorder.dto.StandingOrderResponse;
 import de.fhdw.webshop.standingorder.dto.UpdateStandingOrderRequest;
@@ -57,4 +58,27 @@ public class StandingOrderController {
         standingOrderService.cancel(id, currentUser.getId());
         return ResponseEntity.noContent().build();
     }
+
+    /** US #52 — Pausieren/Aktivieren eines Dauerauftrags. */
+    @PutMapping("/{id}/toggle") // Geändert von Patch auf Put
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<StandingOrderResponse> toggleStandingOrder(
+        @PathVariable Long id,
+        @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(standingOrderService.toggleActive(id, currentUser.getId()));
+    }
+
+    @GetMapping("/available-products")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<List<Product>> getAvailableProducts() {
+        List<Product> allProducts = standingOrderService.getAllProductsForSelection();
+        
+        // Filtert alle Produkte, deren Name "[DRAFT]" enthält
+        List<Product> filtered = allProducts.stream()
+                .filter(p -> p.getName() != null && !p.getName().contains("[DRAFT]"))
+                .toList();
+                
+        return ResponseEntity.ok(filtered);
+    }
 }
+
