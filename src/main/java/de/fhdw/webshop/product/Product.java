@@ -37,6 +37,9 @@ public class Product {
     @Column(nullable = false)
     private int stock = 25;
 
+    @Column(name = "warehouse_position", length = 80)
+    private String warehousePosition;
+
     /** When false, the product is hidden from customers but visible to employees (US #8, #10, #15). */
     @Column(nullable = false)
     private boolean purchasable = false;
