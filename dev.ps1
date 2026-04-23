@@ -89,7 +89,7 @@ function Show-Usage {
     Write-Host "  start    Start all containers (auto-detects if rebuild is needed)"
     Write-Host "  stop     Stop all containers"
     Write-Host "  restart  Stop backend, then start backend"
-    Write-Host "  rebuild  Force full rebuild — also deletes the PostgreSQL volume (fresh DB)"
+    Write-Host "  rebuild  Force full rebuild - also deletes the PostgreSQL volume (fresh DB)"
     Write-Host "           Use --keep-db to skip the volume deletion and keep existing data"
     Write-Host ""
     Write-Host "Options:"
