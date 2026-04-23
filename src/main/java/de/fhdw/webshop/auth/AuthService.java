@@ -3,6 +3,7 @@ package de.fhdw.webshop.auth;
 import de.fhdw.webshop.auth.dto.AuthResponse;
 import de.fhdw.webshop.auth.dto.LoginRequest;
 import de.fhdw.webshop.auth.dto.RegisterRequest;
+import de.fhdw.webshop.loyalty.LoyaltyService;
 import de.fhdw.webshop.user.User;
 import de.fhdw.webshop.user.UserRepository;
 import de.fhdw.webshop.user.UserRole;
@@ -25,6 +26,7 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final TokenBlacklist tokenBlacklist;
     private final JdbcTemplate jdbcTemplate;
+    private final LoyaltyService loyaltyService;
 
     public AuthResponse login(LoginRequest loginRequest) {
         Authentication authentication = authenticationManager.authenticate(
@@ -32,6 +34,9 @@ public class AuthService {
         );
 
         User authenticatedUser = (User) authentication.getPrincipal();
+        if (authenticatedUser.getRole() == UserRole.CUSTOMER) {
+            loyaltyService.recordLogin(authenticatedUser);
+        }
         String token = jwtTokenProvider.generateToken(authenticatedUser);
         return buildAuthResponse(token, authenticatedUser);
     }
