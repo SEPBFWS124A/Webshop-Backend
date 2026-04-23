@@ -345,7 +345,11 @@ src/main/resources/db/migration/
 ├── V15__create_follow_up_orders.sql
 ├── V16__mock_reporting_orders.sql
 ├── V17__create_alerting_tables.sql
-└── V18__mock_system_notifications.sql
+├── V18__mock_system_notifications.sql
+├── V19__add_warehouse_fulfillment.sql
+├── V20__create_loyalty.sql
+├── V21__mock_loyalty_data.sql
+└── V22__add_wishlist_state_to_users.sql
 ```
 
 Beim Start prüft Flyway die Tabelle `flyway_schema_history` in der Datenbank.

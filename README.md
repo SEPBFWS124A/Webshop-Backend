@@ -412,10 +412,14 @@ HTTP-Antwort ← Controller ← Service ← Repository ← Datenbank
 | V16 | Mock-Bestellungen für Reporting/Statistiken |
 | V17 | `alert_event_configs`, `known_email_addresses`, `alert_event_config_recipients` (Alerting) |
 | V18 | Mock-System-Benachrichtigungen |
+| V19 | `warehouse_fulfillment` (Lager-Fulfillment) |
+| V20 | `loyalty` (Login-Streak, Punkte) |
+| V21 | Mock-Loyalty-Daten |
+| V22 | `users.wishlist_state` (Wishlist als JSON-Spalte) |
 
 ### Neue Migration erstellen
 1. Neue Datei unter `src/main/resources/db/migration/` anlegen
-2. Nächste freie Nummer verwenden: `V19__beschreibung.sql`
+2. Nächste freie Nummer verwenden: `V23__beschreibung.sql`
 3. Backend neu starten → Flyway führt die Migration automatisch aus
 
 **Wichtig:** Bestehende Migration-Dateien **niemals ändern** — immer eine neue anlegen.
