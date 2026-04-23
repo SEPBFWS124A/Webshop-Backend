@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -17,6 +18,10 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     Optional<Order> findFirstByCustomerIdOrderByCreatedAtDesc(Long customerId);
 
     Optional<Order> findByIdAndCustomerId(Long orderId, Long customerId);
+
+    List<Order> findByStatusOrderByCreatedAtAsc(OrderStatus status);
+
+    List<Order> findByStatusNotInOrderByCreatedAtAsc(Collection<OrderStatus> statuses);
 
     /** US #29 — Orders for a customer within a date range (for revenue statistics). */
     @Query("SELECT o FROM Order o WHERE o.customer.id = :customerId AND o.createdAt BETWEEN :from AND :to")
