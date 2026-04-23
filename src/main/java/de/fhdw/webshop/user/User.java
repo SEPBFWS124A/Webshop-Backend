@@ -11,6 +11,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 
@@ -59,6 +60,14 @@ public class User implements UserDetails {
 
     @Column(name = "wishlist_state", columnDefinition = "TEXT")
     private String wishlistState;
+  
+    // ── Loyalty: Login-Streak ──────────────────────────────────────────────────
+
+    @Column(name = "last_login_date")
+    private LocalDate lastLoginDate;
+
+    @Column(name = "current_login_streak", nullable = false)
+    private int currentLoginStreak = 0;
 
     // ── UserDetails interface ──────────────────────────────────────────────────
 

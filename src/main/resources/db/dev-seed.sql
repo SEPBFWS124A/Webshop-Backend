@@ -1,71 +1,325 @@
 -- ============================================================
--- Development seed data — run ONCE after Flyway migrations
--- Usage: psql -U webshop -d webshop -f src/main/resources/db/dev-seed.sql
+-- Development seed data - run once after Flyway migrations
+-- Usage:
+-- Get-Content src\main\resources\db\dev-seed.sql | docker exec -i webshop-postgres psql -U webshop -d webshop
 -- ============================================================
 
--- ── Users ────────────────────────────────────────────────────
+-- Users
 -- All passwords are: Password1!
--- BCrypt hash for "Password1!" (cost 10)
 INSERT INTO users (username, email, password_hash, role, user_type, customer_number) VALUES
-  ('alice',   'alice@example.com',   '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'CUSTOMER',       'PRIVATE',  nextval('customer_number_sequence')),
-  ('bob',     'bob@example.com',     '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'CUSTOMER',       'BUSINESS', nextval('customer_number_sequence')),
-  ('carol',   'carol@example.com',   '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'EMPLOYEE',       'PRIVATE',  NULL),
-  ('dave',    'dave@example.com',    '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'SALES_EMPLOYEE', 'PRIVATE',  NULL),
-  ('admin',   'admin@example.com',   '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'ADMIN',          'PRIVATE',  NULL);
+  ('alice', 'alice@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'CUSTOMER', 'PRIVATE', nextval('customer_number_sequence')),
+  ('bob', 'bob@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'CUSTOMER', 'BUSINESS', nextval('customer_number_sequence')),
+  ('carol', 'carol@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'EMPLOYEE', 'PRIVATE', NULL),
+  ('dave', 'dave@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'SALES_EMPLOYEE', 'PRIVATE', NULL),
+  ('lager', 'lager@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'WAREHOUSE_EMPLOYEE', 'PRIVATE', NULL),
+  ('admin', 'admin@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'ADMIN', 'PRIVATE', NULL);
 
--- ── Business info for bob ────────────────────────────────────
+-- Business info for bob
 INSERT INTO business_info (user_id, company_name, industry, company_size)
-  SELECT id, 'Bob Corp GmbH', 'Technology', '10-50' FROM users WHERE username = 'bob';
+SELECT id, 'Bob Corp GmbH', 'Technology', '10-50'
+FROM users
+WHERE username = 'bob';
 
--- ── Delivery address for alice ───────────────────────────────
+-- Delivery address for alice
 INSERT INTO delivery_addresses (user_id, street, city, postal_code, country)
-  SELECT id, 'Hauptstraße 1', 'Bielefeld', '33602', 'Germany' FROM users WHERE username = 'alice';
+SELECT id, 'Hauptstrasse 1', 'Bielefeld', '33602', 'Germany'
+FROM users
+WHERE username = 'alice';
 
--- ── Payment methods ──────────────────────────────────────────
+-- Payment methods
 INSERT INTO payment_methods (user_id, method_type, masked_details)
-  SELECT id, 'SEPA_DIRECT_DEBIT', 'DE89****4321' FROM users WHERE username = 'alice';
+SELECT id, 'SEPA_DIRECT_DEBIT', 'DE89****4321'
+FROM users
+WHERE username = 'alice';
 
--- ── Products ─────────────────────────────────────────────────
-INSERT INTO products (name, description, image_url, recommended_retail_price, category, purchasable, promoted) VALUES
-  ('Laptop Pro 15',        'High-performance laptop with 15" display',    'https://placehold.co/400x300?text=Laptop',   1299.99, 'Electronics', TRUE,  TRUE),
-  ('Wireless Mouse',       'Ergonomic wireless mouse, 2.4 GHz',           'https://placehold.co/400x300?text=Mouse',      29.99, 'Electronics', TRUE,  FALSE),
-  ('Standing Desk',        'Height-adjustable standing desk 140x70 cm',   'https://placehold.co/400x300?text=Desk',      499.99, 'Furniture',   TRUE,  FALSE),
-  ('USB-C Hub',            '7-in-1 USB-C hub with HDMI and SD card',      'https://placehold.co/400x300?text=Hub',        49.99, 'Electronics', TRUE,  FALSE),
-  ('Office Chair',         'Lumbar support mesh chair',                   'https://placehold.co/400x300?text=Chair',     349.99, 'Furniture',   TRUE,  TRUE),
-  ('Notebook (Draft)',     'Not yet available to customers',               NULL,                                           9.99,  'Stationery',  FALSE, FALSE);
+-- Products
+INSERT INTO products (
+    name,
+    description,
+    image_url,
+    recommended_retail_price,
+    category,
+    stock,
+    warehouse_position,
+    purchasable,
+    promoted
+) VALUES
+  ('Laptop Pro 15', 'High-performance laptop with 15" display', 'https://placehold.co/400x300?text=Laptop', 1299.99, 'Electronics', 8, 'A-01-01', TRUE, TRUE),
+  ('Wireless Mouse', 'Ergonomic wireless mouse, 2.4 GHz', 'https://placehold.co/400x300?text=Mouse', 29.99, 'Electronics', 120, 'A-03-07', TRUE, FALSE),
+  ('Standing Desk', 'Height-adjustable standing desk 140x70 cm', 'https://placehold.co/400x300?text=Desk', 499.99, 'Furniture', 12, 'B-01-03', TRUE, FALSE),
+  ('USB-C Hub', '7-in-1 USB-C hub with HDMI and SD card', 'https://placehold.co/400x300?text=Hub', 49.99, 'Electronics', 40, 'A-04-02', TRUE, FALSE),
+  ('Office Chair', 'Lumbar support mesh chair', 'https://placehold.co/400x300?text=Chair', 349.99, 'Furniture', 18, 'B-02-05', TRUE, TRUE),
+  ('Notebook (Draft)', 'Not yet available to customers', NULL, 9.99, 'Stationery', 0, 'C-01-01', FALSE, FALSE);
 
--- ── Discounts ────────────────────────────────────────────────
--- alice gets 10% off Wireless Mouse (permanent)
+-- Discounts
 INSERT INTO discounts (customer_id, product_id, discount_percent, valid_from, valid_until)
-  SELECT u.id, p.id, 10.00, CURRENT_DATE, NULL
-  FROM users u, products p
-  WHERE u.username = 'alice' AND p.name = 'Wireless Mouse';
+SELECT u.id, p.id, 10.00, CURRENT_DATE, NULL
+FROM users u, products p
+WHERE u.username = 'alice' AND p.name = 'Wireless Mouse';
 
--- bob gets 15% off Laptop Pro 15 until end of year
 INSERT INTO discounts (customer_id, product_id, discount_percent, valid_from, valid_until)
-  SELECT u.id, p.id, 15.00, CURRENT_DATE, (DATE_TRUNC('year', CURRENT_DATE) + INTERVAL '1 year - 1 day')::DATE
-  FROM users u, products p
-  WHERE u.username = 'bob' AND p.name = 'Laptop Pro 15';
+SELECT u.id, p.id, 15.00, CURRENT_DATE, (DATE_TRUNC('year', CURRENT_DATE) + INTERVAL '1 year - 1 day')::DATE
+FROM users u, products p
+WHERE u.username = 'bob' AND p.name = 'Laptop Pro 15';
 
--- ── Coupon ───────────────────────────────────────────────────
+-- Coupon
 INSERT INTO coupons (customer_id, code, discount_percent, valid_until, used)
-  SELECT id, 'WELCOME10', 10.00, CURRENT_DATE + INTERVAL '30 days', FALSE
-  FROM users WHERE username = 'alice';
+SELECT id, 'WELCOME10', 10.00, CURRENT_DATE + INTERVAL '30 days', FALSE
+FROM users
+WHERE username = 'alice';
 
--- ── Cart items for alice ─────────────────────────────────────
+-- Cart items for alice
 INSERT INTO cart_items (user_id, product_id, quantity)
-  SELECT u.id, p.id, 2
-  FROM users u, products p
-  WHERE u.username = 'alice' AND p.name = 'Wireless Mouse';
+SELECT u.id, p.id, 2
+FROM users u, products p
+WHERE u.username = 'alice' AND p.name = 'Wireless Mouse';
 
--- ── A completed order for alice ──────────────────────────────
-WITH new_order AS (
-  INSERT INTO orders (customer_id, total_price, tax_amount, shipping_cost, status)
-    SELECT id, 35.69, 5.70, 0.00, 'DELIVERED'
-    FROM users WHERE username = 'alice'
+-- Warehouse demo orders
+WITH confirmed_order AS (
+    INSERT INTO orders (
+        customer_id,
+        order_number,
+        customer_email,
+        customer_name,
+        delivery_street,
+        delivery_city,
+        delivery_postal_code,
+        delivery_country,
+        payment_method_type,
+        payment_masked_details,
+        total_price,
+        tax_amount,
+        shipping_cost,
+        shipping_method,
+        status,
+        discount_amount,
+        created_at
+    )
+    SELECT
+        id,
+        'ORD-WH-1001',
+        'alice@example.com',
+        'alice',
+        'Hauptstrasse 1',
+        'Bielefeld',
+        '33602',
+        'Germany',
+        'SEPA_DIRECT_DEBIT',
+        'DE89****4321',
+        64.47,
+        10.29,
+        4.99,
+        'STANDARD',
+        'CONFIRMED',
+        0.00,
+        NOW() - INTERVAL '1 day'
+    FROM users
+    WHERE username = 'alice'
     RETURNING id
 )
 INSERT INTO order_items (order_id, product_id, quantity, price_at_order_time)
-  SELECT new_order.id, p.id, 1, 29.99
-  FROM new_order, products p
-  WHERE p.name = 'Wireless Mouse';
+SELECT confirmed_order.id, p.id, order_data.quantity, order_data.price_at_order_time
+FROM confirmed_order
+JOIN (
+    VALUES
+        ('Wireless Mouse', 1, 29.99::NUMERIC),
+        ('USB-C Hub', 1, 29.49::NUMERIC)
+) AS order_data(product_name, quantity, price_at_order_time) ON TRUE
+JOIN products p ON p.name = order_data.product_name;
+
+WITH packed_order AS (
+    INSERT INTO orders (
+        customer_id,
+        order_number,
+        customer_email,
+        customer_name,
+        delivery_street,
+        delivery_city,
+        delivery_postal_code,
+        delivery_country,
+        payment_method_type,
+        payment_masked_details,
+        total_price,
+        tax_amount,
+        shipping_cost,
+        shipping_method,
+        status,
+        discount_amount,
+        created_at
+    )
+    SELECT
+        id,
+        'ORD-WH-1002',
+        'bob@example.com',
+        'bob',
+        'Industriestrasse 10',
+        'Paderborn',
+        '33098',
+        'Germany',
+        'SEPA_DIRECT_DEBIT',
+        'DE89****4321',
+        594.99,
+        95.00,
+        0.00,
+        'STANDARD',
+        'PACKED_IN_WAREHOUSE',
+        0.00,
+        NOW() - INTERVAL '18 hours'
+    FROM users
+    WHERE username = 'bob'
+    RETURNING id
+)
+INSERT INTO order_items (order_id, product_id, quantity, price_at_order_time)
+SELECT packed_order.id, p.id, 1, 499.99
+FROM packed_order
+JOIN products p ON p.name = 'Standing Desk';
+
+WITH in_truck_order AS (
+    INSERT INTO orders (
+        customer_id,
+        order_number,
+        customer_email,
+        customer_name,
+        delivery_street,
+        delivery_city,
+        delivery_postal_code,
+        delivery_country,
+        payment_method_type,
+        payment_masked_details,
+        total_price,
+        tax_amount,
+        shipping_cost,
+        shipping_method,
+        status,
+        discount_amount,
+        truck_identifier,
+        created_at
+    )
+    SELECT
+        id,
+        'ORD-WH-1003',
+        'alice@example.com',
+        'alice',
+        'Hauptstrasse 1',
+        'Bielefeld',
+        '33602',
+        'Germany',
+        'SEPA_DIRECT_DEBIT',
+        'DE89****4321',
+        709.97,
+        113.39,
+        0.00,
+        'EXPRESS',
+        'IN_TRUCK',
+        0.00,
+        'LKW-01',
+        NOW() - INTERVAL '8 hours'
+    FROM users
+    WHERE username = 'alice'
+    RETURNING id
+)
+INSERT INTO order_items (order_id, product_id, quantity, price_at_order_time)
+SELECT in_truck_order.id, p.id, order_data.quantity, order_data.price_at_order_time
+FROM in_truck_order
+JOIN (
+    VALUES
+        ('Office Chair', 1, 349.99::NUMERIC),
+        ('Wireless Mouse', 2, 29.99::NUMERIC)
+) AS order_data(product_name, quantity, price_at_order_time) ON TRUE
+JOIN products p ON p.name = order_data.product_name;
+
+WITH shipped_order AS (
+    INSERT INTO orders (
+        customer_id,
+        order_number,
+        customer_email,
+        customer_name,
+        delivery_street,
+        delivery_city,
+        delivery_postal_code,
+        delivery_country,
+        payment_method_type,
+        payment_masked_details,
+        total_price,
+        tax_amount,
+        shipping_cost,
+        shipping_method,
+        status,
+        discount_amount,
+        truck_identifier,
+        created_at
+    )
+    SELECT
+        id,
+        'ORD-WH-1004',
+        'bob@example.com',
+        'bob',
+        'Industriestrasse 10',
+        'Paderborn',
+        '33098',
+        'Germany',
+        'SEPA_DIRECT_DEBIT',
+        'DE89****4321',
+        1364.98,
+        217.85,
+        0.00,
+        'STANDARD',
+        'SHIPPED',
+        0.00,
+        'LKW-02',
+        NOW() - INTERVAL '4 hours'
+    FROM users
+    WHERE username = 'bob'
+    RETURNING id
+)
+INSERT INTO order_items (order_id, product_id, quantity, price_at_order_time)
+SELECT shipped_order.id, p.id, 1, 1299.99
+FROM shipped_order
+JOIN products p ON p.name = 'Laptop Pro 15';
+
+WITH delivered_order AS (
+    INSERT INTO orders (
+        customer_id,
+        order_number,
+        customer_email,
+        customer_name,
+        delivery_street,
+        delivery_city,
+        delivery_postal_code,
+        delivery_country,
+        payment_method_type,
+        payment_masked_details,
+        total_price,
+        tax_amount,
+        shipping_cost,
+        shipping_method,
+        status,
+        discount_amount,
+        created_at
+    )
+    SELECT
+        id,
+        'ORD-WH-1005',
+        'alice@example.com',
+        'alice',
+        'Hauptstrasse 1',
+        'Bielefeld',
+        '33602',
+        'Germany',
+        'SEPA_DIRECT_DEBIT',
+        'DE89****4321',
+        35.69,
+        5.70,
+        0.00,
+        'STANDARD',
+        'DELIVERED',
+        0.00,
+        NOW() - INTERVAL '14 days'
+    FROM users
+    WHERE username = 'alice'
+    RETURNING id
+)
+INSERT INTO order_items (order_id, product_id, quantity, price_at_order_time)
+SELECT delivered_order.id, p.id, 1, 29.99
+FROM delivered_order
+JOIN products p ON p.name = 'Wireless Mouse';

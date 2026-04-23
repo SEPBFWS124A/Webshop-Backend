@@ -89,10 +89,11 @@ function Show-Usage {
     Write-Host "  start    Start all containers (auto-detects if rebuild is needed)"
     Write-Host "  stop     Stop all containers"
     Write-Host "  restart  Stop backend, then start backend"
-    Write-Host "  rebuild  Force full rebuild (recreates containers, no layer cache)"
+    Write-Host "  rebuild  Force full rebuild - also deletes the PostgreSQL volume (fresh DB)"
+    Write-Host "           Use --keep-db to skip the volume deletion and keep existing data"
     Write-Host ""
     Write-Host "Options:"
-    Write-Host "  --keep-db   Keep PostgreSQL running (combine with stop/restart/rebuild)"
+    Write-Host "  --keep-db   Keep PostgreSQL data (combine with stop/restart/rebuild)"
     Write-Host ""
 }
 
@@ -262,9 +263,15 @@ function Rebuild-Backend {
     $composeFiles = Get-OllamaComposeFiles -RootPath $Root
 
     if ($KeepDb) {
+        Write-Host "Keeping PostgreSQL data (--keep-db)."
         Invoke-Expression "docker compose -f $composeFiles up -d --build --force-recreate backend"
     } else {
         Invoke-Expression "docker compose -f $composeFiles down"
+        $postgresVolume = docker volume ls --format "{{.Name}}" | Where-Object { $_ -match "postgres_data" }
+        if ($postgresVolume) {
+            Write-Host "Removing PostgreSQL volume ($postgresVolume) for a clean database..."
+            docker volume rm $postgresVolume
+        }
         Invoke-Expression "docker compose -f $composeFiles up -d --build --force-recreate"
     }
 

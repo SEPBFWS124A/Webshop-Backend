@@ -5,11 +5,13 @@ package de.fhdw.webshop.user;
  * CUSTOMER: regular end-user who can browse products and place orders.
  * EMPLOYEE: internal staff with read access to customer and product data.
  * SALES_EMPLOYEE: employee with additional authority to manage pricing, discounts, and promotions.
+ * WAREHOUSE_EMPLOYEE: employee responsible for picking, packing, and shipping orders.
  * ADMIN: full system access including user management and audit log.
  */
 public enum UserRole {
     CUSTOMER,
     EMPLOYEE,
     SALES_EMPLOYEE,
+    WAREHOUSE_EMPLOYEE,
     ADMIN
 }
