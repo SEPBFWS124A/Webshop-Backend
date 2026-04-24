@@ -34,7 +34,7 @@ public class AuthService {
         );
 
         User authenticatedUser = (User) authentication.getPrincipal();
-        if (authenticatedUser.getRole() == UserRole.CUSTOMER) {
+        if (authenticatedUser.hasRole(UserRole.CUSTOMER)) {
             loyaltyService.recordLogin(authenticatedUser);
         }
         String token = jwtTokenProvider.generateToken(authenticatedUser);
@@ -54,7 +54,7 @@ public class AuthService {
         newUser.setUsername(registerRequest.username());
         newUser.setEmail(registerRequest.email());
         newUser.setPasswordHash(passwordEncoder.encode(registerRequest.password()));
-        newUser.setRole(UserRole.CUSTOMER);
+        newUser.getRoles().add(UserRole.CUSTOMER);
         newUser.setUserType(registerRequest.userType());
 
         // Generate a unique customer number from the DB sequence
@@ -80,7 +80,7 @@ public class AuthService {
                 user.getId(),
                 user.getUsername(),
                 user.getEmail(),
-                user.getRole(),
+                user.getRoles(),
                 user.getUserType(),
                 user.getCustomerNumber()
         );

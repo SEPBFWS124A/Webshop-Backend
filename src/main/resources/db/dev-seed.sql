@@ -6,13 +6,29 @@
 
 -- Users
 -- All passwords are: Password1!
-INSERT INTO users (username, email, password_hash, role, user_type, customer_number) VALUES
-  ('alice', 'alice@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'CUSTOMER', 'PRIVATE', nextval('customer_number_sequence')),
-  ('bob', 'bob@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'CUSTOMER', 'BUSINESS', nextval('customer_number_sequence')),
-  ('carol', 'carol@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'EMPLOYEE', 'PRIVATE', NULL),
-  ('dave', 'dave@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'SALES_EMPLOYEE', 'PRIVATE', NULL),
-  ('lager', 'lager@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'WAREHOUSE_EMPLOYEE', 'PRIVATE', NULL),
-  ('admin', 'admin@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'ADMIN', 'PRIVATE', NULL);
+INSERT INTO users (username, email, password_hash, user_type, customer_number) VALUES
+  ('alice', 'alice@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'PRIVATE', nextval('customer_number_sequence')),
+  ('bob', 'bob@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'BUSINESS', nextval('customer_number_sequence')),
+  ('carol', 'carol@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'PRIVATE', NULL),
+  ('dave', 'dave@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'PRIVATE', NULL),
+  ('lager', 'lager@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'PRIVATE', NULL),
+  ('admin', 'admin@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'PRIVATE', NULL);
+
+-- Roles (m:n via user_roles pivot table, introduced in Migration V24)
+INSERT INTO user_roles (user_id, role)
+SELECT id, 'CUSTOMER' FROM users WHERE username IN ('alice', 'bob');
+
+INSERT INTO user_roles (user_id, role)
+SELECT id, 'EMPLOYEE' FROM users WHERE username = 'carol';
+
+INSERT INTO user_roles (user_id, role)
+SELECT id, 'SALES_EMPLOYEE' FROM users WHERE username = 'dave';
+
+INSERT INTO user_roles (user_id, role)
+SELECT id, 'WAREHOUSE_EMPLOYEE' FROM users WHERE username = 'lager';
+
+INSERT INTO user_roles (user_id, role)
+SELECT id, 'ADMIN' FROM users WHERE username = 'admin';
 
 -- Business info for bob
 INSERT INTO business_info (user_id, company_name, industry, company_size)

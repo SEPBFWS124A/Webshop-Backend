@@ -3,11 +3,13 @@ package de.fhdw.webshop.admin;
 import de.fhdw.webshop.accountlink.AccountLinkService;
 import de.fhdw.webshop.accountlink.dto.AccountLinkResponse;
 import de.fhdw.webshop.accountlink.dto.CreateAccountLinksRequest;
+import de.fhdw.webshop.admin.dto.UpdateUserRolesRequest;
 import de.fhdw.webshop.alerting.BusinessEmailService;
 import de.fhdw.webshop.auth.JwtTokenProvider;
 import de.fhdw.webshop.auth.dto.AuthResponse;
 import de.fhdw.webshop.user.User;
 import de.fhdw.webshop.user.UserRepository;
+import de.fhdw.webshop.user.UserRole;
 import de.fhdw.webshop.user.dto.UserProfileResponse;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.Valid;
@@ -16,6 +18,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.Set;
 
 import java.util.List;
 
@@ -40,9 +44,57 @@ public class AdminController {
         List<UserProfileResponse> users = userRepository.findAllUsers(search == null ? "" : search, activeOnly).stream()
                 .map(user -> new UserProfileResponse(
                         user.getId(), user.getUsername(), user.getEmail(),
-                        user.getRole(), user.getUserType(), user.getCustomerNumber()))
+                        user.getRoles(), user.getUserType(), user.getCustomerNumber()))
                 .toList();
         return ResponseEntity.ok(users);
+    }
+
+    /** Issue #134 — US-01: Get current roles of a user. */
+    @GetMapping("/users/{id}/roles")
+    public ResponseEntity<Set<UserRole>> getUserRoles(@PathVariable Long id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("User not found: " + id));
+        return ResponseEntity.ok(user.getRoles());
+    }
+
+    /** Issue #134 — US-01: Assign roles to a user (replaces existing roles).
+     *  Lockout protection: an admin cannot remove their own ADMIN role. */
+    @PutMapping("/users/{id}/roles")
+    public ResponseEntity<Set<UserRole>> updateUserRoles(
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateUserRolesRequest request,
+            @AuthenticationPrincipal User adminUser) {
+        User targetUser = userRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("User not found: " + id));
+
+        // Lockout-Schutz: Admin darf sich nicht selbst die ADMIN-Rolle entziehen
+        if (adminUser.getId().equals(targetUser.getId())
+                && targetUser.hasRole(UserRole.ADMIN)
+                && !request.roles().contains(UserRole.ADMIN)) {
+            throw new IllegalArgumentException(
+                    "Administratoren können sich nicht selbst die Admin-Rolle entziehen.");
+        }
+
+        Set<UserRole> previousRoles = Set.copyOf(targetUser.getRoles());
+        Set<UserRole> newRoles = request.roles();
+
+        targetUser.getRoles().clear();
+        targetUser.getRoles().addAll(newRoles);
+        userRepository.save(targetUser);
+
+        String details = buildRoleChangeDetails(previousRoles, newRoles, targetUser.getUsername());
+        auditLogService.record(adminUser, "UPDATE_USER_ROLES", "User", id,
+                AuditInitiator.ADMIN, details);
+
+        return ResponseEntity.ok(targetUser.getRoles());
+    }
+
+    private String buildRoleChangeDetails(Set<UserRole> previous, Set<UserRole> next, String targetUsername) {
+        Set<UserRole> added = new java.util.HashSet<>(next);
+        added.removeAll(previous);
+        Set<UserRole> removed = new java.util.HashSet<>(previous);
+        removed.removeAll(next);
+        return String.format("User: %s | Added: %s | Removed: %s", targetUsername, added, removed);
     }
 
     /** US #61 — Deactivate any user account. */
@@ -101,7 +153,7 @@ public class AdminController {
                 targetUser.getId(),
                 targetUser.getUsername(),
                 targetUser.getEmail(),
-                targetUser.getRole(),
+                targetUser.getRoles(),
                 targetUser.getUserType(),
                 targetUser.getCustomerNumber()
         ));
