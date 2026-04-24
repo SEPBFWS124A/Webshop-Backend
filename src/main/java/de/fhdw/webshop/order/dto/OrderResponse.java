@@ -20,5 +20,7 @@ public record OrderResponse(
         String couponCode,
         Instant createdAt,
         List<OrderItemResponse> items,
+        String truckIdentifier,
+        Instant estimatedDeliveryAt,
         Boolean confirmationEmailSent
 ) {}
