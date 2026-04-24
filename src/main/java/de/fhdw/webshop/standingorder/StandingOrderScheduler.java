@@ -15,11 +15,19 @@ import org.springframework.stereotype.Component;
 public class StandingOrderScheduler {
 
     private final StandingOrderService standingOrderService;
+    private final StandingOrderAvailabilityNotificationService availabilityNotificationService;
 
     @Scheduled(cron = "0 0 6 * * *")
     public void executeAllDueStandingOrders() {
         log.info("Standing order scheduler started");
         standingOrderService.executeAllDue();
         log.info("Standing order scheduler finished");
+    }
+
+    @Scheduled(cron = "0 30 6 * * *")
+    public void checkProductAvailability() {
+        log.info("Standing order availability check started");
+        availabilityNotificationService.checkAndNotify();
+        log.info("Standing order availability check finished");
     }
 }

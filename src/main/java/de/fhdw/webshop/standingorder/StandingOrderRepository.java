@@ -14,4 +14,6 @@ public interface StandingOrderRepository extends JpaRepository<StandingOrder, Lo
 
     /** Used by the scheduler to find all active standing orders due today or overdue. */
     List<StandingOrder> findByActiveIsTrueAndNextExecutionDateLessThanEqual(LocalDate date);
+
+    List<StandingOrder> findByActiveIsTrue();
 }
