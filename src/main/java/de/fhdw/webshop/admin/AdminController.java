@@ -76,7 +76,7 @@ public class AdminController {
         }
 
         Set<UserRole> previousRoles = Set.copyOf(targetUser.getRoles());
-        Set<UserRole> newRoles = request.roles();
+        Set<UserRole> newRoles = Set.copyOf(request.roles());
 
         targetUser.getRoles().clear();
         targetUser.getRoles().addAll(newRoles);
