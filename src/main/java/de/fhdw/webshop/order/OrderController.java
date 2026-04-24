@@ -62,7 +62,7 @@ public class OrderController {
     public ResponseEntity<OrderResponse> checkout(@AuthenticationPrincipal User currentUser,
                                                   @Valid @RequestBody PlaceOrderRequest placeOrderRequest) {
         if (currentUser != null) {
-            if (currentUser.getRole() != UserRole.CUSTOMER) {
+            if (!currentUser.hasRole(UserRole.CUSTOMER)) {
                 throw new IllegalArgumentException("Only customer accounts can complete shop checkout");
             }
             return ResponseEntity.status(HttpStatus.CREATED)

@@ -62,12 +62,12 @@ public class CustomerController {
     @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
     public ResponseEntity<List<UserProfileResponse>> listCustomers(
             @RequestParam(required = false) String search) {
-        List<UserProfileResponse> customers = userRepository.findActiveCustomers(search == null ? "" : search).stream()
+        List<UserProfileResponse> customers = userRepository.findActiveCustomers(search == null ? "" : search, UserRole.CUSTOMER).stream()
                 .map(user -> new UserProfileResponse(
                         user.getId(),
                         user.getUsername(),
                         user.getEmail(),
-                        user.getRole(),
+                        user.getRoles(),
                         user.getUserType(),
                         user.getCustomerNumber()))
                 .toList();
@@ -83,7 +83,7 @@ public class CustomerController {
                 customer.getId(),
                 customer.getUsername(),
                 customer.getEmail(),
-                customer.getRole(),
+                customer.getRoles(),
                 customer.getUserType(),
                 customer.getCustomerNumber()));
     }
@@ -220,7 +220,7 @@ public class CustomerController {
             @AuthenticationPrincipal User currentUser) {
         User customer = userService.loadById(id);
         boolean canViewSalesData = currentUser != null
-                && (currentUser.getRole() == UserRole.SALES_EMPLOYEE || currentUser.getRole() == UserRole.ADMIN);
+                && (currentUser.hasRole(UserRole.SALES_EMPLOYEE) || currentUser.hasRole(UserRole.ADMIN));
         boolean canManageSalesActions = canViewSalesData;
         boolean businessCustomer = customer.getUserType() == UserType.BUSINESS;
         LocalDate resolvedTo = to != null ? to : LocalDate.now();
@@ -230,7 +230,7 @@ public class CustomerController {
                 customer.getId(),
                 customer.getUsername(),
                 customer.getEmail(),
-                customer.getRole(),
+                customer.getRoles(),
                 customer.getUserType(),
                 customer.getCustomerNumber());
 
