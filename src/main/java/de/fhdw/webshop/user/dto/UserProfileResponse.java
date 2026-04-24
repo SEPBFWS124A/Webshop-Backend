@@ -11,5 +11,6 @@ public record UserProfileResponse(
         String email,
         Set<UserRole> roles,
         UserType userType,
-        String customerNumber
+        String customerNumber,
+        boolean active
 ) {}

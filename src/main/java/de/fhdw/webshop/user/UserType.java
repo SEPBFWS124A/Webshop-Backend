@@ -1,10 +1,8 @@
 package de.fhdw.webshop.user;
 
-/**
- * Distinguishes between private individuals and business customers (US #38).
- * Business customers may have additional billing/discount rules.
- */
+/** Distinguishes private customers, business customers, and internal users. */
 public enum UserType {
     PRIVATE,
-    BUSINESS
+    BUSINESS,
+    INTERNAL
 }

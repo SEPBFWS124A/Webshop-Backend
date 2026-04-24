@@ -124,6 +124,7 @@ public class AccountLinkService {
                 user.getEmail(),
                 user.getRoles(),
                 user.getUserType(),
-                user.getCustomerNumber());
+                user.getCustomerNumber(),
+                user.isActive());
     }
 }

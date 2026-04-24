@@ -7,6 +7,7 @@ import de.fhdw.webshop.loyalty.LoyaltyService;
 import de.fhdw.webshop.user.User;
 import de.fhdw.webshop.user.UserRepository;
 import de.fhdw.webshop.user.UserRole;
+import de.fhdw.webshop.user.UserType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -43,10 +44,13 @@ public class AuthService {
 
     @Transactional
     public AuthResponse register(RegisterRequest registerRequest) {
-        if (userRepository.existsByUsernameAndActiveTrue(registerRequest.username())) {
+        if (registerRequest.userType() == UserType.INTERNAL) {
+            throw new IllegalArgumentException("Interne Benutzer koennen nur durch Administratoren angelegt werden.");
+        }
+        if (userRepository.existsByUsername(registerRequest.username())) {
             throw new IllegalArgumentException("Username already taken: " + registerRequest.username());
         }
-        if (userRepository.existsByEmailAndActiveTrue(registerRequest.email())) {
+        if (userRepository.existsByEmail(registerRequest.email())) {
             throw new IllegalArgumentException("Email already registered: " + registerRequest.email());
         }
 

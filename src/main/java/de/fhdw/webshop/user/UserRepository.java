@@ -15,12 +15,16 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
         Optional<User> findByEmail(String email);
 
+        boolean existsByUsername(String username);
+
+        boolean existsByEmail(String email);
+
         boolean existsByUsernameAndActiveTrue(String username);
 
         boolean existsByEmailAndActiveTrue(String email);
 
         /**
-         * Returns all active customers, optionally filtered by username or email substring.
+         * Returns all active customers, optionally filtered by username, email, or customer number substring.
          * Pass "" to skip the search filter.
          */
         @Query("""
@@ -29,13 +33,14 @@ public interface UserRepository extends JpaRepository<User, Long> {
                           AND u.active = true
                           AND (:searchTerm = ''
                                OR LOWER(u.username) LIKE LOWER(CONCAT('%', :searchTerm, '%'))
-                               OR LOWER(u.email)    LIKE LOWER(CONCAT('%', :searchTerm, '%')))
+                               OR LOWER(u.email)    LIKE LOWER(CONCAT('%', :searchTerm, '%'))
+                               OR LOWER(COALESCE(u.customerNumber, '')) LIKE LOWER(CONCAT('%', :searchTerm, '%')))
                         """)
         List<User> findActiveCustomers(@Param("searchTerm") String searchTerm,
                                        @Param("customerRole") UserRole customerRole);
 
         /**
-         * Returns all users, optionally filtered by username or email substring (admin view).
+         * Returns all users, optionally filtered by text fields (admin view).
          * Pass "" to skip the search filter.
          */
         @Query("""
