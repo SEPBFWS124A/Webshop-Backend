@@ -1,12 +1,16 @@
 package de.fhdw.webshop.admin;
 
+import de.fhdw.webshop.accountlink.AccountLinkService;
+import de.fhdw.webshop.accountlink.dto.AccountLinkResponse;
+import de.fhdw.webshop.accountlink.dto.CreateAccountLinksRequest;
+import de.fhdw.webshop.alerting.BusinessEmailService;
 import de.fhdw.webshop.auth.JwtTokenProvider;
 import de.fhdw.webshop.auth.dto.AuthResponse;
-import de.fhdw.webshop.alerting.BusinessEmailService;
 import de.fhdw.webshop.user.User;
 import de.fhdw.webshop.user.UserRepository;
 import de.fhdw.webshop.user.dto.UserProfileResponse;
 import jakarta.persistence.EntityNotFoundException;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -26,12 +30,14 @@ public class AdminController {
     private final AuditLogService auditLogService;
     private final JwtTokenProvider jwtTokenProvider;
     private final BusinessEmailService businessEmailService;
+    private final AccountLinkService accountLinkService;
 
     /** US #59, #60 — List all users, optionally filtered by search term. */
     @GetMapping("/users")
     public ResponseEntity<List<UserProfileResponse>> listAllUsers(
-            @RequestParam(required = false) String search) {
-        List<UserProfileResponse> users = userRepository.findAllUsers(search == null ? "" : search).stream()
+            @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "false") boolean activeOnly) {
+        List<UserProfileResponse> users = userRepository.findAllUsers(search == null ? "" : search, activeOnly).stream()
                 .map(user -> new UserProfileResponse(
                         user.getId(), user.getUsername(), user.getEmail(),
                         user.getRole(), user.getUserType(), user.getCustomerNumber()))
@@ -45,10 +51,36 @@ public class AdminController {
                                                @AuthenticationPrincipal User adminUser) {
         User targetUser = userRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("User not found: " + id));
+        accountLinkService.removeLinksForUser(id);
         targetUser.setActive(false);
         userRepository.save(targetUser);
         auditLogService.record(adminUser, "DEACTIVATE_USER", "User", id,
                 AuditInitiator.ADMIN, "Admin deactivated user: " + targetUser.getUsername());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Issue #136 - List linked accounts for a user profile. */
+    @GetMapping("/users/{id}/links")
+    public ResponseEntity<List<AccountLinkResponse>> listAccountLinks(@PathVariable Long id) {
+        return ResponseEntity.ok(accountLinkService.listLinks(id));
+    }
+
+    /** Issue #136 - Link one or more accounts to a user profile. */
+    @PostMapping("/users/{id}/links")
+    public ResponseEntity<List<AccountLinkResponse>> createAccountLinks(
+            @PathVariable Long id,
+            @Valid @RequestBody CreateAccountLinksRequest request,
+            @AuthenticationPrincipal User adminUser) {
+        return ResponseEntity.ok(accountLinkService.createLinks(id, request.linkedUserIds(), adminUser));
+    }
+
+    /** Issue #136 - Remove an account link from a user profile. */
+    @DeleteMapping("/users/{id}/links/{linkedUserId}")
+    public ResponseEntity<Void> deleteAccountLink(
+            @PathVariable Long id,
+            @PathVariable Long linkedUserId,
+            @AuthenticationPrincipal User adminUser) {
+        accountLinkService.deleteLink(id, linkedUserId, adminUser);
         return ResponseEntity.noContent().build();
     }
 

@@ -5,6 +5,8 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 
@@ -37,6 +39,7 @@ public class AuditLog {
     private Long entityId;
 
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(name = "initiated_by", nullable = false, columnDefinition = "audit_initiator")
     private AuditInitiator initiatedBy = AuditInitiator.USER;
 
