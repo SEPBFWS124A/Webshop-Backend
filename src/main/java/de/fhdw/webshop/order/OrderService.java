@@ -31,6 +31,7 @@ import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -50,6 +51,16 @@ public class OrderService {
     private static final BigDecimal SHIPPING_COST = new BigDecimal("4.99");
     private static final BigDecimal EXPRESS_SHIPPING_COST = new BigDecimal("9.99");
     private static final BigDecimal FREE_SHIPPING_THRESHOLD = new BigDecimal("50.00");
+    private static final Duration STANDARD_TOTAL_DELIVERY = Duration.ofDays(4);
+    private static final Duration EXPRESS_TOTAL_DELIVERY = Duration.ofDays(2);
+    private static final Duration STANDARD_MIN_REMAINING_EARLY = Duration.ofDays(3);
+    private static final Duration EXPRESS_MIN_REMAINING_EARLY = Duration.ofHours(36);
+    private static final Duration STANDARD_MIN_REMAINING_PACKED = Duration.ofDays(2);
+    private static final Duration EXPRESS_MIN_REMAINING_PACKED = Duration.ofHours(24);
+    private static final Duration STANDARD_MIN_REMAINING_TRUCK = Duration.ofHours(30);
+    private static final Duration EXPRESS_MIN_REMAINING_TRUCK = Duration.ofHours(12);
+    private static final Duration STANDARD_MIN_REMAINING_SHIPPED = Duration.ofHours(18);
+    private static final Duration EXPRESS_MIN_REMAINING_SHIPPED = Duration.ofHours(6);
 
     private final OrderRepository orderRepository;
     private final CartRepository cartRepository;
@@ -519,6 +530,8 @@ public class OrderService {
                 order.getCouponCode(),
                 order.getCreatedAt(),
                 itemResponses,
+                order.getTruckIdentifier(),
+                estimateDeliveryAt(order),
                 null);
     }
 
@@ -548,7 +561,43 @@ public class OrderService {
                 order.getCouponCode(),
                 order.getCreatedAt(),
                 itemResponses,
+                order.getTruckIdentifier(),
+                estimateDeliveryAt(order),
                 confirmationEmailSent);
+    }
+
+    private Instant estimateDeliveryAt(Order order) {
+        if (order.getStatus() == OrderStatus.DELIVERED || order.getStatus() == OrderStatus.CANCELLED) {
+            return null;
+        }
+
+        Duration totalDuration = order.getShippingMethod() == ShippingMethod.EXPRESS
+                ? EXPRESS_TOTAL_DELIVERY
+                : STANDARD_TOTAL_DELIVERY;
+        Instant createdEstimate = order.getCreatedAt().plus(totalDuration);
+        Instant minimumFromNow = Instant.now().plus(resolveMinimumRemaining(order));
+
+        return createdEstimate.isAfter(minimumFromNow) ? createdEstimate : minimumFromNow;
+    }
+
+    private Duration resolveMinimumRemaining(Order order) {
+        boolean expressShipping = order.getShippingMethod() == ShippingMethod.EXPRESS;
+
+        return switch (order.getStatus()) {
+            case PENDING, CONFIRMED -> expressShipping
+                    ? EXPRESS_MIN_REMAINING_EARLY
+                    : STANDARD_MIN_REMAINING_EARLY;
+            case PACKED_IN_WAREHOUSE -> expressShipping
+                    ? EXPRESS_MIN_REMAINING_PACKED
+                    : STANDARD_MIN_REMAINING_PACKED;
+            case IN_TRUCK -> expressShipping
+                    ? EXPRESS_MIN_REMAINING_TRUCK
+                    : STANDARD_MIN_REMAINING_TRUCK;
+            case SHIPPED -> expressShipping
+                    ? EXPRESS_MIN_REMAINING_SHIPPED
+                    : STANDARD_MIN_REMAINING_SHIPPED;
+            case DELIVERED, CANCELLED -> Duration.ZERO;
+        };
     }
 
     private OrderPreviewResponse toPreviewResponse(PreparedOrder preparedOrder) {
