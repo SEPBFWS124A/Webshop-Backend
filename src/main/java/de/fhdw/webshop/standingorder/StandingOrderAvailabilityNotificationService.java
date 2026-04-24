@@ -37,6 +37,9 @@ public class StandingOrderAvailabilityNotificationService {
     }
 
     private void processStandingOrder(StandingOrder so) {
+        if (!so.isNotificationsEnabled()) {
+            return;
+        }
         User customer = so.getCustomer();
         List<StandingOrderItem> newlyUnavailableItems = new ArrayList<>();
 

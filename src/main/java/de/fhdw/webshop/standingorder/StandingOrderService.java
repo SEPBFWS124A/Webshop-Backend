@@ -321,9 +321,18 @@ public class StandingOrderService {
                 so.isCountBackwards(),
                 so.getNextExecutionDate(),
                 so.isActive(),
+                so.isNotificationsEnabled(),
                 so.getCreatedAt(),
                 items
         );
+    }
+
+    @Transactional
+    public StandingOrderResponse toggleNotifications(Long id, Long customerId) {
+        StandingOrder so = repository.findByIdAndCustomerId(id, customerId)
+                .orElseThrow(() -> new EntityNotFoundException("Dauerauftrag nicht gefunden"));
+        so.setNotificationsEnabled(!so.isNotificationsEnabled());
+        return mapToResponse(repository.save(so));
     }
 
     public List<Product> getAllProductsForSelection() {
