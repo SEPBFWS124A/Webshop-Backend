@@ -2,6 +2,7 @@ package de.fhdw.webshop.warehouse;
 
 import de.fhdw.webshop.order.OrderStatus;
 import de.fhdw.webshop.warehouse.dto.AdvanceWarehouseOrderRequest;
+import de.fhdw.webshop.warehouse.dto.AutoAssignTruckIdentifiersResponse;
 import de.fhdw.webshop.warehouse.dto.WarehouseOrderResponse;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -9,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -29,6 +31,17 @@ public class WarehouseController {
         return ResponseEntity.ok(warehouseService.listOrders(status));
     }
 
+    @PutMapping("/orders/{id}/truck")
+    @PreAuthorize("hasAnyRole('WAREHOUSE_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<WarehouseOrderResponse> updateTruckIdentifier(
+            @PathVariable Long id,
+            @RequestBody AdvanceWarehouseOrderRequest request) {
+        return ResponseEntity.ok(warehouseService.updateTruckIdentifier(
+                id,
+                request != null ? request.truckIdentifier() : null
+        ));
+    }
+
     @PutMapping("/orders/{id}/advance")
     @PreAuthorize("hasAnyRole('WAREHOUSE_EMPLOYEE', 'ADMIN')")
     public ResponseEntity<WarehouseOrderResponse> advanceOrder(
@@ -38,5 +51,11 @@ public class WarehouseController {
                 id,
                 request != null ? request.truckIdentifier() : null
         ));
+    }
+
+    @PostMapping("/orders/auto-assign-trucks")
+    @PreAuthorize("hasAnyRole('WAREHOUSE_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<AutoAssignTruckIdentifiersResponse> autoAssignTruckIdentifiers() {
+        return ResponseEntity.ok(warehouseService.autoAssignTruckIdentifiers());
     }
 }

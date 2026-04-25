@@ -2,6 +2,7 @@ package de.fhdw.webshop.address;
 
 import java.util.Optional;
 import java.util.List;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,6 +31,23 @@ public class AddressLookupController {
                                                                            @RequestParam(required = false) String city,
                                                                            @RequestParam(required = false) String country) {
         return ResponseEntity.ok(addressLookupService.suggestAddresses(street, postalCode, city, country));
+    }
+
+    @GetMapping("/geocode")
+    public ResponseEntity<GeocodedAddressResponse> geocodeAddress(@RequestParam(required = false) String street,
+                                                                  @RequestParam(required = false) String postalCode,
+                                                                  @RequestParam(required = false) String city,
+                                                                  @RequestParam(required = false) String country) {
+        return addressLookupService.geocodeAddress(street, postalCode, city, country)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @PostMapping("/route")
+    public ResponseEntity<RoadRouteResponse> route(@Valid @RequestBody RoadRouteRequest request) {
+        return addressLookupService.routeTrip(request)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @PostMapping("/validate")
