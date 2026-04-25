@@ -13,7 +13,9 @@ import org.springframework.security.core.userdetails.UserDetails;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Persistent user account. Implements Spring Security's UserDetails so it can be
@@ -39,10 +41,11 @@ public class User implements UserDetails {
     @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;
 
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "user_roles", joinColumns = @JoinColumn(name = "user_id"))
+    @Column(name = "role", length = 50)
     @Enumerated(EnumType.STRING)
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
-    @Column(nullable = false, columnDefinition = "user_role")
-    private UserRole role = UserRole.CUSTOMER;
+    private Set<UserRole> roles = new HashSet<>();
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
@@ -60,7 +63,7 @@ public class User implements UserDetails {
 
     @Column(name = "wishlist_state", columnDefinition = "TEXT")
     private String wishlistState;
-  
+
     // ── Loyalty: Login-Streak ──────────────────────────────────────────────────
 
     @Column(name = "last_login_date")
@@ -69,11 +72,32 @@ public class User implements UserDetails {
     @Column(name = "current_login_streak", nullable = false)
     private int currentLoginStreak = 0;
 
+    // ── Convenience helpers ────────────────────────────────────────────────────
+
+    public boolean hasRole(UserRole role) {
+        return roles != null && roles.contains(role);
+    }
+
+    /** Returns the highest-privilege role for display/token purposes. */
+    public UserRole getPrimaryRole() {
+        if (roles == null || roles.isEmpty()) return UserRole.CUSTOMER;
+        for (UserRole r : List.of(UserRole.ADMIN, UserRole.SALES_EMPLOYEE,
+                UserRole.WAREHOUSE_EMPLOYEE, UserRole.EMPLOYEE, UserRole.CUSTOMER)) {
+            if (roles.contains(r)) return r;
+        }
+        return roles.iterator().next();
+    }
+
     // ── UserDetails interface ──────────────────────────────────────────────────
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
+        if (roles == null || roles.isEmpty()) {
+            return List.of();
+        }
+        return roles.stream()
+                .map(r -> new SimpleGrantedAuthority("ROLE_" + r.name()))
+                .toList();
     }
 
     /** Spring Security expects the credential via getPassword(), not getPasswordHash(). */

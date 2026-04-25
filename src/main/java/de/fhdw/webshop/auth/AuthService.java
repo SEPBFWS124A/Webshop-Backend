@@ -7,6 +7,7 @@ import de.fhdw.webshop.loyalty.LoyaltyService;
 import de.fhdw.webshop.user.User;
 import de.fhdw.webshop.user.UserRepository;
 import de.fhdw.webshop.user.UserRole;
+import de.fhdw.webshop.user.UserType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -34,7 +35,7 @@ public class AuthService {
         );
 
         User authenticatedUser = (User) authentication.getPrincipal();
-        if (authenticatedUser.getRole() == UserRole.CUSTOMER) {
+        if (authenticatedUser.hasRole(UserRole.CUSTOMER)) {
             loyaltyService.recordLogin(authenticatedUser);
         }
         String token = jwtTokenProvider.generateToken(authenticatedUser);
@@ -43,10 +44,13 @@ public class AuthService {
 
     @Transactional
     public AuthResponse register(RegisterRequest registerRequest) {
-        if (userRepository.existsByUsernameAndActiveTrue(registerRequest.username())) {
+        if (registerRequest.userType() == UserType.INTERNAL) {
+            throw new IllegalArgumentException("Interne Benutzer koennen nur durch Administratoren angelegt werden.");
+        }
+        if (userRepository.existsByUsername(registerRequest.username())) {
             throw new IllegalArgumentException("Username already taken: " + registerRequest.username());
         }
-        if (userRepository.existsByEmailAndActiveTrue(registerRequest.email())) {
+        if (userRepository.existsByEmail(registerRequest.email())) {
             throw new IllegalArgumentException("Email already registered: " + registerRequest.email());
         }
 
@@ -54,7 +58,7 @@ public class AuthService {
         newUser.setUsername(registerRequest.username());
         newUser.setEmail(registerRequest.email());
         newUser.setPasswordHash(passwordEncoder.encode(registerRequest.password()));
-        newUser.setRole(UserRole.CUSTOMER);
+        newUser.getRoles().add(UserRole.CUSTOMER);
         newUser.setUserType(registerRequest.userType());
 
         // Generate a unique customer number from the DB sequence
@@ -80,7 +84,7 @@ public class AuthService {
                 user.getId(),
                 user.getUsername(),
                 user.getEmail(),
-                user.getRole(),
+                user.getRoles(),
                 user.getUserType(),
                 user.getCustomerNumber()
         );

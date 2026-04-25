@@ -62,16 +62,38 @@ public class CustomerController {
     @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
     public ResponseEntity<List<UserProfileResponse>> listCustomers(
             @RequestParam(required = false) String search) {
-        List<UserProfileResponse> customers = userRepository.findActiveCustomers(search == null ? "" : search).stream()
+        String searchTerm = search == null ? "" : search.trim();
+        Long searchId = parseIdSearch(searchTerm);
+        List<User> matchingCustomers = searchId == null
+                ? userRepository.findActiveCustomers(searchTerm, UserRole.CUSTOMER)
+                : userRepository.findById(searchId)
+                        .filter(user -> user.isActive() && user.getRoles().contains(UserRole.CUSTOMER))
+                        .stream()
+                        .toList();
+
+        List<UserProfileResponse> customers = matchingCustomers.stream()
                 .map(user -> new UserProfileResponse(
                         user.getId(),
                         user.getUsername(),
                         user.getEmail(),
-                        user.getRole(),
+                        user.getRoles(),
                         user.getUserType(),
-                        user.getCustomerNumber()))
+                        user.getCustomerNumber(),
+                        user.isActive()))
                 .toList();
         return ResponseEntity.ok(customers);
+    }
+
+    private Long parseIdSearch(String searchTerm) {
+        if (searchTerm == null || !searchTerm.matches("\\d+")) {
+            return null;
+        }
+
+        try {
+            return Long.parseLong(searchTerm);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     /** US #12 - Look up a customer by ID. */
@@ -83,9 +105,10 @@ public class CustomerController {
                 customer.getId(),
                 customer.getUsername(),
                 customer.getEmail(),
-                customer.getRole(),
+                customer.getRoles(),
                 customer.getUserType(),
-                customer.getCustomerNumber()));
+                customer.getCustomerNumber(),
+                customer.isActive()));
     }
 
     /** US #11 - View a customer's cart on their behalf. */
@@ -220,7 +243,7 @@ public class CustomerController {
             @AuthenticationPrincipal User currentUser) {
         User customer = userService.loadById(id);
         boolean canViewSalesData = currentUser != null
-                && (currentUser.getRole() == UserRole.SALES_EMPLOYEE || currentUser.getRole() == UserRole.ADMIN);
+                && (currentUser.hasRole(UserRole.SALES_EMPLOYEE) || currentUser.hasRole(UserRole.ADMIN));
         boolean canManageSalesActions = canViewSalesData;
         boolean businessCustomer = customer.getUserType() == UserType.BUSINESS;
         LocalDate resolvedTo = to != null ? to : LocalDate.now();
@@ -230,9 +253,10 @@ public class CustomerController {
                 customer.getId(),
                 customer.getUsername(),
                 customer.getEmail(),
-                customer.getRole(),
+                customer.getRoles(),
                 customer.getUserType(),
-                customer.getCustomerNumber());
+                customer.getCustomerNumber(),
+                customer.isActive());
 
         CartResponse cart = cartService.getCart(id);
         BigDecimal cartTotal = cart != null && cart.total() != null ? cart.total() : BigDecimal.ZERO;
