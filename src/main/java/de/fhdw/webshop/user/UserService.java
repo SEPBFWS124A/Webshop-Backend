@@ -1,5 +1,6 @@
 package de.fhdw.webshop.user;
 
+import de.fhdw.webshop.accountlink.AccountLinkService;
 import de.fhdw.webshop.user.dto.*;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +17,7 @@ public class UserService {
     private final DeliveryAddressRepository deliveryAddressRepository;
     private final PaymentMethodRepository paymentMethodRepository;
     private final PasswordEncoder passwordEncoder;
+    private final AccountLinkService accountLinkService;
 
     public UserProfileResponse getProfile(User currentUser) {
         return toProfileResponse(currentUser);
@@ -54,6 +56,7 @@ public class UserService {
     /** US #7 — Soft-delete the account: deactivate and anonymize credentials to free unique constraints. */
     @Transactional
     public void deactivateAccount(User currentUser) {
+        accountLinkService.removeLinksForUser(currentUser.getId());
         currentUser.setActive(false);
         currentUser.setUsername("deleted_" + currentUser.getId());
         currentUser.setEmail("deleted_" + currentUser.getId() + "@deleted.invalid");

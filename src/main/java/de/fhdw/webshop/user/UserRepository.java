@@ -43,11 +43,13 @@ public interface UserRepository extends JpaRepository<User, Long> {
          */
         @Query("""
                         SELECT u FROM User u
-                        WHERE :searchTerm = ''
-                           OR LOWER(u.username) LIKE LOWER(CONCAT('%', :searchTerm, '%'))
-                           OR LOWER(u.email)    LIKE LOWER(CONCAT('%', :searchTerm, '%'))
+                        WHERE (:activeOnly = false OR u.active = true)
+                          AND (:searchTerm = ''
+                               OR LOWER(u.username) LIKE LOWER(CONCAT('%', :searchTerm, '%'))
+                               OR LOWER(u.email)    LIKE LOWER(CONCAT('%', :searchTerm, '%'))
+                               OR LOWER(COALESCE(u.customerNumber, '')) LIKE LOWER(CONCAT('%', :searchTerm, '%')))
                         """)
-        List<User> findAllUsers(@Param("searchTerm") String searchTerm);
+        List<User> findAllUsers(@Param("searchTerm") String searchTerm, @Param("activeOnly") boolean activeOnly);
 
         Optional<User> findByCustomerNumber(String customerNumber);
 
