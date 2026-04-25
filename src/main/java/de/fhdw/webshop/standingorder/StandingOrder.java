@@ -51,6 +51,9 @@ public class StandingOrder {
     @Column(nullable = false)
     private boolean active = true;
 
+    @Column(name = "notifications_enabled", nullable = false)
+    private boolean notificationsEnabled = true;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 

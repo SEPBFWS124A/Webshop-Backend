@@ -15,6 +15,7 @@ public record StandingOrderResponse(
     boolean countBackwards,
     LocalDate nextExecutionDate,
     boolean active,
+    boolean notificationsEnabled,
     Instant createdAt,
     List<StandingOrderItemResponse> items
 ) {}

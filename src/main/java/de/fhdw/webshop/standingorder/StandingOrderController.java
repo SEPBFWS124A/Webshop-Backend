@@ -68,6 +68,15 @@ public class StandingOrderController {
         return ResponseEntity.ok(standingOrderService.toggleActive(id, currentUser.getId()));
     }
 
+    /** Toggle unavailability notifications for a standing order on/off. */
+    @PutMapping("/{id}/toggle-notifications")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<StandingOrderResponse> toggleNotifications(
+            @PathVariable Long id,
+            @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(standingOrderService.toggleNotifications(id, currentUser.getId()));
+    }
+
     @GetMapping("/available-products")
     @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<List<Product>> getAvailableProducts() {

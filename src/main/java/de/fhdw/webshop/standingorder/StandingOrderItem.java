@@ -27,4 +27,7 @@ public class StandingOrderItem {
 
     @Column(nullable = false)
     private int quantity;
+
+    @Column(name = "notified_unavailable", nullable = false)
+    private boolean notifiedUnavailable = false;
 }
