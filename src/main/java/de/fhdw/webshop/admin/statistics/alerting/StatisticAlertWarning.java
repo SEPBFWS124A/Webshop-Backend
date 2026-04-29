@@ -38,6 +38,9 @@ public class StatisticAlertWarning {
     @Column(nullable = false, length = 50)
     private StatisticMetric metric;
 
+    @Column(name = "metric_label", nullable = false, length = 100)
+    private String metricLabel;
+
     @Column(name = "period_start", nullable = false)
     private LocalDate periodStart;
 

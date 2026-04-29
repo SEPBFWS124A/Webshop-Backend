@@ -31,7 +31,7 @@ public class StatisticAlertService {
 
     @Transactional(readOnly = true)
     public List<StatisticAlertThresholdResponse> getThresholds() {
-        return thresholdRepository.findAllByOrderByMetricAsc().stream()
+        return thresholdRepository.findAllByOrderByMetricLabelAsc().stream()
                 .map(StatisticAlertThresholdResponse::from)
                 .toList();
     }
@@ -39,8 +39,10 @@ public class StatisticAlertService {
     @Transactional
     public StatisticAlertThresholdResponse createOrUpdateThreshold(StatisticAlertThresholdRequest request) {
         validateThresholdRequest(request);
-        StatisticAlertThreshold threshold = thresholdRepository.findByMetric(request.metric())
-                .orElseGet(StatisticAlertThreshold::new);
+        if (thresholdRepository.existsByMetricLabelIgnoreCase(request.metricLabel().trim())) {
+            throw new IllegalArgumentException("Eine Kennzahl mit diesem Namen existiert bereits.");
+        }
+        StatisticAlertThreshold threshold = new StatisticAlertThreshold();
         applyRequest(threshold, request);
         return StatisticAlertThresholdResponse.from(thresholdRepository.save(threshold));
     }
@@ -50,6 +52,9 @@ public class StatisticAlertService {
         validateThresholdRequest(request);
         StatisticAlertThreshold threshold = thresholdRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Schwellwert nicht gefunden: " + id));
+        if (thresholdRepository.existsByMetricLabelIgnoreCaseAndIdNot(request.metricLabel().trim(), id)) {
+            throw new IllegalArgumentException("Eine Kennzahl mit diesem Namen existiert bereits.");
+        }
         applyRequest(threshold, request);
         return StatisticAlertThresholdResponse.from(thresholdRepository.save(threshold));
     }
@@ -63,7 +68,7 @@ public class StatisticAlertService {
     @Transactional
     public List<StatisticAlertWarningResponse> evaluateEnabledThresholds(LocalDate today) {
         LocalDate periodEnd = today.minusDays(1);
-        return thresholdRepository.findAllByEnabledTrueOrderByMetricAsc().stream()
+        return thresholdRepository.findAllByEnabledTrueOrderByMetricLabelAsc().stream()
                 .map(threshold -> evaluateThreshold(threshold, periodEnd))
                 .flatMap(List::stream)
                 .toList();
@@ -113,8 +118,8 @@ public class StatisticAlertService {
             return List.of();
         }
 
-        BigDecimal currentValue = loadMetricValue(threshold.getMetric(), periodStart, periodEnd);
-        BigDecimal comparisonValue = loadMetricValue(threshold.getMetric(), comparisonStart, comparisonEnd);
+        BigDecimal currentValue = loadMetricValue(threshold.getCalculationMetric(), periodStart, periodEnd);
+        BigDecimal comparisonValue = loadMetricValue(threshold.getCalculationMetric(), comparisonStart, comparisonEnd);
         BigDecimal deviationPercent = calculateDeviationPercent(currentValue, comparisonValue);
 
         if (deviationPercent.abs().compareTo(threshold.getDeviationPercent()) < 0) {
@@ -124,6 +129,7 @@ public class StatisticAlertService {
         StatisticAlertWarning warning = new StatisticAlertWarning();
         warning.setThreshold(threshold);
         warning.setMetric(threshold.getMetric());
+        warning.setMetricLabel(threshold.getMetricLabel());
         warning.setPeriodStart(periodStart);
         warning.setPeriodEnd(periodEnd);
         warning.setComparisonStart(comparisonStart);
@@ -206,7 +212,7 @@ public class StatisticAlertService {
         String direction = deviationPercent.signum() >= 0 ? "ueber" : "unter";
         return "%s liegt um %s%% %s dem Vergleichszeitraum und ueberschreitet den Schwellwert von %s%%."
                 .formatted(
-                        threshold.getMetric().getLabel(),
+                        threshold.getMetricLabel(),
                         deviationPercent.abs().setScale(2, RoundingMode.HALF_UP),
                         direction,
                         threshold.getDeviationPercent().setScale(2, RoundingMode.HALF_UP)
@@ -215,7 +221,13 @@ public class StatisticAlertService {
 
     private static void validateThresholdRequest(StatisticAlertThresholdRequest request) {
         if (request.metric() == null) {
-            throw new IllegalArgumentException("Eine Kennzahl muss ausgewaehlt werden.");
+            throw new IllegalArgumentException("Eine Berechnungsart muss ausgewaehlt werden.");
+        }
+        if (request.metricLabel() == null || request.metricLabel().trim().isEmpty()) {
+            throw new IllegalArgumentException("Der Kennzahlname darf nicht leer sein.");
+        }
+        if (request.metricLabel().trim().length() > 100) {
+            throw new IllegalArgumentException("Der Kennzahlname darf maximal 100 Zeichen lang sein.");
         }
         if (request.periodDays() == null || request.periodDays() < 1 || request.periodDays() > 365) {
             throw new IllegalArgumentException("Der Zeitraum muss zwischen 1 und 365 Tagen liegen.");
@@ -229,6 +241,8 @@ public class StatisticAlertService {
 
     private static void applyRequest(StatisticAlertThreshold threshold, StatisticAlertThresholdRequest request) {
         threshold.setMetric(request.metric());
+        threshold.setMetricLabel(request.metricLabel().trim());
+        threshold.setCalculationMetric(request.metric());
         threshold.setPeriodDays(request.periodDays());
         threshold.setDeviationPercent(request.deviationPercent().setScale(2, RoundingMode.HALF_UP));
         threshold.setEnabled(request.enabled() == null || Boolean.TRUE.equals(request.enabled()));

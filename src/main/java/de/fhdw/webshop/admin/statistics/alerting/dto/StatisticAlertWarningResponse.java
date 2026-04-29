@@ -29,7 +29,7 @@ public record StatisticAlertWarningResponse(
         return new StatisticAlertWarningResponse(
                 warning.getId(),
                 warning.getMetric(),
-                warning.getMetric().getLabel(),
+                warning.getMetricLabel(),
                 warning.getPeriodStart(),
                 warning.getPeriodEnd(),
                 warning.getComparisonStart(),
