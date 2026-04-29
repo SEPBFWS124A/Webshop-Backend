@@ -27,15 +27,8 @@ public class StatisticAlertThreshold {
     private Long id;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 50)
+    @Column(nullable = false, unique = true, length = 50)
     private StatisticMetric metric;
-
-    @Column(name = "metric_label", nullable = false, length = 100)
-    private String metricLabel;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "calculation_metric", nullable = false, length = 50)
-    private StatisticMetric calculationMetric;
 
     @Column(name = "period_days", nullable = false)
     private int periodDays;

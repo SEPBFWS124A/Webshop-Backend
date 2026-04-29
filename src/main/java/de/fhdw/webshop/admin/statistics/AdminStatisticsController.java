@@ -12,7 +12,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -58,13 +57,6 @@ public class AdminStatisticsController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<StatisticAlertThresholdResponse>> getThresholds() {
         return ResponseEntity.ok(statisticAlertService.getThresholds());
-    }
-
-    @PostMapping("/thresholds")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<StatisticAlertThresholdResponse> createOrUpdateThreshold(
-            @Valid @RequestBody StatisticAlertThresholdRequest request) {
-        return ResponseEntity.ok(statisticAlertService.createOrUpdateThreshold(request));
     }
 
     @PutMapping("/thresholds/{id}")

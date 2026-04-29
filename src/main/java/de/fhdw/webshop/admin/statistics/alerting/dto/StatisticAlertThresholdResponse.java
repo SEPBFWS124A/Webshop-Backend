@@ -19,7 +19,7 @@ public record StatisticAlertThresholdResponse(
         return new StatisticAlertThresholdResponse(
                 threshold.getId(),
                 threshold.getMetric(),
-                threshold.getMetricLabel(),
+                threshold.getMetric().getLabel(),
                 threshold.getPeriodDays(),
                 threshold.getDeviationPercent(),
                 threshold.isEnabled(),

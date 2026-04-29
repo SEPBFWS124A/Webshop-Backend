@@ -3,14 +3,13 @@ package de.fhdw.webshop.admin.statistics.alerting;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface StatisticAlertThresholdRepository extends JpaRepository<StatisticAlertThreshold, Long> {
 
-    List<StatisticAlertThreshold> findAllByEnabledTrueOrderByMetricLabelAsc();
+    List<StatisticAlertThreshold> findAllByEnabledTrueOrderByMetricAsc();
 
-    List<StatisticAlertThreshold> findAllByOrderByMetricLabelAsc();
+    List<StatisticAlertThreshold> findAllByOrderByMetricAsc();
 
-    boolean existsByMetricLabelIgnoreCase(String metricLabel);
-
-    boolean existsByMetricLabelIgnoreCaseAndIdNot(String metricLabel, Long id);
+    Optional<StatisticAlertThreshold> findByMetric(StatisticMetric metric);
 }

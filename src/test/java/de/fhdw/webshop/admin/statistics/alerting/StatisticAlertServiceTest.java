@@ -22,7 +22,7 @@ import static org.mockito.Mockito.when;
 class StatisticAlertServiceTest {
 
     @Test
-    void rejectsInvalidThresholdValuesBeforeSaving() {
+    void rejectsInvalidThresholdValuesBeforeUpdating() {
         StatisticAlertThresholdRepository thresholdRepository = mock(StatisticAlertThresholdRepository.class);
         StatisticAlertWarningRepository warningRepository = mock(StatisticAlertWarningRepository.class);
         EntityManager entityManager = mock(EntityManager.class);
@@ -30,13 +30,12 @@ class StatisticAlertServiceTest {
 
         StatisticAlertThresholdRequest request = new StatisticAlertThresholdRequest(
                 StatisticMetric.REVENUE,
-                "Mein Umsatz",
                 30,
                 BigDecimal.ZERO,
                 true
         );
 
-        assertThatThrownBy(() -> service.createOrUpdateThreshold(request))
+        assertThatThrownBy(() -> service.updateThreshold(7L, request))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Der Schwellwert muss groesser als 0 und maximal 1000 Prozent sein.");
     }
@@ -52,13 +51,11 @@ class StatisticAlertServiceTest {
         StatisticAlertThreshold threshold = new StatisticAlertThreshold();
         threshold.setId(7L);
         threshold.setMetric(StatisticMetric.REVENUE);
-        threshold.setMetricLabel("Umsatz kritisch");
-        threshold.setCalculationMetric(StatisticMetric.REVENUE);
         threshold.setPeriodDays(30);
         threshold.setDeviationPercent(new BigDecimal("20.00"));
         threshold.setEnabled(true);
 
-        when(thresholdRepository.findAllByEnabledTrueOrderByMetricLabelAsc()).thenReturn(List.of(threshold));
+        when(thresholdRepository.findAllByEnabledTrueOrderByMetricAsc()).thenReturn(List.of(threshold));
         when(warningRepository.existsByThresholdAndPeriodStartAndPeriodEnd(
                 threshold,
                 LocalDate.of(2026, 3, 31),
@@ -80,43 +77,14 @@ class StatisticAlertServiceTest {
         assertThat(warnings).hasSize(1);
         StatisticAlertWarningResponse warning = warnings.getFirst();
         assertThat(warning.metric()).isEqualTo(StatisticMetric.REVENUE);
-        assertThat(warning.metricLabel()).isEqualTo("Umsatz kritisch");
+        assertThat(warning.metricLabel()).isEqualTo("Umsatz");
         assertThat(warning.periodStart()).isEqualTo(LocalDate.of(2026, 3, 31));
         assertThat(warning.periodEnd()).isEqualTo(LocalDate.of(2026, 4, 29));
         assertThat(warning.comparisonStart()).isEqualTo(LocalDate.of(2026, 3, 1));
         assertThat(warning.comparisonEnd()).isEqualTo(LocalDate.of(2026, 3, 30));
         assertThat(warning.deviationPercent()).isEqualByComparingTo("30.00");
-        assertThat(warning.reason()).contains("Umsatz kritisch", "Schwellwert");
+        assertThat(warning.reason()).contains("Umsatz", "Schwellwert");
         assertThat(warning.status()).isEqualTo(StatisticAlertStatus.OPEN);
         verify(currentQuery).setParameter("cancelledStatus", OrderStatus.CANCELLED);
-    }
-
-    @Test
-    void createsCustomMetricThresholdWithUniqueName() {
-        StatisticAlertThresholdRepository thresholdRepository = mock(StatisticAlertThresholdRepository.class);
-        StatisticAlertWarningRepository warningRepository = mock(StatisticAlertWarningRepository.class);
-        EntityManager entityManager = mock(EntityManager.class);
-        StatisticAlertService service = new StatisticAlertService(thresholdRepository, warningRepository, entityManager);
-        StatisticAlertThresholdRequest request = new StatisticAlertThresholdRequest(
-                StatisticMetric.AVG_ORDER_VALUE,
-                "Premium-Warenkorbwert",
-                14,
-                new BigDecimal("12.50"),
-                true
-        );
-
-        when(thresholdRepository.existsByMetricLabelIgnoreCase("Premium-Warenkorbwert")).thenReturn(false);
-        when(thresholdRepository.save(any(StatisticAlertThreshold.class))).thenAnswer(invocation -> {
-            StatisticAlertThreshold threshold = invocation.getArgument(0);
-            threshold.setId(99L);
-            return threshold;
-        });
-
-        var response = service.createOrUpdateThreshold(request);
-
-        assertThat(response.metric()).isEqualTo(StatisticMetric.AVG_ORDER_VALUE);
-        assertThat(response.metricLabel()).isEqualTo("Premium-Warenkorbwert");
-        assertThat(response.periodDays()).isEqualTo(14);
-        assertThat(response.deviationPercent()).isEqualByComparingTo("12.50");
     }
 }
