@@ -9,10 +9,10 @@
 INSERT INTO users (username, email, password_hash, user_type, customer_number) VALUES
   ('alice', 'alice@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'PRIVATE', nextval('customer_number_sequence')),
   ('bob', 'bob@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'BUSINESS', nextval('customer_number_sequence')),
-  ('carol', 'carol@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'PRIVATE', NULL),
-  ('dave', 'dave@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'PRIVATE', NULL),
-  ('lager', 'lager@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'PRIVATE', NULL),
-  ('admin', 'admin@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'PRIVATE', NULL);
+  ('carol', 'carol@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'INTERNAL', NULL),
+  ('dave', 'dave@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'INTERNAL', NULL),
+  ('lager', 'lager@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'INTERNAL', NULL),
+  ('admin', 'admin@example.com', '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze', 'INTERNAL', NULL);
 
 -- Roles (m:n via user_roles pivot table, introduced in Migration V24)
 INSERT INTO user_roles (user_id, role)
