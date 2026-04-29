@@ -28,11 +28,25 @@ public class JwtTokenProvider {
     private long jwtExpirationMs;
 
     public String generateToken(UserDetails userDetails) {
+        return buildToken(userDetails, buildAuthorityClaims(userDetails));
+    }
+
+    public String generateImpersonationToken(UserDetails targetUser, UserDetails adminUser) {
+        Map<String, Object> additionalClaims = buildAuthorityClaims(targetUser);
+        additionalClaims.put("impersonation", true);
+        additionalClaims.put("impersonatedBy", adminUser.getUsername());
+        return buildToken(targetUser, additionalClaims);
+    }
+
+    private Map<String, Object> buildAuthorityClaims(UserDetails userDetails) {
         Map<String, Object> additionalClaims = new HashMap<>();
         additionalClaims.put("authorities", userDetails.getAuthorities().stream()
                 .map(authority -> authority.getAuthority())
                 .toList());
+        return additionalClaims;
+    }
 
+    private String buildToken(UserDetails userDetails, Map<String, Object> additionalClaims) {
         return Jwts.builder()
                 .claims(additionalClaims)
                 .subject(userDetails.getUsername())

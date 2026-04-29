@@ -281,14 +281,24 @@ public class AdminController {
      * US #19 — Generate a JWT that is scoped to the target user's identity.
      * The admin can then use this token to act on behalf of the customer.
      */
-    @PostMapping("/impersonate/{userId}")
+    @PostMapping({"/impersonate/{userId}", "/users/{userId}/impersonate"})
     public ResponseEntity<AuthResponse> impersonateUser(@PathVariable Long userId,
                                                         @AuthenticationPrincipal User adminUser) {
         User targetUser = userRepository.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found: " + userId));
-        String impersonationToken = jwtTokenProvider.generateToken(targetUser);
+
+        if (!targetUser.isActive()) {
+            throw new IllegalArgumentException("Deaktivierte Benutzerkonten koennen nicht impersoniert werden.");
+        }
+        if (targetUser.hasRole(UserRole.ADMIN)) {
+            throw new IllegalArgumentException("Administratoren koennen keine Administrator-Identitaet annehmen.");
+        }
+
+        String impersonationToken = jwtTokenProvider.generateImpersonationToken(targetUser, adminUser);
         auditLogService.record(adminUser, "IMPERSONATE_USER", "User", userId,
-                AuditInitiator.ADMIN, "Admin impersonated user: " + targetUser.getUsername());
+                AuditInitiator.ADMIN,
+                String.format("Admin %s (%d) impersonated user %s (%d)",
+                        adminUser.getUsername(), adminUser.getId(), targetUser.getUsername(), targetUser.getId()));
         return ResponseEntity.ok(new AuthResponse(
                 impersonationToken,
                 targetUser.getId(),
