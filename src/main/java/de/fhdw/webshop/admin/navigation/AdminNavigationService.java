@@ -63,6 +63,7 @@ public class AdminNavigationService {
                     "pi pi-chart-line",
                     List.of(
                             item("statistics-dashboard", "Dashboard", "/admin/reports/statistics", "pi pi-chart-line", SALES_REPORTING_ROLES),
+                            item("statistics-alerts", "Kennzahl-Warnungen", "/admin/reports/statistics-alerts", "pi pi-exclamation-triangle", SALES_REPORTING_ROLES),
                             item("product-statistics", "Artikelstatistiken", "/admin/reports/product-statistics", "pi pi-chart-bar", SALES_REPORTING_ROLES),
                             item("monitoring", "System Monitoring", "/admin/reports/monitoring", "pi pi-desktop", ADMIN_ROLES)
                     )
