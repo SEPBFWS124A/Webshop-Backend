@@ -66,6 +66,15 @@ public class Order {
     @Column(name = "shipping_cost", nullable = false, precision = 10, scale = 2)
     private BigDecimal shippingCost = BigDecimal.ZERO;
 
+    @Column(name = "climate_contribution_amount", nullable = false, precision = 10, scale = 2)
+    private BigDecimal climateContributionAmount = BigDecimal.ZERO;
+
+    @Column(name = "carbon_compensation_selected", nullable = false)
+    private boolean carbonCompensationSelected = false;
+
+    @Column(name = "total_co2_emission_kg", nullable = false, precision = 10, scale = 3)
+    private BigDecimal totalCo2EmissionKg = BigDecimal.ZERO;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "shipping_method", nullable = false, length = 30)
     private ShippingMethod shippingMethod = ShippingMethod.STANDARD;
