@@ -62,7 +62,7 @@ public class DiscountService implements ProductService.DiscountLookupPort {
                 "CREATE_DISCOUNT",
                 "Discount",
                 saved.getId(),
-                AuditInitiator.USER,
+                AuditInitiator.ADMIN,
                 "customerId=" + customerId + ", productId=" + req.productId() + ", percent=" + req.discountPercent());
         return toDiscountResponse(saved);
     }
@@ -89,7 +89,7 @@ public class DiscountService implements ProductService.DiscountLookupPort {
                 "CREATE_COUPON",
                 "Coupon",
                 saved.getId(),
-                AuditInitiator.USER,
+                AuditInitiator.ADMIN,
                 "code=" + req.code() + ", customerId=" + customerId + ", percent=" + req.discountPercent());
         return toCouponResponse(saved);
     }
@@ -109,7 +109,7 @@ public class DiscountService implements ProductService.DiscountLookupPort {
                 "DELETE_DISCOUNT",
                 "Discount",
                 discountId,
-                AuditInitiator.USER,
+                AuditInitiator.ADMIN,
                 "customerId=" + customerId + ", productId=" + discount.getProduct().getId());
     }
 
@@ -128,7 +128,7 @@ public class DiscountService implements ProductService.DiscountLookupPort {
                 "DELETE_COUPON",
                 "Coupon",
                 couponId,
-                AuditInitiator.USER,
+                AuditInitiator.ADMIN,
                 "code=" + coupon.getCode() + ", customerId=" + customerId);
     }
 

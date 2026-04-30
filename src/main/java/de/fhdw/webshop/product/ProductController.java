@@ -54,15 +54,17 @@ public class ProductController {
     /** US #13 — Create a new product. */
     @PostMapping
     @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
-    public ResponseEntity<ProductResponse> createProduct(@Valid @RequestBody ProductRequest productRequest) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(productService.createProduct(productRequest));
+    public ResponseEntity<ProductResponse> createProduct(@Valid @RequestBody ProductRequest productRequest,
+                                                         @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(productService.createProduct(productRequest, currentUser));
     }
 
     /** US #14 — Delete a product. */
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
-    public ResponseEntity<Void> deleteProduct(@PathVariable Long id) {
-        productService.deleteProduct(id);
+    public ResponseEntity<Void> deleteProduct(@PathVariable Long id,
+                                              @AuthenticationPrincipal User currentUser) {
+        productService.deleteProduct(id, currentUser);
         return ResponseEntity.noContent().build();
     }
 
@@ -70,40 +72,45 @@ public class ProductController {
     @PutMapping("/{id}/purchasable")
     @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
     public ResponseEntity<ProductResponse> setPurchasable(@PathVariable Long id,
-                                                          @Valid @RequestBody SetFlagRequest setFlagRequest) {
-        return ResponseEntity.ok(productService.setPurchasable(id, setFlagRequest.value()));
+                                                          @Valid @RequestBody SetFlagRequest setFlagRequest,
+                                                          @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(productService.setPurchasable(id, setFlagRequest.value(), currentUser));
     }
 
     /** US #26 — Set promoted flag. */
     @PutMapping("/{id}/promoted")
     @PreAuthorize("hasAnyRole('SALES_EMPLOYEE', 'ADMIN')")
     public ResponseEntity<ProductResponse> setPromoted(@PathVariable Long id,
-                                                       @Valid @RequestBody SetFlagRequest setFlagRequest) {
-        return ResponseEntity.ok(productService.setPromoted(id, setFlagRequest.value()));
+                                                       @Valid @RequestBody SetFlagRequest setFlagRequest,
+                                                       @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(productService.setPromoted(id, setFlagRequest.value(), currentUser));
     }
 
     /** US #16 — Update description. */
     @PutMapping("/{id}/description")
     @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
     public ResponseEntity<ProductResponse> updateDescription(@PathVariable Long id,
-                                                             @Valid @RequestBody UpdateDescriptionRequest updateDescriptionRequest) {
-        return ResponseEntity.ok(productService.updateDescription(id, updateDescriptionRequest));
+                                                             @Valid @RequestBody UpdateDescriptionRequest updateDescriptionRequest,
+                                                             @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(productService.updateDescription(id, updateDescriptionRequest, currentUser));
     }
 
     /** US #17 — Update image. */
     @PutMapping("/{id}/image")
     @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
     public ResponseEntity<ProductResponse> updateImage(@PathVariable Long id,
-                                                       @Valid @RequestBody UpdateImageRequest updateImageRequest) {
-        return ResponseEntity.ok(productService.updateImage(id, updateImageRequest));
+                                                       @Valid @RequestBody UpdateImageRequest updateImageRequest,
+                                                       @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(productService.updateImage(id, updateImageRequest, currentUser));
     }
 
     /** US #18 — Update recommended retail price (sales employees only). */
     @PutMapping("/{id}/price")
     @PreAuthorize("hasAnyRole('SALES_EMPLOYEE', 'ADMIN')")
     public ResponseEntity<ProductResponse> updatePrice(@PathVariable Long id,
-                                                       @Valid @RequestBody UpdatePriceRequest updatePriceRequest) {
-        return ResponseEntity.ok(productService.updatePrice(id, updatePriceRequest));
+                                                       @Valid @RequestBody UpdatePriceRequest updatePriceRequest,
+                                                       @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(productService.updatePrice(id, updatePriceRequest, currentUser));
     }
 
     /** US #34 — Sales statistics (units sold, revenue) for a product over a date range. */

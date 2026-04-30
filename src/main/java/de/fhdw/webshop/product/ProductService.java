@@ -1,5 +1,7 @@
 package de.fhdw.webshop.product;
 
+import de.fhdw.webshop.admin.AuditInitiator;
+import de.fhdw.webshop.admin.AuditLogService;
 import de.fhdw.webshop.product.dto.*;
 import de.fhdw.webshop.user.User;
 import jakarta.persistence.EntityNotFoundException;
@@ -16,6 +18,7 @@ import java.util.List;
 public class ProductService {
 
     private final ProductRepository productRepository;
+    private final AuditLogService auditLogService;
 
     public List<ProductResponse> listProducts(Boolean purchasableOnly, String category, String searchTerm) {
         // Normalize null Strings to "" — JPQL IS NULL on String params infers bytea in PostgreSQL,
@@ -43,7 +46,7 @@ public class ProductService {
 
     /** US #13 — Add a new article to the catalogue. */
     @Transactional
-    public ProductResponse createProduct(ProductRequest productRequest) {
+    public ProductResponse createProduct(ProductRequest productRequest, User actingUser) {
         Product product = new Product();
         product.setName(productRequest.name());
         product.setDescription(productRequest.description());
@@ -51,54 +54,74 @@ public class ProductService {
         product.setRecommendedRetailPrice(productRequest.recommendedRetailPrice());
         product.setCategory(productRequest.category());
         product.setStock(25);
-        return toResponse(productRepository.save(product));
+        Product savedProduct = productRepository.save(product);
+        recordProductAction(actingUser, "CREATE_PRODUCT", savedProduct,
+                "Product created: " + savedProduct.getName());
+        return toResponse(savedProduct);
     }
 
     /** US #14 — Remove an article from the catalogue. */
     @Transactional
-    public void deleteProduct(Long productId) {
+    public void deleteProduct(Long productId, User actingUser) {
         Product product = loadProduct(productId);
         productRepository.delete(product);
+        recordProductAction(actingUser, "DELETE_PRODUCT", product,
+                "Product deleted: " + product.getName());
     }
 
     /** US #15 — Toggle whether customers can see and buy the article. */
     @Transactional
-    public ProductResponse setPurchasable(Long productId, boolean purchasable) {
+    public ProductResponse setPurchasable(Long productId, boolean purchasable, User actingUser) {
         Product product = loadProduct(productId);
         product.setPurchasable(purchasable);
-        return toResponse(productRepository.save(product));
+        Product savedProduct = productRepository.save(product);
+        recordProductAction(actingUser, "SET_PRODUCT_PURCHASABLE", savedProduct,
+                "Product purchasable set to " + purchasable + ": " + savedProduct.getName());
+        return toResponse(savedProduct);
     }
 
     /** US #26 — Toggle promoted flag (highlighted on storefront). */
     @Transactional
-    public ProductResponse setPromoted(Long productId, boolean promoted) {
+    public ProductResponse setPromoted(Long productId, boolean promoted, User actingUser) {
         Product product = loadProduct(productId);
         product.setPromoted(promoted);
-        return toResponse(productRepository.save(product));
+        Product savedProduct = productRepository.save(product);
+        recordProductAction(actingUser, "SET_PRODUCT_PROMOTED", savedProduct,
+                "Product promoted set to " + promoted + ": " + savedProduct.getName());
+        return toResponse(savedProduct);
     }
 
     /** US #16 — Update description text. */
     @Transactional
-    public ProductResponse updateDescription(Long productId, UpdateDescriptionRequest updateDescriptionRequest) {
+    public ProductResponse updateDescription(Long productId, UpdateDescriptionRequest updateDescriptionRequest, User actingUser) {
         Product product = loadProduct(productId);
         product.setDescription(updateDescriptionRequest.description());
-        return toResponse(productRepository.save(product));
+        Product savedProduct = productRepository.save(product);
+        recordProductAction(actingUser, "UPDATE_PRODUCT_DESCRIPTION", savedProduct,
+                "Product description updated: " + savedProduct.getName());
+        return toResponse(savedProduct);
     }
 
     /** US #17 — Update product image URL. */
     @Transactional
-    public ProductResponse updateImage(Long productId, UpdateImageRequest updateImageRequest) {
+    public ProductResponse updateImage(Long productId, UpdateImageRequest updateImageRequest, User actingUser) {
         Product product = loadProduct(productId);
         product.setImageUrl(updateImageRequest.imageUrl());
-        return toResponse(productRepository.save(product));
+        Product savedProduct = productRepository.save(product);
+        recordProductAction(actingUser, "UPDATE_PRODUCT_IMAGE", savedProduct,
+                "Product image updated: " + savedProduct.getName());
+        return toResponse(savedProduct);
     }
 
     /** US #18 — Update recommended retail price (SALES_EMPLOYEE only). */
     @Transactional
-    public ProductResponse updatePrice(Long productId, UpdatePriceRequest updatePriceRequest) {
+    public ProductResponse updatePrice(Long productId, UpdatePriceRequest updatePriceRequest, User actingUser) {
         Product product = loadProduct(productId);
         product.setRecommendedRetailPrice(updatePriceRequest.recommendedRetailPrice());
-        return toResponse(productRepository.save(product));
+        Product savedProduct = productRepository.save(product);
+        recordProductAction(actingUser, "UPDATE_PRODUCT_PRICE", savedProduct,
+                "Product price updated to " + updatePriceRequest.recommendedRetailPrice() + ": " + savedProduct.getName());
+        return toResponse(savedProduct);
     }
 
     public Product loadProduct(Long productId) {
@@ -127,6 +150,16 @@ public class ProductService {
                 product.isPromoted(),
                 product.getCreatedAt()
         );
+    }
+
+    private void recordProductAction(User actingUser, String action, Product product, String details) {
+        auditLogService.record(
+                actingUser,
+                action,
+                "Product",
+                product.getId(),
+                AuditInitiator.ADMIN,
+                details);
     }
 
     /** Port interface so ProductService does not depend on the discount package directly. */

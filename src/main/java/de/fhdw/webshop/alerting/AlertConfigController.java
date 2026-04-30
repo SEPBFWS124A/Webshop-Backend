@@ -8,7 +8,9 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import de.fhdw.webshop.user.User;
 
 import java.util.List;
 
@@ -28,8 +30,9 @@ public class AlertConfigController {
     @PutMapping("/events/{eventType}")
     public ResponseEntity<AlertEventConfigResponse> updateAlertEvent(
             @PathVariable AlertEventType eventType,
-            @Valid @RequestBody UpdateAlertEventConfigRequest request) {
-        return ResponseEntity.ok(alertConfigService.updateEventConfig(eventType, request));
+            @Valid @RequestBody UpdateAlertEventConfigRequest request,
+            @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(alertConfigService.updateEventConfig(eventType, request, currentUser));
     }
 
     @GetMapping("/emails")
@@ -39,13 +42,15 @@ public class AlertConfigController {
 
     @PostMapping("/emails")
     public ResponseEntity<KnownEmailAddressResponse> addKnownEmail(
-            @Valid @RequestBody AddKnownEmailRequest request) {
-        return ResponseEntity.ok(alertConfigService.addKnownEmail(request));
+            @Valid @RequestBody AddKnownEmailRequest request,
+            @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(alertConfigService.addKnownEmail(request, currentUser));
     }
 
     @DeleteMapping("/emails/{id}")
-    public ResponseEntity<Void> deleteKnownEmail(@PathVariable Long id) {
-        alertConfigService.deleteKnownEmail(id);
+    public ResponseEntity<Void> deleteKnownEmail(@PathVariable Long id,
+                                                 @AuthenticationPrincipal User currentUser) {
+        alertConfigService.deleteKnownEmail(id, currentUser);
         return ResponseEntity.noContent().build();
     }
 }

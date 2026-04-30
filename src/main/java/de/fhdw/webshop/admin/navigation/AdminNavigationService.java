@@ -24,6 +24,8 @@ public class AdminNavigationService {
             Set.of(UserRole.SALES_EMPLOYEE, UserRole.ADMIN);
     private static final Set<UserRole> WAREHOUSE_ROLES =
             Set.of(UserRole.WAREHOUSE_EMPLOYEE, UserRole.ADMIN);
+    private static final Set<UserRole> BUSINESS_LOG_ROLES =
+            Set.of(UserRole.EMPLOYEE, UserRole.SALES_EMPLOYEE, UserRole.WAREHOUSE_EMPLOYEE, UserRole.ADMIN);
     private static final Set<UserRole> ADMIN_ROLES =
             Set.of(UserRole.ADMIN);
 
@@ -72,6 +74,7 @@ public class AdminNavigationService {
                     "System",
                     "pi pi-cog",
                     List.of(
+                            item("business-log", "Business Log", "/admin/system/business-log", "pi pi-history", BUSINESS_LOG_ROLES),
                             item("notifications", "Systemmeldungen", "/admin/system/notifications", "pi pi-bell", SALES_REPORTING_ROLES),
                             item("alerting", "E-Mail & Alerting", "/admin/system/alerting", "pi pi-envelope", ADMIN_ROLES)
                     )
