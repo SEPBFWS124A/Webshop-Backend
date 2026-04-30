@@ -64,4 +64,11 @@ public interface UserRepository extends JpaRepository<User, Long> {
                           AND u.active = true
                         """)
         List<User> findByRoleAndActiveTrue(@Param("role") UserRole role);
+
+        @Query("""
+                        SELECT COUNT(u) FROM User u
+                        WHERE :role MEMBER OF u.roles
+                          AND u.active = true
+                        """)
+        long countActiveCustomers(@Param("role") UserRole role);
 }

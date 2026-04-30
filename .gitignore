@@ -3,6 +3,8 @@ target/
 .m2/
 .mvn-home
 !.mvn/wrapper/maven-wrapper.jar
+.m2/
+.mvn-home/
 
 # ── Compiled output ──────────────────────────────────────────────────────────
 *.class

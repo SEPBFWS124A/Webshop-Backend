@@ -65,7 +65,7 @@ class AdminNavigationServiceTest {
                 .map(AdminNavigationItemResponse::id)
                 .toList();
 
-        assertThat(itemIds).contains("customers", "product-pricing", "product-statistics", "notifications");
+        assertThat(itemIds).contains("customers", "product-pricing", "statistics-dashboard", "product-statistics", "notifications");
         assertThat(itemIds).doesNotContain(
                 "admin-users",
                 "admin-roles",
