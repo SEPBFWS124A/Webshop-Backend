@@ -54,18 +54,19 @@ INSERT INTO products (
     description,
     image_url,
     recommended_retail_price,
+    co2_emission_kg,
     category,
     stock,
     warehouse_position,
     purchasable,
     promoted
 ) VALUES
-  ('Laptop Pro 15', 'High-performance laptop with 15" display', 'https://placehold.co/400x300?text=Laptop', 1299.99, 'Electronics', 8, 'A-01-01', TRUE, TRUE),
-  ('Wireless Mouse', 'Ergonomic wireless mouse, 2.4 GHz', 'https://placehold.co/400x300?text=Mouse', 29.99, 'Electronics', 120, 'A-03-07', TRUE, FALSE),
-  ('Standing Desk', 'Height-adjustable standing desk 140x70 cm', 'https://placehold.co/400x300?text=Desk', 499.99, 'Furniture', 12, 'B-01-03', TRUE, FALSE),
-  ('USB-C Hub', '7-in-1 USB-C hub with HDMI and SD card', 'https://placehold.co/400x300?text=Hub', 49.99, 'Electronics', 40, 'A-04-02', TRUE, FALSE),
-  ('Office Chair', 'Lumbar support mesh chair', 'https://placehold.co/400x300?text=Chair', 349.99, 'Furniture', 18, 'B-02-05', TRUE, TRUE),
-  ('Notebook (Draft)', 'Not yet available to customers', NULL, 9.99, 'Stationery', 0, 'C-01-01', FALSE, FALSE);
+  ('Laptop Pro 15', 'High-performance laptop with 15" display', 'https://placehold.co/400x300?text=Laptop', 1299.99, 214.500, 'Electronics', 8, 'A-01-01', TRUE, TRUE),
+  ('Wireless Mouse', 'Ergonomic wireless mouse, 2.4 GHz', 'https://placehold.co/400x300?text=Mouse', 29.99, 2.100, 'Electronics', 120, 'A-03-07', TRUE, FALSE),
+  ('Standing Desk', 'Height-adjustable standing desk 140x70 cm', 'https://placehold.co/400x300?text=Desk', 499.99, 58.750, 'Furniture', 12, 'B-01-03', TRUE, FALSE),
+  ('USB-C Hub', '7-in-1 USB-C hub with HDMI and SD card', 'https://placehold.co/400x300?text=Hub', 49.99, 5.400, 'Electronics', 40, 'A-04-02', TRUE, FALSE),
+  ('Office Chair', 'Lumbar support mesh chair', 'https://placehold.co/400x300?text=Chair', 349.99, 33.200, 'Furniture', 18, 'B-02-05', TRUE, TRUE),
+  ('Notebook (Draft)', 'Not yet available to customers', NULL, 9.99, 0.350, 'Stationery', 0, 'C-01-01', FALSE, FALSE);
 
 -- Discounts
 INSERT INTO discounts (customer_id, product_id, discount_percent, valid_from, valid_until)

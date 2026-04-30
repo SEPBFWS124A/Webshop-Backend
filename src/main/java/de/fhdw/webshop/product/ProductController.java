@@ -107,6 +107,14 @@ public class ProductController {
     }
 
     /** US #34 — Sales statistics (units sold, revenue) for a product over a date range. */
+    /** US #196 — Update estimated product CO2 footprint in kg CO2e. */
+    @PutMapping("/{id}/co2-emission")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<ProductResponse> updateCo2Emission(@PathVariable Long id,
+                                                             @Valid @RequestBody UpdateCo2EmissionRequest updateCo2EmissionRequest) {
+        return ResponseEntity.ok(productService.updateCo2Emission(id, updateCo2EmissionRequest));
+    }
+
     @GetMapping("/{id}/statistics")
     @PreAuthorize("hasAnyRole('SALES_EMPLOYEE', 'ADMIN')")
     public ResponseEntity<ProductStatisticsResponse> getProductStatistics(

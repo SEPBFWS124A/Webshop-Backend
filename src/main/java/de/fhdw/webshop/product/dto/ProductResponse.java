@@ -9,6 +9,7 @@ public record ProductResponse(
         String description,
         String imageUrl,
         BigDecimal recommendedRetailPrice,
+        BigDecimal co2EmissionKg,
         String category,
         int stock,
         boolean purchasable,

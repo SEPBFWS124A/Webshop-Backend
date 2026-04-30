@@ -10,6 +10,9 @@ public record CartResponse(
         BigDecimal tax,
         BigDecimal shippingCost,
         BigDecimal total,
+        BigDecimal totalCo2EmissionKg,
+        int co2EmissionCoveredItemCount,
+        int co2EmissionTotalItemCount,
         String appliedCouponCode,
         List<String> messages
 ) {}

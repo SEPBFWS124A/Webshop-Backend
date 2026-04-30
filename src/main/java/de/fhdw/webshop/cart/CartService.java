@@ -70,6 +70,19 @@ public class CartService {
         BigDecimal total = subtotal.add(tax).add(shippingCost)
                 .setScale(2, RoundingMode.HALF_UP);
 
+        BigDecimal totalCo2EmissionKg = itemResponses.stream()
+                .map(CartItemResponse::lineCo2EmissionKg)
+                .filter(lineCo2EmissionKg -> lineCo2EmissionKg != null)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(3, RoundingMode.HALF_UP);
+        int co2EmissionCoveredItemCount = itemResponses.stream()
+                .filter(item -> item.co2EmissionKg() != null)
+                .mapToInt(CartItemResponse::quantity)
+                .sum();
+        int co2EmissionTotalItemCount = itemResponses.stream()
+                .mapToInt(CartItemResponse::quantity)
+                .sum();
+
         return new CartResponse(
                 itemResponses,
                 subtotal,
@@ -77,6 +90,9 @@ public class CartService {
                 tax,
                 shippingCost,
                 total,
+                totalCo2EmissionKg,
+                co2EmissionCoveredItemCount,
+                co2EmissionTotalItemCount,
                 coupon != null ? coupon.getCode() : null,
                 messages
         );
@@ -181,6 +197,11 @@ public class CartService {
             effectiveUnitPrice = recommendedRetailPrice;
         }
         BigDecimal lineTotal = effectiveUnitPrice.multiply(BigDecimal.valueOf(cartItem.getQuantity()));
+        BigDecimal co2EmissionKg = cartItem.getProduct().getCo2EmissionKg();
+        BigDecimal lineCo2EmissionKg = co2EmissionKg == null
+                ? null
+                : co2EmissionKg.multiply(BigDecimal.valueOf(cartItem.getQuantity()))
+                        .setScale(3, RoundingMode.HALF_UP);
 
         return new CartItemResponse(
                 cartItem.getId(),
@@ -188,9 +209,11 @@ public class CartService {
                 cartItem.getProduct().getName(),
                 cartItem.getProduct().getImageUrl(),
                 effectiveUnitPrice,
+                co2EmissionKg,
                 getAvailableStock(cartItem.getProduct()),
                 cartItem.getQuantity(),
                 lineTotal,
+                lineCo2EmissionKg,
                 cartItem.getAddedAt()
         );
     }
