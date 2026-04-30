@@ -3,8 +3,6 @@ package de.fhdw.webshop.admin.statistics;
 import de.fhdw.webshop.admin.statistics.dto.AdminProductPerformanceResponse;
 import de.fhdw.webshop.admin.statistics.dto.AdminStatisticsDashboardResponse;
 import de.fhdw.webshop.order.OrderStatus;
-import de.fhdw.webshop.user.UserRepository;
-import de.fhdw.webshop.user.UserRole;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -24,7 +22,6 @@ public class AdminStatisticsService {
     private static final int PRODUCT_PERFORMANCE_LIMIT = 8;
 
     private final EntityManager entityManager;
-    private final UserRepository userRepository;
 
     public AdminStatisticsDashboardResponse getDashboard(LocalDate from, LocalDate to) {
         LocalDate resolvedTo = to != null ? to : LocalDate.now();
@@ -50,7 +47,7 @@ public class AdminStatisticsService {
 
         BigDecimal revenue = toBigDecimal(totals[0]);
         long orderCount = toLong(totals[1]);
-        long activeCustomerCount = userRepository.countActiveCustomers(UserRole.CUSTOMER);
+        long activeCustomerCount = toLong(totals[2]);
         List<AdminProductPerformanceResponse> productPerformance = loadProductPerformance(fromInstant, toExclusive);
 
         return new AdminStatisticsDashboardResponse(
