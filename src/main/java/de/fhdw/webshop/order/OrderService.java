@@ -51,6 +51,7 @@ public class OrderService {
     private static final BigDecimal SHIPPING_COST = new BigDecimal("4.99");
     private static final BigDecimal EXPRESS_SHIPPING_COST = new BigDecimal("9.99");
     private static final BigDecimal FREE_SHIPPING_THRESHOLD = new BigDecimal("50.00");
+    private static final BigDecimal CARBON_COMPENSATION_RATE_PER_KG = new BigDecimal("0.05");
     private static final Duration STANDARD_TOTAL_DELIVERY = Duration.ofDays(4);
     private static final Duration EXPRESS_TOTAL_DELIVERY = Duration.ofDays(2);
     private static final Duration STANDARD_MIN_REMAINING_EARLY = Duration.ofDays(3);
@@ -156,6 +157,7 @@ public class OrderService {
         String couponCode = placeOrderRequest != null ? placeOrderRequest.couponCode() : null;
         Coupon coupon = resolveCoupon(couponCode, customer);
         String orderNumber = placeOrderRequest != null ? placeOrderRequest.previewOrderNumber() : null;
+        boolean carbonCompensationSelected = placeOrderRequest != null && Boolean.TRUE.equals(placeOrderRequest.carbonCompensationSelected());
         String confirmationEmail = placeOrderRequest != null && placeOrderRequest.email() != null && !placeOrderRequest.email().isBlank()
                 ? placeOrderRequest.email().trim()
                 : customer.getEmail();
@@ -177,7 +179,8 @@ public class OrderService {
                 paymentMethod,
                 coupon,
                 customer.getId(),
-                placeOrderRequest != null && Boolean.TRUE.equals(placeOrderRequest.allowUnverifiedAddress())
+                placeOrderRequest != null && Boolean.TRUE.equals(placeOrderRequest.allowUnverifiedAddress()),
+                carbonCompensationSelected
         );
     }
 
@@ -218,7 +221,8 @@ public class OrderService {
                 resolveGuestPaymentMethod(placeOrderRequest.paymentMethod()),
                 null,
                 null,
-                Boolean.TRUE.equals(placeOrderRequest.allowUnverifiedAddress())
+                Boolean.TRUE.equals(placeOrderRequest.allowUnverifiedAddress()),
+                Boolean.TRUE.equals(placeOrderRequest.carbonCompensationSelected())
         );
     }
 
@@ -232,7 +236,8 @@ public class OrderService {
                                        PaymentMethodSnapshot paymentMethod,
                                        Coupon coupon,
                                        Long discountCustomerId,
-                                       boolean allowUnverifiedAddress) {
+                                       boolean allowUnverifiedAddress,
+                                       boolean carbonCompensationSelected) {
         Order order = new Order();
         DeliveryAddressSnapshot validatedDeliveryAddress = validateDeliveryAddress(deliveryAddress, allowUnverifiedAddress);
         order.setCustomer(customer);
@@ -253,6 +258,7 @@ public class OrderService {
         order.setCouponCode(coupon != null ? coupon.getCode() : null);
 
         BigDecimal itemSubtotal = BigDecimal.ZERO;
+        BigDecimal totalCo2EmissionKg = BigDecimal.ZERO;
         List<PreparedOrderItem> preparedItems = new ArrayList<>();
         for (RequestedOrderItem requestedItem : requestedItems) {
             Product product = requestedItem.product();
@@ -269,16 +275,37 @@ public class OrderService {
             BigDecimal unitPrice = applyDiscount(product.getRecommendedRetailPrice(), discountPercent);
             BigDecimal lineTotal = unitPrice.multiply(BigDecimal.valueOf(requestedItem.quantity())).setScale(2, RoundingMode.HALF_UP);
             itemSubtotal = itemSubtotal.add(lineTotal);
+            if (product.getCo2EmissionKg() != null) {
+                totalCo2EmissionKg = totalCo2EmissionKg.add(
+                        product.getCo2EmissionKg().multiply(BigDecimal.valueOf(requestedItem.quantity())));
+            }
             preparedItems.add(new PreparedOrderItem(product, requestedItem.quantity(), unitPrice, lineTotal));
         }
+        totalCo2EmissionKg = totalCo2EmissionKg.setScale(3, RoundingMode.HALF_UP);
 
         BigDecimal discountAmount = calculateCouponDiscount(itemSubtotal, coupon);
         BigDecimal subtotal = itemSubtotal.subtract(discountAmount).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
         BigDecimal shippingCost = calculateShippingCost(subtotal, shippingMethod);
         BigDecimal taxAmount = subtotal.multiply(TAX_RATE).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal totalPrice = subtotal.add(taxAmount).add(shippingCost).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal climateContributionAmount = calculateClimateContributionAmount(
+                totalCo2EmissionKg,
+                carbonCompensationSelected
+        );
+        BigDecimal totalPrice = subtotal.add(taxAmount).add(shippingCost).add(climateContributionAmount).setScale(2, RoundingMode.HALF_UP);
 
-        return new PreparedOrder(order, preparedItems, coupon, discountAmount, taxAmount, subtotal, shippingCost, totalPrice);
+        return new PreparedOrder(
+                order,
+                preparedItems,
+                coupon,
+                discountAmount,
+                taxAmount,
+                subtotal,
+                shippingCost,
+                climateContributionAmount,
+                totalCo2EmissionKg,
+                carbonCompensationSelected,
+                totalPrice
+        );
     }
 
     private DeliveryAddressSnapshot validateDeliveryAddress(DeliveryAddressSnapshot deliveryAddress, boolean allowUnverifiedAddress) {
@@ -359,6 +386,9 @@ public class OrderService {
         order.setDiscountAmount(preparedOrder.discountAmount());
         order.setTaxAmount(preparedOrder.taxAmount());
         order.setShippingCost(preparedOrder.shippingCost());
+        order.setClimateContributionAmount(preparedOrder.climateContributionAmount());
+        order.setCarbonCompensationSelected(preparedOrder.carbonCompensationSelected());
+        order.setTotalCo2EmissionKg(preparedOrder.totalCo2EmissionKg());
         order.setTotalPrice(preparedOrder.totalPrice());
         order.setStatus(OrderStatus.CONFIRMED);
 
@@ -465,6 +495,16 @@ public class OrderService {
         return subtotal.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
     }
 
+    private BigDecimal calculateClimateContributionAmount(BigDecimal totalCo2EmissionKg, boolean selected) {
+        if (!selected || totalCo2EmissionKg == null || totalCo2EmissionKg.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+
+        return totalCo2EmissionKg
+                .multiply(CARBON_COMPENSATION_RATE_PER_KG)
+                .setScale(2, RoundingMode.HALF_UP);
+    }
+
     private void markCouponAsUsed(Coupon coupon, Order savedOrder, User customer) {
         if (coupon == null) {
             return;
@@ -526,6 +566,8 @@ public class OrderService {
                 order.getTaxAmount(),
                 order.getShippingCost(),
                 order.getShippingMethod(),
+                order.getClimateContributionAmount(),
+                order.getTotalCo2EmissionKg(),
                 order.getDiscountAmount(),
                 order.getCouponCode(),
                 order.getCreatedAt(),
@@ -557,6 +599,8 @@ public class OrderService {
                 order.getTaxAmount(),
                 order.getShippingCost(),
                 order.getShippingMethod(),
+                order.getClimateContributionAmount(),
+                order.getTotalCo2EmissionKg(),
                 order.getDiscountAmount(),
                 order.getCouponCode(),
                 order.getCreatedAt(),
@@ -618,6 +662,8 @@ public class OrderService {
                 preparedOrder.discountAmount(),
                 preparedOrder.taxAmount(),
                 preparedOrder.shippingCost(),
+                preparedOrder.climateContributionAmount(),
+                preparedOrder.totalCo2EmissionKg(),
                 preparedOrder.totalPrice(),
                 preparedOrder.order().getCouponCode(),
                 itemResponses
@@ -632,8 +678,16 @@ public class OrderService {
                 .append("Versand an: ").append(order.getDeliveryStreet()).append(", ")
                 .append(order.getDeliveryPostalCode()).append(' ')
                 .append(order.getDeliveryCity()).append(", ")
-                .append(order.getDeliveryCountry()).append("\n\n")
-                .append("Artikel:\n");
+                .append(order.getDeliveryCountry()).append('\n');
+
+        if (order.getClimateContributionAmount() != null
+                && order.getClimateContributionAmount().compareTo(BigDecimal.ZERO) > 0) {
+            body.append("Klimabeitrag: ")
+                    .append(order.getClimateContributionAmount())
+                    .append(" EUR\n");
+        }
+
+        body.append("\nArtikel:\n");
 
         for (OrderItem item : order.getItems()) {
             body.append("- ")
@@ -685,6 +739,9 @@ public class OrderService {
             BigDecimal taxAmount,
             BigDecimal subtotal,
             BigDecimal shippingCost,
+            BigDecimal climateContributionAmount,
+            BigDecimal totalCo2EmissionKg,
+            boolean carbonCompensationSelected,
             BigDecimal totalPrice
     ) {}
 }
