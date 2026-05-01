@@ -30,8 +30,6 @@ public class AdminNavigationService {
             Set.of(UserRole.ADMIN);
     private static final Set<UserRole> TRADE_IN_ROLES =
             Set.of(UserRole.EMPLOYEE, UserRole.SALES_EMPLOYEE, UserRole.ADMIN);
-    private static final Set<UserRole> BUSINESS_LOG_ROLES =
-            Set.of(UserRole.EMPLOYEE, UserRole.SALES_EMPLOYEE, UserRole.WAREHOUSE_EMPLOYEE, UserRole.ADMIN);
 
     private static final List<NavigationGroup> NAVIGATION = List.of(
             new NavigationGroup(
