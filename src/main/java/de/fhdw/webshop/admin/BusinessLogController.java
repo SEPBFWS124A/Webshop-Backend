@@ -15,7 +15,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/admin/business-log")
-@PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'WAREHOUSE_EMPLOYEE', 'ADMIN')")
+@PreAuthorize("hasAnyRole('EMPLOYEE', 'ADMIN')")
 @RequiredArgsConstructor
 public class BusinessLogController {
 

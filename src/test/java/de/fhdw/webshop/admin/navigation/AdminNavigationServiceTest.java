@@ -45,7 +45,7 @@ class AdminNavigationServiceTest {
         List<AdminNavigationGroupResponse> navigation = service.getNavigationFor(warehouseUser);
 
         assertThat(navigation).extracting(AdminNavigationGroupResponse::label)
-                .containsExactly("Produktverwaltung", "System");
+                .containsExactly("Produktverwaltung");
         assertThat(navigation.getFirst().items())
                 .extracting(AdminNavigationItemResponse::id)
                 .containsExactly("warehouse");
@@ -65,10 +65,11 @@ class AdminNavigationServiceTest {
                 .map(AdminNavigationItemResponse::id)
                 .toList();
 
-        assertThat(itemIds).contains("customers", "product-pricing", "statistics-dashboard", "product-statistics", "business-log", "notifications");
+        assertThat(itemIds).contains("customers", "product-pricing", "statistics-dashboard", "product-statistics", "notifications");
         assertThat(itemIds).doesNotContain(
                 "admin-users",
                 "admin-roles",
+                "business-log",
                 "customer-promotions",
                 "customer-revenue",
                 "monitoring",
