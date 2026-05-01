@@ -10,6 +10,8 @@ public record OrderPreviewResponse(
         BigDecimal discountAmount,
         BigDecimal taxAmount,
         BigDecimal shippingCost,
+        BigDecimal climateContributionAmount,
+        BigDecimal totalCo2EmissionKg,
         BigDecimal totalPrice,
         String couponCode,
         List<OrderPreviewItemResponse> items

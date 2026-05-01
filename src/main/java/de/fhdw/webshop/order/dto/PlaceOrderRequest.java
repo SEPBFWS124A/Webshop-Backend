@@ -21,5 +21,6 @@ public record PlaceOrderRequest(
         Boolean acceptedPrivacyPolicy,
         Boolean saveDeliveryAddress,
         Boolean savePaymentMethod,
+        Boolean carbonCompensationSelected,
         List<@Valid PlaceOrderItemRequest> items
 ) {}

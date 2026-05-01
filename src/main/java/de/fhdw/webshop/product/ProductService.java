@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Arrays;
 import java.util.List;
 
 @Service
@@ -21,11 +22,28 @@ public class ProductService {
     private final AuditLogService auditLogService;
 
     public List<ProductResponse> listProducts(Boolean purchasableOnly, String category, String searchTerm) {
+        return listProducts(purchasableOnly, category, searchTerm, null);
+    }
+
+    public List<ProductResponse> listProducts(
+            Boolean purchasableOnly,
+            String category,
+            String searchTerm,
+            List<ProductEcoScore> ecoScores) {
         // Normalize null Strings to "" — JPQL IS NULL on String params infers bytea in PostgreSQL,
         // breaking LOWER(). The repository query uses = '' as the "no filter" sentinel instead.
         String normalizedCategory = (category == null) ? "" : category;
         String normalizedSearchTerm = (searchTerm == null) ? "" : searchTerm;
-        return productRepository.searchProducts(purchasableOnly, normalizedCategory, normalizedSearchTerm)
+        boolean filterByEcoScore = ecoScores != null && !ecoScores.isEmpty();
+        List<ProductEcoScore> normalizedEcoScores = filterByEcoScore
+                ? ecoScores
+                : Arrays.asList(ProductEcoScore.values());
+        return productRepository.searchProducts(
+                        purchasableOnly,
+                        normalizedCategory,
+                        filterByEcoScore,
+                        normalizedEcoScores,
+                        normalizedSearchTerm)
                 .stream()
                 .map(this::toResponse)
                 .toList();
@@ -53,6 +71,7 @@ public class ProductService {
         product.setImageUrl(productRequest.imageUrl());
         product.setRecommendedRetailPrice(productRequest.recommendedRetailPrice());
         product.setCo2EmissionKg(productRequest.co2EmissionKg());
+        product.setEcoScore(productRequest.ecoScore() == null ? ProductEcoScore.NONE : productRequest.ecoScore());
         product.setCategory(productRequest.category());
         product.setStock(25);
         Product savedProduct = productRepository.save(product);
@@ -133,6 +152,14 @@ public class ProductService {
         return toResponse(productRepository.save(product));
     }
 
+    /** US #198 - Update the product Eco-Score. */
+    @Transactional
+    public ProductResponse updateEcoScore(Long productId, UpdateEcoScoreRequest updateEcoScoreRequest) {
+        Product product = loadProduct(productId);
+        product.setEcoScore(updateEcoScoreRequest.ecoScore());
+        return toResponse(productRepository.save(product));
+    }
+
     public Product loadProduct(Long productId) {
         return productRepository.findById(productId)
                 .orElseThrow(() -> new EntityNotFoundException("Product not found: " + productId));
@@ -154,6 +181,7 @@ public class ProductService {
                 product.getImageUrl(),
                 product.getRecommendedRetailPrice(),
                 product.getCo2EmissionKg(),
+                product.getEcoScore(),
                 product.getCategory(),
                 product.getStock(),
                 product.isPurchasable(),

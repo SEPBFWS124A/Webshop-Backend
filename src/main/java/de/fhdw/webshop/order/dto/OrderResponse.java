@@ -16,6 +16,8 @@ public record OrderResponse(
         BigDecimal taxAmount,
         BigDecimal shippingCost,
         ShippingMethod shippingMethod,
+        BigDecimal climateContributionAmount,
+        BigDecimal totalCo2EmissionKg,
         BigDecimal discountAmount,
         String couponCode,
         Instant createdAt,

@@ -33,8 +33,9 @@ public class ProductController {
     public ResponseEntity<List<ProductResponse>> listProducts(
             @RequestParam(required = false) Boolean purchasable,
             @RequestParam(required = false) String category,
-            @RequestParam(required = false) String search) {
-        return ResponseEntity.ok(productService.listProducts(purchasable, category, search));
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false, name = "ecoScore") List<ProductEcoScore> ecoScores) {
+        return ResponseEntity.ok(productService.listProducts(purchasable, category, search, ecoScores));
     }
 
     /** US #23, #25, #28 — Single product detail (description, image, price). */
@@ -120,6 +121,14 @@ public class ProductController {
     public ResponseEntity<ProductResponse> updateCo2Emission(@PathVariable Long id,
                                                              @Valid @RequestBody UpdateCo2EmissionRequest updateCo2EmissionRequest) {
         return ResponseEntity.ok(productService.updateCo2Emission(id, updateCo2EmissionRequest));
+    }
+
+    /** US #198 - Update Eco-Score. */
+    @PutMapping("/{id}/eco-score")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<ProductResponse> updateEcoScore(@PathVariable Long id,
+                                                          @Valid @RequestBody UpdateEcoScoreRequest updateEcoScoreRequest) {
+        return ResponseEntity.ok(productService.updateEcoScore(id, updateEcoScoreRequest));
     }
 
     @GetMapping("/{id}/statistics")

@@ -28,6 +28,10 @@ public class AdminNavigationService {
             Set.of(UserRole.EMPLOYEE, UserRole.SALES_EMPLOYEE, UserRole.WAREHOUSE_EMPLOYEE, UserRole.ADMIN);
     private static final Set<UserRole> ADMIN_ROLES =
             Set.of(UserRole.ADMIN);
+    private static final Set<UserRole> TRADE_IN_ROLES =
+            Set.of(UserRole.EMPLOYEE, UserRole.SALES_EMPLOYEE, UserRole.ADMIN);
+    private static final Set<UserRole> BUSINESS_LOG_ROLES =
+            Set.of(UserRole.EMPLOYEE, UserRole.SALES_EMPLOYEE, UserRole.WAREHOUSE_EMPLOYEE, UserRole.ADMIN);
 
     private static final List<NavigationGroup> NAVIGATION = List.of(
             new NavigationGroup(
@@ -57,6 +61,14 @@ public class AdminNavigationService {
                             item("product-attributes", "Attribute", "/admin/products/attributes", "pi pi-sliders-h", PRODUCT_MANAGEMENT_ROLES),
                             item("product-pricing", "Preise & Aktionen", "/admin/products/pricing", "pi pi-percentage", SALES_REPORTING_ROLES),
                             item("warehouse", "Lager & Versand", "/admin/products/warehouse", "pi pi-truck", WAREHOUSE_ROLES)
+                    )
+            ),
+            new NavigationGroup(
+                    "orders-management",
+                    "Bestellungen",
+                    "pi pi-shopping-bag",
+                    List.of(
+                            item("trade-in", "Trade-In Anfragen", "/admin/orders/trade-in", "pi pi-refresh", TRADE_IN_ROLES)
                     )
             ),
             new NavigationGroup(
