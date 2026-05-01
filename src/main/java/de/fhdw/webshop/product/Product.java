@@ -31,6 +31,9 @@ public class Product {
     @Column(name = "recommended_retail_price", nullable = false, precision = 10, scale = 2)
     private BigDecimal recommendedRetailPrice;
 
+    @Column(name = "co2_emission_kg", precision = 10, scale = 3)
+    private BigDecimal co2EmissionKg;
+
     @Column(length = 100)
     private String category;
 

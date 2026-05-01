@@ -52,6 +52,7 @@ public class ProductService {
         product.setDescription(productRequest.description());
         product.setImageUrl(productRequest.imageUrl());
         product.setRecommendedRetailPrice(productRequest.recommendedRetailPrice());
+        product.setCo2EmissionKg(productRequest.co2EmissionKg());
         product.setCategory(productRequest.category());
         product.setStock(25);
         Product savedProduct = productRepository.save(product);
@@ -124,6 +125,14 @@ public class ProductService {
         return toResponse(savedProduct);
     }
 
+    /** US #196 — Update the estimated product CO2 footprint. */
+    @Transactional
+    public ProductResponse updateCo2Emission(Long productId, UpdateCo2EmissionRequest updateCo2EmissionRequest) {
+        Product product = loadProduct(productId);
+        product.setCo2EmissionKg(updateCo2EmissionRequest.co2EmissionKg());
+        return toResponse(productRepository.save(product));
+    }
+
     public Product loadProduct(Long productId) {
         return productRepository.findById(productId)
                 .orElseThrow(() -> new EntityNotFoundException("Product not found: " + productId));
@@ -144,6 +153,7 @@ public class ProductService {
                 product.getDescription(),
                 product.getImageUrl(),
                 product.getRecommendedRetailPrice(),
+                product.getCo2EmissionKg(),
                 product.getCategory(),
                 product.getStock(),
                 product.isPurchasable(),

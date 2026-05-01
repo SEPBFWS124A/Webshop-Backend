@@ -11,5 +11,6 @@ public record ProductRequest(
         String description,
         String imageUrl,
         @NotNull @DecimalMin("0.01") BigDecimal recommendedRetailPrice,
+        @NotNull @DecimalMin("0.001") BigDecimal co2EmissionKg,
         String category
 ) {}

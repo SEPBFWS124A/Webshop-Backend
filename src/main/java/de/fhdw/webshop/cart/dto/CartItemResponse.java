@@ -9,8 +9,10 @@ public record CartItemResponse(
         String productName,
         String imageUrl,
         BigDecimal unitPrice,
+        BigDecimal co2EmissionKg,
         int availableStock,
         int quantity,
         BigDecimal lineTotal,
+        BigDecimal lineCo2EmissionKg,
         Instant addedAt
 ) {}
