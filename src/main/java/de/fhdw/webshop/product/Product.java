@@ -34,6 +34,10 @@ public class Product {
     @Column(name = "co2_emission_kg", precision = 10, scale = 3)
     private BigDecimal co2EmissionKg;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "eco_score", nullable = false, length = 20)
+    private ProductEcoScore ecoScore = ProductEcoScore.NONE;
+
     @Column(length = 100)
     private String category;
 
