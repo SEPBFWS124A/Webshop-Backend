@@ -55,7 +55,7 @@ class StatisticAlertServiceTest {
         threshold.setDeviationPercent(new BigDecimal("20.00"));
         threshold.setEnabled(true);
 
-        when(thresholdRepository.findAllByEnabledTrueOrderByMetricAsc()).thenReturn(List.of(threshold));
+        when(thresholdRepository.findAllEnabledForAlertEvaluation()).thenReturn(List.of(threshold));
         when(warningRepository.existsByThresholdAndPeriodStartAndPeriodEnd(
                 threshold,
                 LocalDate.of(2026, 3, 31),

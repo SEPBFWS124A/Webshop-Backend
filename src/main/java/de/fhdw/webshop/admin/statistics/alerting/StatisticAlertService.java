@@ -54,7 +54,7 @@ public class StatisticAlertService {
     @Transactional
     public List<StatisticAlertWarningResponse> evaluateEnabledThresholds(LocalDate today) {
         LocalDate periodEnd = today.minusDays(1);
-        return thresholdRepository.findAllByEnabledTrueOrderByMetricAsc().stream()
+        return thresholdRepository.findAllEnabledForAlertEvaluation().stream()
                 .map(threshold -> evaluateThreshold(threshold, periodEnd))
                 .flatMap(List::stream)
                 .toList();
