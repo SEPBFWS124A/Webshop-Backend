@@ -26,6 +26,10 @@ public class AdminNavigationService {
             Set.of(UserRole.WAREHOUSE_EMPLOYEE, UserRole.ADMIN);
     private static final Set<UserRole> ADMIN_ROLES =
             Set.of(UserRole.ADMIN);
+    private static final Set<UserRole> TRADE_IN_ROLES =
+            Set.of(UserRole.EMPLOYEE, UserRole.SALES_EMPLOYEE, UserRole.ADMIN);
+    private static final Set<UserRole> BUSINESS_LOG_ROLES =
+            Set.of(UserRole.EMPLOYEE, UserRole.SALES_EMPLOYEE, UserRole.WAREHOUSE_EMPLOYEE, UserRole.ADMIN);
 
     private static final List<NavigationGroup> NAVIGATION = List.of(
             new NavigationGroup(
@@ -58,10 +62,20 @@ public class AdminNavigationService {
                     )
             ),
             new NavigationGroup(
+                    "orders-management",
+                    "Bestellungen",
+                    "pi pi-shopping-bag",
+                    List.of(
+                            item("trade-in", "Trade-In Anfragen", "/admin/orders/trade-in", "pi pi-refresh", TRADE_IN_ROLES)
+                    )
+            ),
+            new NavigationGroup(
                     "reports",
                     "Statistiken/Berichte",
                     "pi pi-chart-line",
                     List.of(
+                            item("statistics-dashboard", "Dashboard", "/admin/reports/statistics", "pi pi-chart-line", SALES_REPORTING_ROLES),
+                            item("statistics-alerts", "Kennzahl-Warnungen", "/admin/reports/statistics-alerts", "pi pi-exclamation-triangle", SALES_REPORTING_ROLES),
                             item("product-statistics", "Artikelstatistiken", "/admin/reports/product-statistics", "pi pi-chart-bar", SALES_REPORTING_ROLES),
                             item("monitoring", "System Monitoring", "/admin/reports/monitoring", "pi pi-desktop", ADMIN_ROLES)
                     )
@@ -71,6 +85,7 @@ public class AdminNavigationService {
                     "System",
                     "pi pi-cog",
                     List.of(
+                            item("business-log", "Business Log", "/admin/system/business-log", "pi pi-history", BUSINESS_LOG_ROLES),
                             item("notifications", "Systemmeldungen", "/admin/system/notifications", "pi pi-bell", SALES_REPORTING_ROLES),
                             item("alerting", "E-Mail & Alerting", "/admin/system/alerting", "pi pi-envelope", ADMIN_ROLES)
                     )

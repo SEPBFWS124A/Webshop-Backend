@@ -443,7 +443,7 @@ public class AddressLookupService {
         return streetMatches
                 && normalizePostalCode(suggestion.postalCode()).equals(postalCode)
                 && cityMatches
-                && (country.isBlank() || normalizeComparable(suggestion.country()).equals(normalizeComparable(country)));
+                && (country.isBlank() || normalizeCountryComparable(suggestion.country()).equals(normalizeCountryComparable(country)));
     }
 
     private AddressValidationResponse invalid(String message) {
@@ -477,6 +477,14 @@ public class AddressLookupService {
                 .replace("ü", "ue")
                 .replace("ß", "ss")
                 .replaceAll("[^a-z0-9]", "");
+    }
+
+    private String normalizeCountryComparable(String value) {
+        String normalized = normalizeComparable(value);
+        if ("deutschland".equals(normalized) || "germany".equals(normalized) || "de".equals(normalized) || "deu".equals(normalized)) {
+            return "germany";
+        }
+        return normalized;
     }
 
     private String asString(Object value) {
