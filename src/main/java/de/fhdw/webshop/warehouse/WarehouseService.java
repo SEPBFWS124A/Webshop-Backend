@@ -13,6 +13,7 @@ import de.fhdw.webshop.warehouse.dto.WarehouseOrderItemResponse;
 import de.fhdw.webshop.warehouse.dto.WarehouseOrderResponse;
 import jakarta.persistence.EntityNotFoundException;
 import java.text.Normalizer;
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -93,6 +94,9 @@ public class WarehouseService {
         }
 
         order.setStatus(nextStatus);
+        if (nextStatus == OrderStatus.DELIVERED && order.getDeliveredAt() == null) {
+            order.setDeliveredAt(Instant.now());
+        }
         Order savedOrder = orderRepository.save(order);
         String regionKey = resolveRegionKey(savedOrder);
         return toResponse(
