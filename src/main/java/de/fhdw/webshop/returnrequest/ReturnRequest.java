@@ -15,6 +15,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -55,6 +56,27 @@ public class ReturnRequest {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
+
+    @Column(name = "inspected_at")
+    private Instant inspectedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "inspection_condition", length = 30)
+    private ReturnInspectionCondition inspectionCondition;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "refund_status", nullable = false, length = 30)
+    private ReturnRefundStatus refundStatus = ReturnRefundStatus.NOT_STARTED;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "refund_method", length = 30)
+    private ReturnRefundMethod refundMethod;
+
+    @Column(name = "refund_amount", nullable = false, precision = 10, scale = 2)
+    private BigDecimal refundAmount = BigDecimal.ZERO;
+
+    @Column(name = "refund_reference", length = 80)
+    private String refundReference;
 
     @Column(name = "defect_description", length = 500)
     private String defectDescription;

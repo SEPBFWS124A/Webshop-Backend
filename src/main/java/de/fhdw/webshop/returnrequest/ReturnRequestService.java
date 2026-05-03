@@ -5,6 +5,7 @@ import de.fhdw.webshop.order.OrderItem;
 import de.fhdw.webshop.order.OrderRepository;
 import de.fhdw.webshop.order.OrderStatus;
 import de.fhdw.webshop.returnrequest.dto.CreateReturnRequest;
+import de.fhdw.webshop.returnrequest.dto.InspectReturnRequest;
 import de.fhdw.webshop.returnrequest.dto.ReturnRequestImageDownload;
 import de.fhdw.webshop.returnrequest.dto.ReturnRequestImageResponse;
 import de.fhdw.webshop.returnrequest.dto.ReturnRequestImageUpload;
@@ -14,6 +15,7 @@ import de.fhdw.webshop.returnrequest.dto.ReturnRequestResponse;
 import de.fhdw.webshop.returnrequest.dto.ReturnShippingLabelResponse;
 import de.fhdw.webshop.user.User;
 import jakarta.persistence.EntityNotFoundException;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -30,6 +32,8 @@ import java.util.Map;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -48,6 +52,7 @@ public class ReturnRequestService {
     private static final String RETURN_CENTER_COUNTRY = "Deutschland";
     private static final int MAX_DEFECT_IMAGE_COUNT = 3;
     private static final long MAX_DEFECT_IMAGE_SIZE_BYTES = 5L * 1024 * 1024;
+    private static final Pattern RMA_CODE_PATTERN = Pattern.compile("^(?:RMA[-\\s#]*)?(\\d+)$", Pattern.CASE_INSENSITIVE);
     private static final DateTimeFormatter LABEL_DATE_FORMATTER = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
             .withZone(ZoneId.of("Europe/Berlin"));
 
@@ -120,6 +125,41 @@ public class ReturnRequestService {
     }
 
     @Transactional(readOnly = true)
+    public List<ReturnRequestResponse> listOpenForWarehouse() {
+        return returnRequestRepository.findByStatusOrderByCreatedAtDesc(ReturnRequestStatus.SUBMITTED).stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public ReturnRequestResponse lookupForWarehouse(String code) {
+        return toResponse(findByScanCode(code));
+    }
+
+    @Transactional
+    public ReturnRequestResponse inspectReturnRequest(Long returnRequestId, InspectReturnRequest request) {
+        ReturnRequest returnRequest = returnRequestRepository.findById(returnRequestId)
+                .orElseThrow(() -> new EntityNotFoundException("Return request not found: " + returnRequestId));
+
+        if (returnRequest.getStatus() != ReturnRequestStatus.SUBMITTED) {
+            throw new IllegalStateException("Nur offene Retouren koennen bewertet werden.");
+        }
+
+        returnRequest.setInspectionCondition(request.condition());
+        returnRequest.setInspectedAt(Instant.now());
+        returnRequest.setStatus(ReturnRequestStatus.COMPLETED);
+
+        if (request.condition() == ReturnInspectionCondition.GOOD) {
+            restockReturnedItems(returnRequest);
+            initiateRefund(returnRequest);
+        } else {
+            rejectRefund(returnRequest);
+        }
+
+        return toResponse(returnRequestRepository.save(returnRequest));
+    }
+
+    @Transactional(readOnly = true)
     public byte[] buildLabelPdf(Long customerId, Long returnRequestId) {
         ReturnRequest returnRequest = returnRequestRepository.findByIdAndCustomerId(returnRequestId, customerId)
                 .orElseThrow(() -> new EntityNotFoundException("Return request not found: " + returnRequestId));
@@ -166,6 +206,58 @@ public class ReturnRequestService {
         ReturnRequestImage image = returnRequestImageRepository.findByIdAndReturnRequestId(imageId, returnRequestId)
                 .orElseThrow(() -> new EntityNotFoundException("Return request image not found: " + imageId));
         return toDownload(image);
+    }
+
+    private ReturnRequest findByScanCode(String rawCode) {
+        String code = rawCode == null ? "" : rawCode.trim();
+        if (code.isBlank()) {
+            throw new IllegalArgumentException("Bitte Tracking-ID oder RMA-Nummer eingeben.");
+        }
+
+        return returnRequestRepository.findByTrackingIdIgnoreCase(code)
+                .or(() -> parseRmaId(code).flatMap(returnRequestRepository::findById))
+                .orElseThrow(() -> new EntityNotFoundException("Keine Retoure fuer den Scan-Code gefunden: " + code));
+    }
+
+    private java.util.Optional<Long> parseRmaId(String code) {
+        Matcher matcher = RMA_CODE_PATTERN.matcher(code);
+        if (!matcher.matches()) {
+            return java.util.Optional.empty();
+        }
+        try {
+            return java.util.Optional.of(Long.parseLong(matcher.group(1)));
+        } catch (NumberFormatException ex) {
+            return java.util.Optional.empty();
+        }
+    }
+
+    private void restockReturnedItems(ReturnRequest returnRequest) {
+        returnRequest.getItems().forEach(item -> {
+            var product = item.getOrderItem().getProduct();
+            product.setStock(product.getStock() + item.getQuantity());
+        });
+    }
+
+    private void initiateRefund(ReturnRequest returnRequest) {
+        returnRequest.setRefundStatus(ReturnRefundStatus.INITIATED);
+        returnRequest.setRefundMethod(returnRequest.getOrder().getPaymentMethodType() == null
+                ? ReturnRefundMethod.SHOP_CREDIT
+                : ReturnRefundMethod.ORIGINAL_PAYMENT_METHOD);
+        returnRequest.setRefundAmount(calculateRefundAmount(returnRequest));
+        returnRequest.setRefundReference("RMA-" + returnRequest.getId() + "-REFUND");
+    }
+
+    private void rejectRefund(ReturnRequest returnRequest) {
+        returnRequest.setRefundStatus(ReturnRefundStatus.REJECTED);
+        returnRequest.setRefundMethod(null);
+        returnRequest.setRefundAmount(BigDecimal.ZERO);
+        returnRequest.setRefundReference("RMA-" + returnRequest.getId() + "-REJECTED");
+    }
+
+    private BigDecimal calculateRefundAmount(ReturnRequest returnRequest) {
+        return returnRequest.getItems().stream()
+                .map(item -> item.getOrderItem().getPriceAtOrderTime().multiply(BigDecimal.valueOf(item.getQuantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     private void attachDefectDetails(ReturnRequest returnRequest, CreateReturnRequest request) {
@@ -298,6 +390,12 @@ public class ReturnRequestService {
                 returnRequest.getReason(),
                 returnRequest.getStatus(),
                 returnRequest.getCreatedAt(),
+                returnRequest.getInspectedAt(),
+                returnRequest.getInspectionCondition(),
+                returnRequest.getRefundStatus(),
+                returnRequest.getRefundMethod(),
+                returnRequest.getRefundAmount(),
+                returnRequest.getRefundReference(),
                 returnRequest.getDefectDescription(),
                 returnRequest.getDefectImages().stream()
                         .map(image -> toImageResponse(returnRequest, image))

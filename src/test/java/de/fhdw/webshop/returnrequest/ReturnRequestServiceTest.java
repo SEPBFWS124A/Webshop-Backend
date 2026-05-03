@@ -6,8 +6,10 @@ import de.fhdw.webshop.order.OrderRepository;
 import de.fhdw.webshop.order.OrderStatus;
 import de.fhdw.webshop.product.Product;
 import de.fhdw.webshop.returnrequest.dto.CreateReturnRequest;
+import de.fhdw.webshop.returnrequest.dto.InspectReturnRequest;
 import de.fhdw.webshop.returnrequest.dto.ReturnRequestResponse;
 import de.fhdw.webshop.user.User;
+import de.fhdw.webshop.user.PaymentMethodType;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -167,6 +169,72 @@ class ReturnRequestServiceTest {
         verify(returnRequestRepository, never()).save(any(ReturnRequest.class));
     }
 
+    @Test
+    void inspectingGoodReturnCompletesItRestocksInventoryAndInitiatesRefund() {
+        ReturnRequestRepository returnRequestRepository = mock(ReturnRequestRepository.class);
+        ReturnRequestItemRepository returnRequestItemRepository = mock(ReturnRequestItemRepository.class);
+        ReturnRequestImageRepository returnRequestImageRepository = mock(ReturnRequestImageRepository.class);
+        OrderRepository orderRepository = mock(OrderRepository.class);
+        ReturnRequestService service = new ReturnRequestService(
+                returnRequestRepository,
+                returnRequestItemRepository,
+                returnRequestImageRepository,
+                orderRepository);
+        User customer = customer();
+        Order order = deliveredOrder(customer, Instant.now().minusSeconds(2 * 24 * 60 * 60));
+        order.setPaymentMethodType(PaymentMethodType.CREDIT_CARD);
+        OrderItem item = orderItem(101L, order, "Laptop Pro");
+        item.setQuantity(2);
+        item.getProduct().setStock(3);
+        ReturnRequest returnRequest = submittedReturnRequest(701L, customer, order, item);
+
+        when(returnRequestRepository.findById(returnRequest.getId())).thenReturn(Optional.of(returnRequest));
+        when(returnRequestRepository.save(any(ReturnRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ReturnRequestResponse response = service.inspectReturnRequest(
+                returnRequest.getId(),
+                new InspectReturnRequest(ReturnInspectionCondition.GOOD));
+
+        assertThat(response.status()).isEqualTo(ReturnRequestStatus.COMPLETED);
+        assertThat(response.inspectionCondition()).isEqualTo(ReturnInspectionCondition.GOOD);
+        assertThat(response.refundStatus()).isEqualTo(ReturnRefundStatus.INITIATED);
+        assertThat(response.refundMethod()).isEqualTo(ReturnRefundMethod.ORIGINAL_PAYMENT_METHOD);
+        assertThat(response.refundAmount()).isEqualByComparingTo("199.98");
+        assertThat(response.refundReference()).isEqualTo("RMA-701-REFUND");
+        assertThat(item.getProduct().getStock()).isEqualTo(5);
+    }
+
+    @Test
+    void inspectingDefectiveReturnCompletesItAndRejectsRefundWithoutRestocking() {
+        ReturnRequestRepository returnRequestRepository = mock(ReturnRequestRepository.class);
+        ReturnRequestItemRepository returnRequestItemRepository = mock(ReturnRequestItemRepository.class);
+        ReturnRequestImageRepository returnRequestImageRepository = mock(ReturnRequestImageRepository.class);
+        OrderRepository orderRepository = mock(OrderRepository.class);
+        ReturnRequestService service = new ReturnRequestService(
+                returnRequestRepository,
+                returnRequestItemRepository,
+                returnRequestImageRepository,
+                orderRepository);
+        User customer = customer();
+        Order order = deliveredOrder(customer, Instant.now().minusSeconds(2 * 24 * 60 * 60));
+        OrderItem item = orderItem(101L, order, "Laptop Pro");
+        item.getProduct().setStock(3);
+        ReturnRequest returnRequest = submittedReturnRequest(702L, customer, order, item);
+
+        when(returnRequestRepository.findById(returnRequest.getId())).thenReturn(Optional.of(returnRequest));
+        when(returnRequestRepository.save(any(ReturnRequest.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ReturnRequestResponse response = service.inspectReturnRequest(
+                returnRequest.getId(),
+                new InspectReturnRequest(ReturnInspectionCondition.DEFECTIVE));
+
+        assertThat(response.status()).isEqualTo(ReturnRequestStatus.COMPLETED);
+        assertThat(response.inspectionCondition()).isEqualTo(ReturnInspectionCondition.DEFECTIVE);
+        assertThat(response.refundStatus()).isEqualTo(ReturnRefundStatus.REJECTED);
+        assertThat(response.refundAmount()).isEqualByComparingTo("0.00");
+        assertThat(item.getProduct().getStock()).isEqualTo(3);
+    }
+
     private static User customer() {
         User customer = new User();
         customer.setId(7L);
@@ -198,5 +266,37 @@ class ReturnRequestServiceTest {
         item.setQuantity(1);
         item.setPriceAtOrderTime(new BigDecimal("99.99"));
         return item;
+    }
+
+    private static ReturnRequest submittedReturnRequest(Long id, User customer, Order order, OrderItem orderItem) {
+        ReturnRequest returnRequest = new ReturnRequest();
+        returnRequest.setId(id);
+        returnRequest.setCustomer(customer);
+        returnRequest.setOrder(order);
+        returnRequest.setReason(ReturnReason.DOES_NOT_FIT);
+        returnRequest.setStatus(ReturnRequestStatus.SUBMITTED);
+        returnRequest.setTrackingId("WSR-TEST-" + id);
+        returnRequest.setCarrierName("Webshop Retouren");
+        returnRequest.setQrCodePayload("webshop-return:WSR-TEST-" + id);
+        returnRequest.setLabelCreatedAt(Instant.now());
+        returnRequest.setSenderName("alice");
+        returnRequest.setSenderStreet("Main Street 1");
+        returnRequest.setSenderPostalCode("33602");
+        returnRequest.setSenderCity("Bielefeld");
+        returnRequest.setSenderCountry("Deutschland");
+        returnRequest.setReturnCenterName("Webshop Ruecksendezentrum");
+        returnRequest.setReturnCenterStreet("Retourenstrasse 12");
+        returnRequest.setReturnCenterPostalCode("33602");
+        returnRequest.setReturnCenterCity("Bielefeld");
+        returnRequest.setReturnCenterCountry("Deutschland");
+
+        ReturnRequestItem item = new ReturnRequestItem();
+        item.setId(900L + orderItem.getId());
+        item.setReturnRequest(returnRequest);
+        item.setOrderItem(orderItem);
+        item.setProductName(orderItem.getProduct().getName());
+        item.setQuantity(orderItem.getQuantity());
+        returnRequest.getItems().add(item);
+        return returnRequest;
     }
 }
