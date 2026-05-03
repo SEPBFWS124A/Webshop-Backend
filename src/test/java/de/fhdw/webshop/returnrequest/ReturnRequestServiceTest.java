@@ -56,6 +56,10 @@ class ReturnRequestServiceTest {
         assertThat(response.reason()).isEqualTo(ReturnReason.DOES_NOT_FIT);
         assertThat(response.items()).hasSize(1);
         assertThat(response.items().getFirst().orderItemId()).isEqualTo(selectedItem.getId());
+        assertThat(response.shippingLabel().trackingId()).startsWith("WSR-");
+        assertThat(response.shippingLabel().labelPdfUrl()).isEqualTo("/api/returns/501/label.pdf");
+        assertThat(response.shippingLabel().returnCenterAddress().name()).contains("Ruecksendezentrum");
+        assertThat(response.shippingLabel().senderAddress().name()).isEqualTo("alice");
         verify(returnRequestRepository).save(any(ReturnRequest.class));
     }
 

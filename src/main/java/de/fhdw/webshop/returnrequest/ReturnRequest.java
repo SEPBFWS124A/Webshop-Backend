@@ -56,6 +56,48 @@ public class ReturnRequest {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
+    @Column(name = "label_created_at", nullable = false)
+    private Instant labelCreatedAt = Instant.now();
+
+    @Column(name = "carrier_name", nullable = false, length = 80)
+    private String carrierName;
+
+    @Column(name = "tracking_id", nullable = false, unique = true, length = 80)
+    private String trackingId;
+
+    @Column(name = "qr_code_payload", nullable = false, length = 500)
+    private String qrCodePayload;
+
+    @Column(name = "sender_name", nullable = false, length = 255)
+    private String senderName;
+
+    @Column(name = "sender_street", nullable = false, length = 255)
+    private String senderStreet;
+
+    @Column(name = "sender_postal_code", nullable = false, length = 20)
+    private String senderPostalCode;
+
+    @Column(name = "sender_city", nullable = false, length = 100)
+    private String senderCity;
+
+    @Column(name = "sender_country", nullable = false, length = 100)
+    private String senderCountry;
+
+    @Column(name = "return_center_name", nullable = false, length = 255)
+    private String returnCenterName;
+
+    @Column(name = "return_center_street", nullable = false, length = 255)
+    private String returnCenterStreet;
+
+    @Column(name = "return_center_postal_code", nullable = false, length = 20)
+    private String returnCenterPostalCode;
+
+    @Column(name = "return_center_city", nullable = false, length = 100)
+    private String returnCenterCity;
+
+    @Column(name = "return_center_country", nullable = false, length = 100)
+    private String returnCenterCountry;
+
     @OneToMany(mappedBy = "returnRequest", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ReturnRequestItem> items = new ArrayList<>();
 }

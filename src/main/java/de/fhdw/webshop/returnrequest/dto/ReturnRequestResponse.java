@@ -13,5 +13,6 @@ public record ReturnRequestResponse(
         ReturnReason reason,
         ReturnRequestStatus status,
         Instant createdAt,
-        List<ReturnRequestItemResponse> items
+        List<ReturnRequestItemResponse> items,
+        ReturnShippingLabelResponse shippingLabel
 ) {}
