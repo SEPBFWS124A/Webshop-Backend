@@ -68,7 +68,7 @@ public class AdminNavigationService {
                     "Bestellungen",
                     "pi pi-shopping-bag",
                     List.of(
-                            item("return-requests", "Offene Retouren", "/admin/orders/returns", "pi pi-barcode", RETURN_REQUEST_ROLES),
+                            item("return-requests", "Retouren", "/admin/orders/returns", "pi pi-barcode", RETURN_REQUEST_ROLES),
                             item("trade-in", "Trade-In Anfragen", "/admin/orders/trade-in", "pi pi-refresh", TRADE_IN_ROLES)
                     )
             ),
