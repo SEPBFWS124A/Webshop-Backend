@@ -21,6 +21,7 @@ public record OrderResponse(
         BigDecimal discountAmount,
         String couponCode,
         Instant createdAt,
+        Instant deliveredAt,
         List<OrderItemResponse> items,
         String truckIdentifier,
         Instant estimatedDeliveryAt,
