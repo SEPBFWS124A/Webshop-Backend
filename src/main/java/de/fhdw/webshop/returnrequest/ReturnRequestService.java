@@ -5,6 +5,9 @@ import de.fhdw.webshop.order.OrderItem;
 import de.fhdw.webshop.order.OrderRepository;
 import de.fhdw.webshop.order.OrderStatus;
 import de.fhdw.webshop.returnrequest.dto.CreateReturnRequest;
+import de.fhdw.webshop.returnrequest.dto.ReturnRequestImageDownload;
+import de.fhdw.webshop.returnrequest.dto.ReturnRequestImageResponse;
+import de.fhdw.webshop.returnrequest.dto.ReturnRequestImageUpload;
 import de.fhdw.webshop.returnrequest.dto.ReturnLabelAddressResponse;
 import de.fhdw.webshop.returnrequest.dto.ReturnRequestItemResponse;
 import de.fhdw.webshop.returnrequest.dto.ReturnRequestResponse;
@@ -20,9 +23,11 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -41,11 +46,14 @@ public class ReturnRequestService {
     private static final String RETURN_CENTER_POSTAL_CODE = "33602";
     private static final String RETURN_CENTER_CITY = "Bielefeld";
     private static final String RETURN_CENTER_COUNTRY = "Deutschland";
+    private static final int MAX_DEFECT_IMAGE_COUNT = 3;
+    private static final long MAX_DEFECT_IMAGE_SIZE_BYTES = 5L * 1024 * 1024;
     private static final DateTimeFormatter LABEL_DATE_FORMATTER = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
             .withZone(ZoneId.of("Europe/Berlin"));
 
     private final ReturnRequestRepository returnRequestRepository;
     private final ReturnRequestItemRepository returnRequestItemRepository;
+    private final ReturnRequestImageRepository returnRequestImageRepository;
     private final OrderRepository orderRepository;
 
     @Transactional
@@ -74,6 +82,7 @@ public class ReturnRequestService {
         returnRequest.setCustomer(customer);
         returnRequest.setOrder(order);
         returnRequest.setReason(request.reason());
+        attachDefectDetails(returnRequest, request);
         attachShippingLabel(returnRequest, customer, order);
 
         for (Long orderItemId : requestedItemIds) {
@@ -99,6 +108,13 @@ public class ReturnRequestService {
     @Transactional(readOnly = true)
     public List<ReturnRequestResponse> listForCustomer(Long customerId) {
         return returnRequestRepository.findByCustomerIdOrderByCreatedAtDesc(customerId).stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<ReturnRequestResponse> listAllForSupport() {
+        return returnRequestRepository.findAllByOrderByCreatedAtDesc().stream()
                 .map(this::toResponse)
                 .toList();
     }
@@ -135,6 +151,98 @@ public class ReturnRequestService {
                 lines.add("- " + item.getQuantity() + " x " + item.getProductName()));
 
         return renderPdf(lines);
+    }
+
+    @Transactional(readOnly = true)
+    public ReturnRequestImageDownload loadImageForCustomer(Long customerId, Long returnRequestId, Long imageId) {
+        ReturnRequestImage image = returnRequestImageRepository
+                .findByIdAndReturnRequestIdAndReturnRequestCustomerId(imageId, returnRequestId, customerId)
+                .orElseThrow(() -> new EntityNotFoundException("Return request image not found: " + imageId));
+        return toDownload(image);
+    }
+
+    @Transactional(readOnly = true)
+    public ReturnRequestImageDownload loadImageForSupport(Long returnRequestId, Long imageId) {
+        ReturnRequestImage image = returnRequestImageRepository.findByIdAndReturnRequestId(imageId, returnRequestId)
+                .orElseThrow(() -> new EntityNotFoundException("Return request image not found: " + imageId));
+        return toDownload(image);
+    }
+
+    private void attachDefectDetails(ReturnRequest returnRequest, CreateReturnRequest request) {
+        String description = normalizeDescription(request.defectDescription());
+        List<ReturnRequestImageUpload> images = request.defectImages() == null ? List.of() : request.defectImages();
+
+        if (request.reason() != ReturnReason.DEFECTIVE) {
+            if (description != null || !images.isEmpty()) {
+                throw new IllegalArgumentException("Defektdetails duerfen nur fuer den Rueckgabegrund Defekt uebermittelt werden.");
+            }
+            return;
+        }
+
+        returnRequest.setDefectDescription(description);
+        if (images.size() > MAX_DEFECT_IMAGE_COUNT) {
+            throw new IllegalArgumentException("Es duerfen maximal 3 Bilder hochgeladen werden.");
+        }
+
+        for (ReturnRequestImageUpload upload : images) {
+            ReturnRequestImage image = toImageEntity(returnRequest, upload);
+            returnRequest.getDefectImages().add(image);
+        }
+    }
+
+    private ReturnRequestImage toImageEntity(ReturnRequest returnRequest, ReturnRequestImageUpload upload) {
+        String contentType = upload.contentType() == null ? "" : upload.contentType().trim().toLowerCase(Locale.ROOT);
+        String fileName = sanitizeFileName(upload.fileName());
+        if (!isSupportedImageType(contentType, fileName)) {
+            throw new IllegalArgumentException("Es sind nur JPG- oder PNG-Bilder erlaubt.");
+        }
+
+        byte[] imageData;
+        try {
+            imageData = Base64.getDecoder().decode(upload.dataBase64());
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("Bilddaten konnten nicht gelesen werden.", ex);
+        }
+
+        if (imageData.length == 0 || imageData.length > MAX_DEFECT_IMAGE_SIZE_BYTES || upload.sizeBytes() > MAX_DEFECT_IMAGE_SIZE_BYTES) {
+            throw new IllegalArgumentException("Jedes Bild darf maximal 5 MB gross sein.");
+        }
+
+        ReturnRequestImage image = new ReturnRequestImage();
+        image.setReturnRequest(returnRequest);
+        image.setFileName(fileName);
+        image.setContentType(contentType);
+        image.setSizeBytes(imageData.length);
+        image.setImageData(imageData);
+        return image;
+    }
+
+    private boolean isSupportedImageType(String contentType, String fileName) {
+        boolean supportedType = "image/jpeg".equals(contentType) || "image/png".equals(contentType);
+        String lowerFileName = fileName.toLowerCase(Locale.ROOT);
+        boolean supportedExtension = lowerFileName.endsWith(".jpg")
+                || lowerFileName.endsWith(".jpeg")
+                || lowerFileName.endsWith(".png");
+        return supportedType && supportedExtension;
+    }
+
+    private String sanitizeFileName(String fileName) {
+        String normalized = fileName == null ? "defekt-bild" : fileName.replace("\\", "/");
+        int lastSlash = normalized.lastIndexOf('/');
+        String simpleName = lastSlash >= 0 ? normalized.substring(lastSlash + 1) : normalized;
+        simpleName = simpleName.replace("\"", "").replace("\r", "").replace("\n", "").trim();
+        return simpleName.isBlank() ? "defekt-bild" : simpleName;
+    }
+
+    private String normalizeDescription(String description) {
+        if (description == null || description.isBlank()) {
+            return null;
+        }
+        String trimmed = description.trim();
+        if (trimmed.length() > 500) {
+            throw new IllegalArgumentException("Die Fehlerbeschreibung darf maximal 500 Zeichen enthalten.");
+        }
+        return trimmed;
     }
 
     private Instant resolveDeliveredAt(Order order) {
@@ -183,11 +291,17 @@ public class ReturnRequestService {
         return new ReturnRequestResponse(
                 returnRequest.getId(),
                 returnRequest.getCustomer().getId(),
+                returnRequest.getCustomer().getUsername(),
+                returnRequest.getCustomer().getEmail(),
                 returnRequest.getOrder().getId(),
                 returnRequest.getOrder().getOrderNumber(),
                 returnRequest.getReason(),
                 returnRequest.getStatus(),
                 returnRequest.getCreatedAt(),
+                returnRequest.getDefectDescription(),
+                returnRequest.getDefectImages().stream()
+                        .map(image -> toImageResponse(returnRequest, image))
+                        .toList(),
                 returnRequest.getItems().stream()
                         .map(item -> new ReturnRequestItemResponse(
                                 item.getId(),
@@ -196,6 +310,24 @@ public class ReturnRequestService {
                                 item.getQuantity()))
                         .toList(),
                 toShippingLabelResponse(returnRequest)
+        );
+    }
+
+    private ReturnRequestImageResponse toImageResponse(ReturnRequest returnRequest, ReturnRequestImage image) {
+        return new ReturnRequestImageResponse(
+                image.getId(),
+                image.getFileName(),
+                image.getContentType(),
+                image.getSizeBytes(),
+                "/api/returns/" + returnRequest.getId() + "/images/" + image.getId()
+        );
+    }
+
+    private ReturnRequestImageDownload toDownload(ReturnRequestImage image) {
+        return new ReturnRequestImageDownload(
+                image.getFileName(),
+                image.getContentType(),
+                image.getImageData()
         );
     }
 

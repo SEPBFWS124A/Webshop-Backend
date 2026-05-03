@@ -56,6 +56,9 @@ public class ReturnRequest {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
+    @Column(name = "defect_description", length = 500)
+    private String defectDescription;
+
     @Column(name = "label_created_at", nullable = false)
     private Instant labelCreatedAt = Instant.now();
 
@@ -100,4 +103,7 @@ public class ReturnRequest {
 
     @OneToMany(mappedBy = "returnRequest", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ReturnRequestItem> items = new ArrayList<>();
+
+    @OneToMany(mappedBy = "returnRequest", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<ReturnRequestImage> defectImages = new ArrayList<>();
 }

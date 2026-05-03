@@ -8,11 +8,15 @@ import java.util.List;
 public record ReturnRequestResponse(
         Long id,
         Long customerId,
+        String customerName,
+        String customerEmail,
         Long orderId,
         String orderNumber,
         ReturnReason reason,
         ReturnRequestStatus status,
         Instant createdAt,
+        String defectDescription,
+        List<ReturnRequestImageResponse> defectImages,
         List<ReturnRequestItemResponse> items,
         ReturnShippingLabelResponse shippingLabel
 ) {}

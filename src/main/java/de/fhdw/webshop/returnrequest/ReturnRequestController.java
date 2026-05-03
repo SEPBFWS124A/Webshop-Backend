@@ -1,6 +1,7 @@
 package de.fhdw.webshop.returnrequest;
 
 import de.fhdw.webshop.returnrequest.dto.CreateReturnRequest;
+import de.fhdw.webshop.returnrequest.dto.ReturnRequestImageDownload;
 import de.fhdw.webshop.returnrequest.dto.ReturnRequestResponse;
 import de.fhdw.webshop.user.User;
 import jakarta.validation.Valid;
@@ -39,6 +40,12 @@ public class ReturnRequestController {
         return ResponseEntity.ok(returnRequestService.listForCustomer(currentUser.getId()));
     }
 
+    @GetMapping("/api/admin/returns")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<List<ReturnRequestResponse>> listReturnRequestsForSupport() {
+        return ResponseEntity.ok(returnRequestService.listAllForSupport());
+    }
+
     @GetMapping(value = "/api/returns/{returnRequestId}/label.pdf", produces = MediaType.APPLICATION_PDF_VALUE)
     @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<byte[]> downloadReturnLabel(
@@ -49,5 +56,33 @@ public class ReturnRequestController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"retoure-" + returnRequestId + "-label.pdf\"")
                 .contentType(MediaType.APPLICATION_PDF)
                 .body(labelPdf);
+    }
+
+    @GetMapping("/api/returns/{returnRequestId}/images/{imageId}")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<byte[]> downloadOwnDefectImage(
+            @AuthenticationPrincipal User currentUser,
+            @PathVariable Long returnRequestId,
+            @PathVariable Long imageId) {
+        ReturnRequestImageDownload image = returnRequestService.loadImageForCustomer(
+                currentUser.getId(),
+                returnRequestId,
+                imageId);
+        return imageResponse(image);
+    }
+
+    @GetMapping("/api/admin/returns/{returnRequestId}/images/{imageId}")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<byte[]> downloadDefectImageForSupport(
+            @PathVariable Long returnRequestId,
+            @PathVariable Long imageId) {
+        return imageResponse(returnRequestService.loadImageForSupport(returnRequestId, imageId));
+    }
+
+    private ResponseEntity<byte[]> imageResponse(ReturnRequestImageDownload image) {
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + image.fileName() + "\"")
+                .contentType(MediaType.parseMediaType(image.contentType()))
+                .body(image.data());
     }
 }
