@@ -5,15 +5,25 @@ import de.fhdw.webshop.order.OrderItem;
 import de.fhdw.webshop.order.OrderRepository;
 import de.fhdw.webshop.order.OrderStatus;
 import de.fhdw.webshop.returnrequest.dto.CreateReturnRequest;
+import de.fhdw.webshop.returnrequest.dto.ReturnLabelAddressResponse;
 import de.fhdw.webshop.returnrequest.dto.ReturnRequestItemResponse;
 import de.fhdw.webshop.returnrequest.dto.ReturnRequestResponse;
+import de.fhdw.webshop.returnrequest.dto.ReturnShippingLabelResponse;
 import de.fhdw.webshop.user.User;
 import jakarta.persistence.EntityNotFoundException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.text.Normalizer;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +35,14 @@ import org.springframework.transaction.annotation.Transactional;
 public class ReturnRequestService {
 
     private static final Duration RETURN_WINDOW = Duration.ofDays(14);
+    private static final String CARRIER_NAME = "Webshop Retouren";
+    private static final String RETURN_CENTER_NAME = "Webshop Ruecksendezentrum";
+    private static final String RETURN_CENTER_STREET = "Retourenstrasse 12";
+    private static final String RETURN_CENTER_POSTAL_CODE = "33602";
+    private static final String RETURN_CENTER_CITY = "Bielefeld";
+    private static final String RETURN_CENTER_COUNTRY = "Deutschland";
+    private static final DateTimeFormatter LABEL_DATE_FORMATTER = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
+            .withZone(ZoneId.of("Europe/Berlin"));
 
     private final ReturnRequestRepository returnRequestRepository;
     private final ReturnRequestItemRepository returnRequestItemRepository;
@@ -56,6 +74,7 @@ public class ReturnRequestService {
         returnRequest.setCustomer(customer);
         returnRequest.setOrder(order);
         returnRequest.setReason(request.reason());
+        attachShippingLabel(returnRequest, customer, order);
 
         for (Long orderItemId : requestedItemIds) {
             OrderItem orderItem = orderItemsById.get(orderItemId);
@@ -84,6 +103,40 @@ public class ReturnRequestService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public byte[] buildLabelPdf(Long customerId, Long returnRequestId) {
+        ReturnRequest returnRequest = returnRequestRepository.findByIdAndCustomerId(returnRequestId, customerId)
+                .orElseThrow(() -> new EntityNotFoundException("Return request not found: " + returnRequestId));
+
+        List<String> lines = new ArrayList<>();
+        lines.add("Webshop Versandlabel");
+        lines.add("Tracking-ID: " + returnRequest.getTrackingId());
+        lines.add("Retoure: #" + returnRequest.getId() + " zu Bestellung " + returnRequest.getOrder().getOrderNumber());
+        lines.add("Versanddienstleister: " + returnRequest.getCarrierName());
+        lines.add("Erstellt: " + LABEL_DATE_FORMATTER.format(returnRequest.getLabelCreatedAt()));
+        lines.add("");
+        lines.add("Empfaenger");
+        lines.add(returnRequest.getReturnCenterName());
+        lines.add(returnRequest.getReturnCenterStreet());
+        lines.add(returnRequest.getReturnCenterPostalCode() + " " + returnRequest.getReturnCenterCity());
+        lines.add(returnRequest.getReturnCenterCountry());
+        lines.add("");
+        lines.add("Absender");
+        lines.add(returnRequest.getSenderName());
+        lines.add(returnRequest.getSenderStreet());
+        lines.add(returnRequest.getSenderPostalCode() + " " + returnRequest.getSenderCity());
+        lines.add(returnRequest.getSenderCountry());
+        lines.add("");
+        lines.add("QR-Code Nutzdaten");
+        lines.add(returnRequest.getQrCodePayload());
+        lines.add("");
+        lines.add("Artikel");
+        returnRequest.getItems().forEach(item ->
+                lines.add("- " + item.getQuantity() + " x " + item.getProductName()));
+
+        return renderPdf(lines);
+    }
+
     private Instant resolveDeliveredAt(Order order) {
         if (order.getDeliveredAt() != null) {
             return order.getDeliveredAt();
@@ -92,6 +145,38 @@ public class ReturnRequestService {
             return order.getCreatedAt();
         }
         return Instant.EPOCH;
+    }
+
+    private void attachShippingLabel(ReturnRequest returnRequest, User customer, Order order) {
+        String trackingId = buildTrackingId();
+        returnRequest.setLabelCreatedAt(Instant.now());
+        returnRequest.setCarrierName(CARRIER_NAME);
+        returnRequest.setTrackingId(trackingId);
+        returnRequest.setQrCodePayload("webshop-return:" + trackingId);
+        returnRequest.setSenderName(firstNonBlank(order.getCustomerName(), customer.getUsername(), customer.getEmail(), "Kunde"));
+        returnRequest.setSenderStreet(firstNonBlank(order.getDeliveryStreet(), "Adresse unbekannt"));
+        returnRequest.setSenderPostalCode(firstNonBlank(order.getDeliveryPostalCode(), "00000"));
+        returnRequest.setSenderCity(firstNonBlank(order.getDeliveryCity(), "Unbekannt"));
+        returnRequest.setSenderCountry(firstNonBlank(order.getDeliveryCountry(), "Deutschland"));
+        returnRequest.setReturnCenterName(RETURN_CENTER_NAME);
+        returnRequest.setReturnCenterStreet(RETURN_CENTER_STREET);
+        returnRequest.setReturnCenterPostalCode(RETURN_CENTER_POSTAL_CODE);
+        returnRequest.setReturnCenterCity(RETURN_CENTER_CITY);
+        returnRequest.setReturnCenterCountry(RETURN_CENTER_COUNTRY);
+    }
+
+    private String buildTrackingId() {
+        String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 14).toUpperCase();
+        return "WSR-" + suffix;
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return "";
     }
 
     private ReturnRequestResponse toResponse(ReturnRequest returnRequest) {
@@ -109,7 +194,148 @@ public class ReturnRequestService {
                                 item.getOrderItem().getId(),
                                 item.getProductName(),
                                 item.getQuantity()))
-                        .toList()
+                        .toList(),
+                toShippingLabelResponse(returnRequest)
         );
+    }
+
+    private ReturnShippingLabelResponse toShippingLabelResponse(ReturnRequest returnRequest) {
+        return new ReturnShippingLabelResponse(
+                returnRequest.getCarrierName(),
+                returnRequest.getTrackingId(),
+                "/api/returns/" + returnRequest.getId() + "/label.pdf",
+                returnRequest.getQrCodePayload(),
+                renderQrCodeSvg(returnRequest.getQrCodePayload()),
+                returnRequest.getLabelCreatedAt(),
+                new ReturnLabelAddressResponse(
+                        returnRequest.getReturnCenterName(),
+                        returnRequest.getReturnCenterStreet(),
+                        returnRequest.getReturnCenterPostalCode(),
+                        returnRequest.getReturnCenterCity(),
+                        returnRequest.getReturnCenterCountry()),
+                new ReturnLabelAddressResponse(
+                        returnRequest.getSenderName(),
+                        returnRequest.getSenderStreet(),
+                        returnRequest.getSenderPostalCode(),
+                        returnRequest.getSenderCity(),
+                        returnRequest.getSenderCountry())
+        );
+    }
+
+    private String renderQrCodeSvg(String payload) {
+        byte[] digest = sha256(payload);
+        int cells = 25;
+        int cellSize = 8;
+        int quietZone = 4;
+        int size = (cells + quietZone * 2) * cellSize;
+        StringBuilder svg = new StringBuilder();
+        svg.append("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 ")
+                .append(size).append(' ').append(size)
+                .append("\" role=\"img\" aria-label=\"QR-Code fuer Retourenlabel\">")
+                .append("<rect width=\"100%\" height=\"100%\" fill=\"#fff\"/>");
+
+        drawFinder(svg, quietZone, quietZone, cellSize);
+        drawFinder(svg, cells - 7 + quietZone, quietZone, cellSize);
+        drawFinder(svg, quietZone, cells - 7 + quietZone, cellSize);
+
+        for (int y = 0; y < cells; y++) {
+            for (int x = 0; x < cells; x++) {
+                if (isFinderArea(x, y, cells)) {
+                    continue;
+                }
+                int digestIndex = Math.floorMod((y * cells + x) * 7 + x + y, digest.length);
+                int bit = (digest[digestIndex] >> ((x + y) % 8)) & 1;
+                if (bit == 1) {
+                    appendQrCell(svg, x + quietZone, y + quietZone, cellSize);
+                }
+            }
+        }
+
+        svg.append("</svg>");
+        return svg.toString();
+    }
+
+    private boolean isFinderArea(int x, int y, int cells) {
+        return x < 8 && y < 8
+                || x >= cells - 8 && y < 8
+                || x < 8 && y >= cells - 8;
+    }
+
+    private void drawFinder(StringBuilder svg, int startX, int startY, int cellSize) {
+        appendQrRect(svg, startX, startY, 7, 7, cellSize, "#111827");
+        appendQrRect(svg, startX + 1, startY + 1, 5, 5, cellSize, "#ffffff");
+        appendQrRect(svg, startX + 2, startY + 2, 3, 3, cellSize, "#111827");
+    }
+
+    private void appendQrCell(StringBuilder svg, int x, int y, int cellSize) {
+        appendQrRect(svg, x, y, 1, 1, cellSize, "#111827");
+    }
+
+    private void appendQrRect(StringBuilder svg, int x, int y, int width, int height, int cellSize, String fill) {
+        svg.append("<rect x=\"").append(x * cellSize)
+                .append("\" y=\"").append(y * cellSize)
+                .append("\" width=\"").append(width * cellSize)
+                .append("\" height=\"").append(height * cellSize)
+                .append("\" fill=\"").append(fill).append("\"/>");
+    }
+
+    private byte[] sha256(String payload) {
+        try {
+            return MessageDigest.getInstance("SHA-256").digest(payload.getBytes(StandardCharsets.UTF_8));
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is not available", ex);
+        }
+    }
+
+    private byte[] renderPdf(List<String> lines) {
+        StringBuilder content = new StringBuilder();
+        content.append("BT\n/F1 16 Tf\n50 790 Td\n");
+        for (int i = 0; i < lines.size(); i++) {
+            if (i == 1) {
+                content.append("/F1 12 Tf\n0 -26 Td\n");
+            } else if (i > 1) {
+                content.append("0 -18 Td\n");
+            }
+            content.append('(').append(escapePdfText(lines.get(i))).append(") Tj\n");
+        }
+        content.append("ET\n");
+
+        byte[] contentBytes = content.toString().getBytes(StandardCharsets.ISO_8859_1);
+        List<String> objects = List.of(
+                "<< /Type /Catalog /Pages 2 0 R >>",
+                "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+                "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+                "<< /Length " + contentBytes.length + " >>\nstream\n" + content + "endstream"
+        );
+
+        StringBuilder pdf = new StringBuilder("%PDF-1.4\n");
+        List<Integer> offsets = new ArrayList<>();
+        for (int i = 0; i < objects.size(); i++) {
+            offsets.add(pdf.toString().getBytes(StandardCharsets.ISO_8859_1).length);
+            pdf.append(i + 1).append(" 0 obj\n")
+                    .append(objects.get(i)).append("\nendobj\n");
+        }
+        int xrefOffset = pdf.toString().getBytes(StandardCharsets.ISO_8859_1).length;
+        pdf.append("xref\n0 ").append(objects.size() + 1).append("\n");
+        pdf.append("0000000000 65535 f \n");
+        for (Integer offset : offsets) {
+            pdf.append(String.format("%010d 00000 n \n", offset));
+        }
+        pdf.append("trailer\n<< /Size ").append(objects.size() + 1)
+                .append(" /Root 1 0 R >>\nstartxref\n")
+                .append(xrefOffset)
+                .append("\n%%EOF\n");
+        return pdf.toString().getBytes(StandardCharsets.ISO_8859_1);
+    }
+
+    private String escapePdfText(String rawText) {
+        String asciiText = Normalizer.normalize(rawText == null ? "" : rawText, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .replace("ß", "ss");
+        return asciiText
+                .replace("\\", "\\\\")
+                .replace("(", "\\(")
+                .replace(")", "\\)");
     }
 }
