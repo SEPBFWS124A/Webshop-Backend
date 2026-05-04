@@ -3,6 +3,9 @@ package de.fhdw.webshop.user;
 import de.fhdw.webshop.discount.DiscountService;
 import de.fhdw.webshop.discount.dto.CouponResponse;
 import de.fhdw.webshop.discount.dto.DiscountResponse;
+import de.fhdw.webshop.accountlink.AccountLinkService;
+import de.fhdw.webshop.accountlink.dto.TeamBudgetResponse;
+import de.fhdw.webshop.accountlink.dto.UpdateTeamBudgetRequest;
 import de.fhdw.webshop.user.dto.*;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +23,7 @@ public class UserController {
 
     private final UserService userService;
     private final DiscountService discountService;
+    private final AccountLinkService accountLinkService;
 
     /** US #9 — Return own profile including customer number. */
     @GetMapping("/me")
@@ -84,5 +88,25 @@ public class UserController {
     @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<List<CouponResponse>> getMyCoupons(@AuthenticationPrincipal User currentUser) {
         return ResponseEntity.ok(discountService.listCouponsForCustomer(currentUser.getId()));
+    }
+
+    /** Issue #220 — B2B administrators manage order limits for linked employee accounts. */
+    @GetMapping("/me/team-budgets")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<List<TeamBudgetResponse>> getMyTeamBudgets(@AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(accountLinkService.listTeamBudgets(currentUser));
+    }
+
+    /** Issue #220 — Save a maximum order value limit; null or 0 means unlimited. */
+    @PutMapping("/me/team-budgets/{linkedUserId}")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<TeamBudgetResponse> updateMyTeamBudget(
+            @AuthenticationPrincipal User currentUser,
+            @PathVariable Long linkedUserId,
+            @Valid @RequestBody UpdateTeamBudgetRequest request) {
+        return ResponseEntity.ok(accountLinkService.updateTeamBudget(
+                currentUser,
+                linkedUserId,
+                request.maxOrderValueLimit()));
     }
 }
