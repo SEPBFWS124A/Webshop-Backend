@@ -11,6 +11,7 @@ import de.fhdw.webshop.cart.CartService;
 import de.fhdw.webshop.cart.CartRepository;
 import de.fhdw.webshop.discount.Coupon;
 import de.fhdw.webshop.discount.CouponRepository;
+import de.fhdw.webshop.notification.EmailService;
 import de.fhdw.webshop.order.dto.OrderItemResponse;
 import de.fhdw.webshop.order.dto.OrderApprovalResponse;
 import de.fhdw.webshop.order.dto.OrderPreviewItemResponse;
@@ -43,9 +44,9 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import de.fhdw.webshop.notification.EmailService;
 
 @Service
 @RequiredArgsConstructor
@@ -81,6 +82,9 @@ public class OrderService {
     private final EmailService emailService;
     private final AddressLookupService addressLookupService;
     private final AccountLinkRepository accountLinkRepository;
+
+    @Value("${app.frontend.base-url:http://localhost:5173}")
+    private String frontendBaseUrl;
 
     public List<OrderResponse> listOrdersForCustomer(Long customerId) {
         return orderRepository.findByCustomerIdOrderByCreatedAtDesc(customerId)
@@ -163,6 +167,7 @@ public class OrderService {
                 AuditInitiator.USER,
                 "Manager rejected order request " + savedOrder.getOrderNumber() + " for customer "
                         + savedOrder.getCustomer().getId());
+        sendApprovalRejectedNotification(savedOrder, normalizedReason);
         return toApprovalResponse(savedOrder, null);
     }
 
@@ -534,7 +539,9 @@ public class OrderService {
             order.getItems().add(orderItem);
         }
 
-        return orderRepository.save(order);
+        Order savedOrder = orderRepository.save(order);
+        sendApprovalRequestNotifications(savedOrder);
+        return savedOrder;
     }
 
     private String normalizeApprovalReason(String approvalReason) {
@@ -714,6 +721,38 @@ public class OrderService {
         if (order.getStatus() != OrderStatus.Pending_Approval) {
             throw new IllegalArgumentException("Only pending approval requests can be processed");
         }
+    }
+
+    private void sendApprovalRequestNotifications(Order order) {
+        if (order.getCustomer() == null) {
+            return;
+        }
+
+        List<User> managers = accountLinkRepository.findAllForUserId(order.getCustomer().getId()).stream()
+                .map(link -> link.getUserA().getId().equals(order.getCustomer().getId()) ? link.getUserB() : link.getUserA())
+                .filter(manager -> manager != null
+                        && !manager.getId().equals(order.getCustomer().getId())
+                        && manager.isActive()
+                        && manager.getUserType() == UserType.BUSINESS
+                        && manager.hasRole(UserRole.CUSTOMER))
+                .distinct()
+                .toList();
+
+        for (User manager : managers) {
+            emailService.sendEmail(
+                    manager.getEmail(),
+                    "Freigabe erforderlich: " + order.getOrderNumber(),
+                    buildApprovalRequestEmailBody(order, manager)
+            );
+        }
+    }
+
+    private void sendApprovalRejectedNotification(Order order, String reason) {
+        emailService.sendEmail(
+                order.getCustomerEmail(),
+                "Freigabe abgelehnt: " + order.getOrderNumber(),
+                buildApprovalRejectedEmailBody(order, reason)
+        );
     }
 
     private String resolveOrderNumber(String requestedOrderNumber) {
@@ -946,6 +985,56 @@ public class OrderService {
                 "Bestellbestaetigung " + order.getOrderNumber(),
                 body.toString()
         );
+    }
+
+    private String buildApprovalRequestEmailBody(Order order, User manager) {
+        String requesterName = order.getCustomerName() != null && !order.getCustomerName().isBlank()
+                ? order.getCustomerName()
+                : order.getCustomer().getUsername();
+
+        StringBuilder body = new StringBuilder()
+                .append("Hallo ").append(manager.getUsername()).append(",\n\n")
+                .append("eine Bestellung von ").append(requesterName)
+                .append(" wartet auf deine Freigabe.\n\n")
+                .append("Bestellnummer: ").append(order.getOrderNumber()).append('\n')
+                .append("Gesamtbetrag: ").append(order.getTotalPrice()).append(" EUR\n");
+
+        if (order.getApprovalBudgetLimit() != null) {
+            body.append("Budgetlimit: ").append(order.getApprovalBudgetLimit()).append(" EUR\n");
+        }
+        if (order.getApprovalReason() != null && !order.getApprovalReason().isBlank()) {
+            body.append("Begruendung: ").append(order.getApprovalReason()).append('\n');
+        }
+
+        body.append("\nLink zur Anfrage: ").append(buildApprovalRequestLink()).append('\n')
+                .append("\nBitte pruefe die Anfrage zeitnah im Profilbereich.");
+
+        return body.toString();
+    }
+
+    private String buildApprovalRejectedEmailBody(Order order, String reason) {
+        String requesterName = order.getCustomerName() != null && !order.getCustomerName().isBlank()
+                ? order.getCustomerName()
+                : "dein Team";
+
+        return new StringBuilder()
+                .append("Hallo ").append(requesterName).append(",\n\n")
+                .append("deine Bestellanfrage wurde abgelehnt.\n\n")
+                .append("Bestellnummer: ").append(order.getOrderNumber()).append('\n')
+                .append("Gesamtbetrag: ").append(order.getTotalPrice()).append(" EUR\n")
+                .append("Begruendung des Managers: ").append(reason).append('\n')
+                .append("\nBitte passe die Bestellung bei Bedarf an und reiche sie erneut ein.")
+                .toString();
+    }
+
+    private String buildApprovalRequestLink() {
+        String normalizedBaseUrl = frontendBaseUrl == null || frontendBaseUrl.isBlank()
+                ? "http://localhost:5173"
+                : frontendBaseUrl.trim();
+        if (normalizedBaseUrl.endsWith("/")) {
+            normalizedBaseUrl = normalizedBaseUrl.substring(0, normalizedBaseUrl.length() - 1);
+        }
+        return normalizedBaseUrl + "/profile";
     }
 
     private record DeliveryAddressSnapshot(

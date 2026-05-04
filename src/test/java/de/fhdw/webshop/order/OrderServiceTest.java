@@ -36,6 +36,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -71,7 +72,13 @@ class OrderServiceTest {
         assertThat(context.product.getStock()).isEqualTo(5);
         verify(context.cartService).clearCartSilently(context.customer.getId());
         verify(context.productRepository, never()).saveAll(any());
-        verify(context.emailService, never()).sendEmail(any(), any(), any());
+        ArgumentCaptor<String> addressCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> subjectCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(context.emailService).sendEmail(addressCaptor.capture(), subjectCaptor.capture(), bodyCaptor.capture());
+        assertThat(addressCaptor.getValue()).isEqualTo(context.manager.getEmail());
+        assertThat(subjectCaptor.getValue()).contains("Freigabe erforderlich", savedOrder.getOrderNumber());
+        assertThat(bodyCaptor.getValue()).contains("Link zur Anfrage", "/profile", savedOrder.getOrderNumber());
     }
 
     @Test
@@ -95,7 +102,32 @@ class OrderServiceTest {
         assertThat(pendingOrder.getApprovalDecidedAt()).isNotNull();
         assertThat(context.product.getStock()).isEqualTo(4);
         verify(context.productRepository).saveAll(List.of(context.product));
-        verify(context.emailService).sendEmail(any(), any(), any());
+        verify(context.emailService, times(2)).sendEmail(any(), any(), any());
+    }
+
+    @Test
+    void rejectApprovalRequestSendsReasonToEmployee() {
+        TestContext context = newContext(new BigDecimal("100.00"));
+        Order pendingOrder = pendingApprovalOrder(context.customer, context.product);
+        when(context.orderRepository.findApprovalRequestForManager(pendingOrder.getId(), context.manager.getId()))
+                .thenReturn(Optional.of(pendingOrder));
+        when(context.orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var approvalResponse = context.service.rejectApprovalRequest(
+                context.manager,
+                pendingOrder.getId(),
+                "Budget fuer dieses Quartal ausgeschoepft");
+
+        assertThat(approvalResponse.status()).isEqualTo(OrderStatus.Rejected);
+        assertThat(approvalResponse.rejectionReason()).isEqualTo("Budget fuer dieses Quartal ausgeschoepft");
+
+        ArgumentCaptor<String> addressCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> subjectCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(context.emailService).sendEmail(addressCaptor.capture(), subjectCaptor.capture(), bodyCaptor.capture());
+        assertThat(addressCaptor.getValue()).isEqualTo(context.customer.getEmail());
+        assertThat(subjectCaptor.getValue()).contains("Freigabe abgelehnt", pendingOrder.getOrderNumber());
+        assertThat(bodyCaptor.getValue()).contains("Budget fuer dieses Quartal ausgeschoepft", pendingOrder.getOrderNumber());
     }
 
     @Test
