@@ -25,5 +25,7 @@ public record OrderResponse(
         List<OrderItemResponse> items,
         String truckIdentifier,
         Instant estimatedDeliveryAt,
+        String approvalReason,
+        BigDecimal approvalBudgetLimit,
         Boolean confirmationEmailSent
 ) {}
