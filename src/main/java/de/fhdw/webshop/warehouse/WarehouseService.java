@@ -52,7 +52,11 @@ public class WarehouseService {
     @Transactional(readOnly = true)
     public List<WarehouseOrderResponse> listOrders(OrderStatus status) {
         List<Order> orders = status == null
-                ? orderRepository.findByStatusNotInOrderByCreatedAtAsc(List.of(OrderStatus.DELIVERED, OrderStatus.CANCELLED))
+                ? orderRepository.findByStatusNotInOrderByCreatedAtAsc(List.of(
+                        OrderStatus.DELIVERED,
+                        OrderStatus.CANCELLED,
+                        OrderStatus.Pending_Approval,
+                        OrderStatus.Rejected))
                 : orderRepository.findByStatusOrderByCreatedAtAsc(status);
 
         List<Order> filteredOrders = orders.stream()
@@ -135,7 +139,7 @@ public class WarehouseService {
     @Transactional
     public AutoAssignTruckIdentifiersResponse autoAssignTruckIdentifiers() {
         List<Order> activeOrders = orderRepository.findByStatusNotInOrderByCreatedAtAsc(
-                List.of(OrderStatus.DELIVERED, OrderStatus.CANCELLED)
+                List.of(OrderStatus.DELIVERED, OrderStatus.CANCELLED, OrderStatus.Pending_Approval, OrderStatus.Rejected)
         ).stream()
                 .filter(order -> TRUCK_ASSIGNABLE_STATUSES.contains(order.getStatus()))
                 .toList();
@@ -192,7 +196,7 @@ public class WarehouseService {
             case PACKED_IN_WAREHOUSE -> OrderStatus.IN_TRUCK;
             case IN_TRUCK -> OrderStatus.SHIPPED;
             case SHIPPED -> OrderStatus.DELIVERED;
-            case Pending_Approval -> null;
+            case Pending_Approval, Rejected -> null;
             case DELIVERED, CANCELLED -> null;
         };
     }
