@@ -69,6 +69,21 @@ INSERT INTO products (
   ('Office Chair', 'Lumbar support mesh chair', '/office-chair.jpg', 349.99, 33.200, 'D', 'Furniture', 18, 'B-02-05', TRUE, TRUE),
   ('Notebook (Draft)', 'Not yet available to customers', NULL, 9.99, 0.350, 'A', 'Stationery', 0, 'C-01-01', FALSE, FALSE);
 
+-- Advertisements / Werbeflächen
+INSERT INTO advertisements (title, description, content_type, image_url, target_url, active)
+SELECT title, description, content_type, image_url, target_url, active
+FROM (
+    VALUES
+      ('Sommeraktion im Home Office', 'Ergonomische Favoriten, clevere Bundles und schnelle Upgrades für deinen Arbeitsplatz.', 'IMAGE', '/standing-desk.jpg', '/products/3', TRUE),
+      ('Top Auswahl für Entscheider', 'Vergleiche Bestseller, Empfehlungen und sofort verfügbare Geräte direkt im Sortiment.', 'TEXT', NULL, '/', TRUE),
+      ('Verkäufer-Aktion vorbereiten', 'Diese Werbefläche ist angelegt, aber noch nicht aktiv geschaltet.', 'TEXT', NULL, '/admin/marketing/placements', FALSE)
+) AS seed_data(title, description, content_type, image_url, target_url, active)
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM advertisements existing
+    WHERE existing.title = seed_data.title
+);
+
 -- Discounts
 INSERT INTO discounts (customer_id, product_id, discount_percent, valid_from, valid_until)
 SELECT u.id, p.id, 10.00, CURRENT_DATE, NULL
