@@ -44,6 +44,14 @@ public class AccountLink {
     @JoinColumn(name = "user_b_id", nullable = false)
     private User userB;
 
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "source_user_id", nullable = false)
+    private User sourceUser;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "target_user_id", nullable = false)
+    private User targetUser;
+
     @Column(name = "max_order_value_limit", precision = 12, scale = 2)
     private BigDecimal maxOrderValueLimit;
 

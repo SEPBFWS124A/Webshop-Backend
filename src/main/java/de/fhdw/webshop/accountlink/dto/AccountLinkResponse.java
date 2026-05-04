@@ -6,5 +6,7 @@ import java.time.Instant;
 public record AccountLinkResponse(
         Long id,
         UserProfileResponse linkedUser,
+        UserProfileResponse sourceUser,
+        UserProfileResponse targetUser,
         Instant createdAt
 ) {}
