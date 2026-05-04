@@ -7,25 +7,24 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 
-public record OrderResponse(
+public record OrderApprovalResponse(
         Long id,
         String orderNumber,
-        String confirmationEmail,
         OrderStatus status,
+        Long requesterId,
+        String requesterName,
+        String requesterEmail,
+        Instant createdAt,
         BigDecimal totalPrice,
         BigDecimal taxAmount,
         BigDecimal shippingCost,
         ShippingMethod shippingMethod,
-        BigDecimal climateContributionAmount,
-        BigDecimal totalCo2EmissionKg,
         BigDecimal discountAmount,
         String couponCode,
-        Instant createdAt,
-        Instant deliveredAt,
-        List<OrderItemResponse> items,
-        String truckIdentifier,
-        Instant estimatedDeliveryAt,
         String approvalReason,
         BigDecimal approvalBudgetLimit,
+        String rejectionReason,
+        Instant decidedAt,
+        List<OrderItemResponse> items,
         Boolean confirmationEmailSent
 ) {}

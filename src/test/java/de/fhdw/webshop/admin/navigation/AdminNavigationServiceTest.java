@@ -35,7 +35,7 @@ class AdminNavigationServiceTest {
     }
 
     @Test
-    void onlyShowsWarehouseEntryForWarehouseEmployees() {
+    void showsWarehouseAndOpenReturnsForWarehouseEmployees() {
         UserRepository userRepository = mock(UserRepository.class);
         AdminNavigationService service = new AdminNavigationService(userRepository);
         User warehouseUser = user(2L, UserRole.WAREHOUSE_EMPLOYEE);
@@ -45,10 +45,10 @@ class AdminNavigationServiceTest {
         List<AdminNavigationGroupResponse> navigation = service.getNavigationFor(warehouseUser);
 
         assertThat(navigation).extracting(AdminNavigationGroupResponse::label)
-                .containsExactly("Produktverwaltung");
-        assertThat(navigation.getFirst().items())
+                .containsExactly("Produktverwaltung", "Bestellungen");
+        assertThat(navigation.stream().flatMap(group -> group.items().stream()))
                 .extracting(AdminNavigationItemResponse::id)
-                .containsExactly("warehouse");
+                .containsExactly("warehouse", "return-requests");
     }
 
     @Test
@@ -74,7 +74,8 @@ class AdminNavigationServiceTest {
                 "customer-revenue",
                 "monitoring",
                 "alerting",
-                "warehouse");
+                "warehouse",
+                "return-requests");
     }
 
     private static User user(Long id, UserRole role) {

@@ -1,6 +1,7 @@
 package de.fhdw.webshop.returnrequest;
 
 import de.fhdw.webshop.returnrequest.dto.CreateReturnRequest;
+import de.fhdw.webshop.returnrequest.dto.InspectReturnRequest;
 import de.fhdw.webshop.returnrequest.dto.ReturnRequestImageDownload;
 import de.fhdw.webshop.returnrequest.dto.ReturnRequestResponse;
 import de.fhdw.webshop.user.User;
@@ -16,7 +17,9 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -41,9 +44,29 @@ public class ReturnRequestController {
     }
 
     @GetMapping("/api/admin/returns")
-    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'WAREHOUSE_EMPLOYEE', 'ADMIN')")
     public ResponseEntity<List<ReturnRequestResponse>> listReturnRequestsForSupport() {
         return ResponseEntity.ok(returnRequestService.listAllForSupport());
+    }
+
+    @GetMapping("/api/admin/returns/open")
+    @PreAuthorize("hasAnyRole('WAREHOUSE_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<List<ReturnRequestResponse>> listOpenReturnRequestsForWarehouse() {
+        return ResponseEntity.ok(returnRequestService.listOpenForWarehouse());
+    }
+
+    @GetMapping("/api/admin/returns/lookup")
+    @PreAuthorize("hasAnyRole('WAREHOUSE_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<ReturnRequestResponse> lookupReturnRequestForWarehouse(@RequestParam String code) {
+        return ResponseEntity.ok(returnRequestService.lookupForWarehouse(code));
+    }
+
+    @PutMapping("/api/admin/returns/{returnRequestId}/inspection")
+    @PreAuthorize("hasAnyRole('WAREHOUSE_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<ReturnRequestResponse> inspectReturnRequest(
+            @PathVariable Long returnRequestId,
+            @Valid @RequestBody InspectReturnRequest request) {
+        return ResponseEntity.ok(returnRequestService.inspectReturnRequest(returnRequestId, request));
     }
 
     @GetMapping(value = "/api/returns/{returnRequestId}/label.pdf", produces = MediaType.APPLICATION_PDF_VALUE)
@@ -72,7 +95,7 @@ public class ReturnRequestController {
     }
 
     @GetMapping("/api/admin/returns/{returnRequestId}/images/{imageId}")
-    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'WAREHOUSE_EMPLOYEE', 'ADMIN')")
     public ResponseEntity<byte[]> downloadDefectImageForSupport(
             @PathVariable Long returnRequestId,
             @PathVariable Long imageId) {

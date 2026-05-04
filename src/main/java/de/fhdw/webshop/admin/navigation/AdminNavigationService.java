@@ -78,8 +78,8 @@ public class AdminNavigationService {
                     "Bestellungen",
                     "pi pi-shopping-bag",
                     List.of(
-                            item("trade-in", "Trade-In Anfragen", "/admin/orders/trade-in", "pi pi-refresh", TRADE_IN_ROLES),
-                            item("return-requests", "Retouren & Defekte", "/admin/orders/returns", "pi pi-camera", RETURN_REQUEST_ROLES)
+                            item("return-requests", "Retouren", "/admin/orders/returns", "pi pi-barcode", RETURN_REQUEST_ROLES),
+                            item("trade-in", "Trade-In Anfragen", "/admin/orders/trade-in", "pi pi-refresh", TRADE_IN_ROLES)
                     )
             ),
             new NavigationGroup(

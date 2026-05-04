@@ -24,6 +24,41 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
         List<Order> findByStatusNotInOrderByCreatedAtAsc(Collection<OrderStatus> statuses);
 
+        @Query("""
+                        SELECT DISTINCT o FROM Order o
+                        JOIN FETCH o.customer customer
+                        LEFT JOIN FETCH o.items item
+                        LEFT JOIN FETCH item.product
+                        WHERE o.status = :status
+                          AND customer.id <> :managerId
+                          AND EXISTS (
+                                SELECT link.id FROM AccountLink link
+                                WHERE (link.userA.id = :managerId AND link.userB.id = customer.id)
+                                   OR (link.userB.id = :managerId AND link.userA.id = customer.id)
+                          )
+                        ORDER BY o.createdAt ASC
+                        """)
+        List<Order> findApprovalRequestsForManager(
+                        @Param("managerId") Long managerId,
+                        @Param("status") OrderStatus status);
+
+        @Query("""
+                        SELECT DISTINCT o FROM Order o
+                        JOIN FETCH o.customer customer
+                        LEFT JOIN FETCH o.items item
+                        LEFT JOIN FETCH item.product
+                        WHERE o.id = :orderId
+                          AND customer.id <> :managerId
+                          AND EXISTS (
+                                SELECT link.id FROM AccountLink link
+                                WHERE (link.userA.id = :managerId AND link.userB.id = customer.id)
+                                   OR (link.userB.id = :managerId AND link.userA.id = customer.id)
+                          )
+                        """)
+        Optional<Order> findApprovalRequestForManager(
+                        @Param("orderId") Long orderId,
+                        @Param("managerId") Long managerId);
+
         /**
          * US #29 — Orders for a customer within a date range (for revenue statistics).
          */

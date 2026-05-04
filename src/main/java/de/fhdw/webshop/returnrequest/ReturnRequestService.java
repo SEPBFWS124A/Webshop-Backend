@@ -5,6 +5,7 @@ import de.fhdw.webshop.order.OrderItem;
 import de.fhdw.webshop.order.OrderRepository;
 import de.fhdw.webshop.order.OrderStatus;
 import de.fhdw.webshop.returnrequest.dto.CreateReturnRequest;
+import de.fhdw.webshop.returnrequest.dto.InspectReturnRequest;
 import de.fhdw.webshop.returnrequest.dto.ReturnRequestImageDownload;
 import de.fhdw.webshop.returnrequest.dto.ReturnRequestImageResponse;
 import de.fhdw.webshop.returnrequest.dto.ReturnRequestImageUpload;
@@ -13,10 +14,14 @@ import de.fhdw.webshop.returnrequest.dto.ReturnRequestItemResponse;
 import de.fhdw.webshop.returnrequest.dto.ReturnRequestResponse;
 import de.fhdw.webshop.returnrequest.dto.ReturnShippingLabelResponse;
 import de.fhdw.webshop.user.User;
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.EncodeHintType;
+import com.google.zxing.WriterException;
+import com.google.zxing.common.BitMatrix;
+import com.google.zxing.qrcode.QRCodeWriter;
 import jakarta.persistence.EntityNotFoundException;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -30,6 +35,8 @@ import java.util.Map;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -48,6 +55,9 @@ public class ReturnRequestService {
     private static final String RETURN_CENTER_COUNTRY = "Deutschland";
     private static final int MAX_DEFECT_IMAGE_COUNT = 3;
     private static final long MAX_DEFECT_IMAGE_SIZE_BYTES = 5L * 1024 * 1024;
+    private static final int QR_MATRIX_SIZE = 33;
+    private static final Pattern RMA_CODE_PATTERN = Pattern.compile("^(?:RMA[-\\s#]*)?(\\d+)$",
+            Pattern.CASE_INSENSITIVE);
     private static final DateTimeFormatter LABEL_DATE_FORMATTER = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
             .withZone(ZoneId.of("Europe/Berlin"));
 
@@ -120,6 +130,41 @@ public class ReturnRequestService {
     }
 
     @Transactional(readOnly = true)
+    public List<ReturnRequestResponse> listOpenForWarehouse() {
+        return returnRequestRepository.findByStatusOrderByCreatedAtDesc(ReturnRequestStatus.SUBMITTED).stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public ReturnRequestResponse lookupForWarehouse(String code) {
+        return toResponse(findByScanCode(code));
+    }
+
+    @Transactional
+    public ReturnRequestResponse inspectReturnRequest(Long returnRequestId, InspectReturnRequest request) {
+        ReturnRequest returnRequest = returnRequestRepository.findById(returnRequestId)
+                .orElseThrow(() -> new EntityNotFoundException("Return request not found: " + returnRequestId));
+
+        if (returnRequest.getStatus() != ReturnRequestStatus.SUBMITTED) {
+            throw new IllegalStateException("Nur offene Retouren koennen bewertet werden.");
+        }
+
+        returnRequest.setInspectionCondition(request.condition());
+        returnRequest.setInspectedAt(Instant.now());
+        returnRequest.setStatus(ReturnRequestStatus.COMPLETED);
+
+        if (request.condition() == ReturnInspectionCondition.GOOD) {
+            restockReturnedItems(returnRequest);
+            initiateRefund(returnRequest);
+        } else {
+            rejectRefund(returnRequest);
+        }
+
+        return toResponse(returnRequestRepository.save(returnRequest));
+    }
+
+    @Transactional(readOnly = true)
     public byte[] buildLabelPdf(Long customerId, Long returnRequestId) {
         ReturnRequest returnRequest = returnRequestRepository.findByIdAndCustomerId(returnRequestId, customerId)
                 .orElseThrow(() -> new EntityNotFoundException("Return request not found: " + returnRequestId));
@@ -131,7 +176,7 @@ public class ReturnRequestService {
         lines.add("Versanddienstleister: " + returnRequest.getCarrierName());
         lines.add("Erstellt: " + LABEL_DATE_FORMATTER.format(returnRequest.getLabelCreatedAt()));
         lines.add("");
-        lines.add("Empfaenger");
+        lines.add("Empfänger");
         lines.add(returnRequest.getReturnCenterName());
         lines.add(returnRequest.getReturnCenterStreet());
         lines.add(returnRequest.getReturnCenterPostalCode() + " " + returnRequest.getReturnCenterCity());
@@ -147,10 +192,9 @@ public class ReturnRequestService {
         lines.add(returnRequest.getQrCodePayload());
         lines.add("");
         lines.add("Artikel");
-        returnRequest.getItems().forEach(item ->
-                lines.add("- " + item.getQuantity() + " x " + item.getProductName()));
+        returnRequest.getItems().forEach(item -> lines.add("- " + item.getQuantity() + " x " + item.getProductName()));
 
-        return renderPdf(lines);
+        return renderPdf(lines, returnRequest.getQrCodePayload());
     }
 
     @Transactional(readOnly = true)
@@ -168,13 +212,66 @@ public class ReturnRequestService {
         return toDownload(image);
     }
 
+    private ReturnRequest findByScanCode(String rawCode) {
+        String code = rawCode == null ? "" : rawCode.trim();
+        if (code.isBlank()) {
+            throw new IllegalArgumentException("Bitte Tracking-ID oder RMA-Nummer eingeben.");
+        }
+
+        return returnRequestRepository.findByTrackingIdIgnoreCase(code)
+                .or(() -> parseRmaId(code).flatMap(returnRequestRepository::findById))
+                .orElseThrow(() -> new EntityNotFoundException("Keine Retoure fuer den Scan-Code gefunden: " + code));
+    }
+
+    private java.util.Optional<Long> parseRmaId(String code) {
+        Matcher matcher = RMA_CODE_PATTERN.matcher(code);
+        if (!matcher.matches()) {
+            return java.util.Optional.empty();
+        }
+        try {
+            return java.util.Optional.of(Long.parseLong(matcher.group(1)));
+        } catch (NumberFormatException ex) {
+            return java.util.Optional.empty();
+        }
+    }
+
+    private void restockReturnedItems(ReturnRequest returnRequest) {
+        returnRequest.getItems().forEach(item -> {
+            var product = item.getOrderItem().getProduct();
+            product.setStock(product.getStock() + item.getQuantity());
+        });
+    }
+
+    private void initiateRefund(ReturnRequest returnRequest) {
+        returnRequest.setRefundStatus(ReturnRefundStatus.INITIATED);
+        returnRequest.setRefundMethod(returnRequest.getOrder().getPaymentMethodType() == null
+                ? ReturnRefundMethod.SHOP_CREDIT
+                : ReturnRefundMethod.ORIGINAL_PAYMENT_METHOD);
+        returnRequest.setRefundAmount(calculateRefundAmount(returnRequest));
+        returnRequest.setRefundReference("RMA-" + returnRequest.getId() + "-REFUND");
+    }
+
+    private void rejectRefund(ReturnRequest returnRequest) {
+        returnRequest.setRefundStatus(ReturnRefundStatus.REJECTED);
+        returnRequest.setRefundMethod(null);
+        returnRequest.setRefundAmount(BigDecimal.ZERO);
+        returnRequest.setRefundReference("RMA-" + returnRequest.getId() + "-REJECTED");
+    }
+
+    private BigDecimal calculateRefundAmount(ReturnRequest returnRequest) {
+        return returnRequest.getItems().stream()
+                .map(item -> item.getOrderItem().getPriceAtOrderTime().multiply(BigDecimal.valueOf(item.getQuantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
     private void attachDefectDetails(ReturnRequest returnRequest, CreateReturnRequest request) {
         String description = normalizeDescription(request.defectDescription());
         List<ReturnRequestImageUpload> images = request.defectImages() == null ? List.of() : request.defectImages();
 
         if (request.reason() != ReturnReason.DEFECTIVE) {
             if (description != null || !images.isEmpty()) {
-                throw new IllegalArgumentException("Defektdetails duerfen nur fuer den Rueckgabegrund Defekt uebermittelt werden.");
+                throw new IllegalArgumentException(
+                        "Defektdetails duerfen nur fuer den Rueckgabegrund Defekt uebermittelt werden.");
             }
             return;
         }
@@ -204,7 +301,8 @@ public class ReturnRequestService {
             throw new IllegalArgumentException("Bilddaten konnten nicht gelesen werden.", ex);
         }
 
-        if (imageData.length == 0 || imageData.length > MAX_DEFECT_IMAGE_SIZE_BYTES || upload.sizeBytes() > MAX_DEFECT_IMAGE_SIZE_BYTES) {
+        if (imageData.length == 0 || imageData.length > MAX_DEFECT_IMAGE_SIZE_BYTES
+                || upload.sizeBytes() > MAX_DEFECT_IMAGE_SIZE_BYTES) {
             throw new IllegalArgumentException("Jedes Bild darf maximal 5 MB gross sein.");
         }
 
@@ -261,7 +359,8 @@ public class ReturnRequestService {
         returnRequest.setCarrierName(CARRIER_NAME);
         returnRequest.setTrackingId(trackingId);
         returnRequest.setQrCodePayload("webshop-return:" + trackingId);
-        returnRequest.setSenderName(firstNonBlank(order.getCustomerName(), customer.getUsername(), customer.getEmail(), "Kunde"));
+        returnRequest.setSenderName(
+                firstNonBlank(order.getCustomerName(), customer.getUsername(), customer.getEmail(), "Kunde"));
         returnRequest.setSenderStreet(firstNonBlank(order.getDeliveryStreet(), "Adresse unbekannt"));
         returnRequest.setSenderPostalCode(firstNonBlank(order.getDeliveryPostalCode(), "00000"));
         returnRequest.setSenderCity(firstNonBlank(order.getDeliveryCity(), "Unbekannt"));
@@ -298,6 +397,12 @@ public class ReturnRequestService {
                 returnRequest.getReason(),
                 returnRequest.getStatus(),
                 returnRequest.getCreatedAt(),
+                returnRequest.getInspectedAt(),
+                returnRequest.getInspectionCondition(),
+                returnRequest.getRefundStatus(),
+                returnRequest.getRefundMethod(),
+                returnRequest.getRefundAmount(),
+                returnRequest.getRefundReference(),
                 returnRequest.getDefectDescription(),
                 returnRequest.getDefectImages().stream()
                         .map(image -> toImageResponse(returnRequest, image))
@@ -309,8 +414,7 @@ public class ReturnRequestService {
                                 item.getProductName(),
                                 item.getQuantity()))
                         .toList(),
-                toShippingLabelResponse(returnRequest)
-        );
+                toShippingLabelResponse(returnRequest));
     }
 
     private ReturnRequestImageResponse toImageResponse(ReturnRequest returnRequest, ReturnRequestImage image) {
@@ -319,16 +423,14 @@ public class ReturnRequestService {
                 image.getFileName(),
                 image.getContentType(),
                 image.getSizeBytes(),
-                "/api/returns/" + returnRequest.getId() + "/images/" + image.getId()
-        );
+                "/api/returns/" + returnRequest.getId() + "/images/" + image.getId());
     }
 
     private ReturnRequestImageDownload toDownload(ReturnRequestImage image) {
         return new ReturnRequestImageDownload(
                 image.getFileName(),
                 image.getContentType(),
-                image.getImageData()
-        );
+                image.getImageData());
     }
 
     private ReturnShippingLabelResponse toShippingLabelResponse(ReturnRequest returnRequest) {
@@ -350,57 +452,29 @@ public class ReturnRequestService {
                         returnRequest.getSenderStreet(),
                         returnRequest.getSenderPostalCode(),
                         returnRequest.getSenderCity(),
-                        returnRequest.getSenderCountry())
-        );
+                        returnRequest.getSenderCountry()));
     }
 
     private String renderQrCodeSvg(String payload) {
-        byte[] digest = sha256(payload);
-        int cells = 25;
+        BitMatrix matrix = createQrCodeMatrix(payload);
         int cellSize = 8;
-        int quietZone = 4;
-        int size = (cells + quietZone * 2) * cellSize;
+        int size = matrix.getWidth() * cellSize;
         StringBuilder svg = new StringBuilder();
         svg.append("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 ")
                 .append(size).append(' ').append(size)
                 .append("\" role=\"img\" aria-label=\"QR-Code fuer Retourenlabel\">")
                 .append("<rect width=\"100%\" height=\"100%\" fill=\"#fff\"/>");
 
-        drawFinder(svg, quietZone, quietZone, cellSize);
-        drawFinder(svg, cells - 7 + quietZone, quietZone, cellSize);
-        drawFinder(svg, quietZone, cells - 7 + quietZone, cellSize);
-
-        for (int y = 0; y < cells; y++) {
-            for (int x = 0; x < cells; x++) {
-                if (isFinderArea(x, y, cells)) {
-                    continue;
-                }
-                int digestIndex = Math.floorMod((y * cells + x) * 7 + x + y, digest.length);
-                int bit = (digest[digestIndex] >> ((x + y) % 8)) & 1;
-                if (bit == 1) {
-                    appendQrCell(svg, x + quietZone, y + quietZone, cellSize);
+        for (int y = 0; y < matrix.getHeight(); y++) {
+            for (int x = 0; x < matrix.getWidth(); x++) {
+                if (matrix.get(x, y)) {
+                    appendQrRect(svg, x, y, 1, 1, cellSize, "#111827");
                 }
             }
         }
 
         svg.append("</svg>");
         return svg.toString();
-    }
-
-    private boolean isFinderArea(int x, int y, int cells) {
-        return x < 8 && y < 8
-                || x >= cells - 8 && y < 8
-                || x < 8 && y >= cells - 8;
-    }
-
-    private void drawFinder(StringBuilder svg, int startX, int startY, int cellSize) {
-        appendQrRect(svg, startX, startY, 7, 7, cellSize, "#111827");
-        appendQrRect(svg, startX + 1, startY + 1, 5, 5, cellSize, "#ffffff");
-        appendQrRect(svg, startX + 2, startY + 2, 3, 3, cellSize, "#111827");
-    }
-
-    private void appendQrCell(StringBuilder svg, int x, int y, int cellSize) {
-        appendQrRect(svg, x, y, 1, 1, cellSize, "#111827");
     }
 
     private void appendQrRect(StringBuilder svg, int x, int y, int width, int height, int cellSize, String fill) {
@@ -411,15 +485,18 @@ public class ReturnRequestService {
                 .append("\" fill=\"").append(fill).append("\"/>");
     }
 
-    private byte[] sha256(String payload) {
+    private BitMatrix createQrCodeMatrix(String payload) {
         try {
-            return MessageDigest.getInstance("SHA-256").digest(payload.getBytes(StandardCharsets.UTF_8));
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 is not available", ex);
+            Map<EncodeHintType, Object> hints = Map.of(
+                    EncodeHintType.CHARACTER_SET, StandardCharsets.UTF_8.name(),
+                    EncodeHintType.MARGIN, 2);
+            return new QRCodeWriter().encode(payload, BarcodeFormat.QR_CODE, QR_MATRIX_SIZE, QR_MATRIX_SIZE, hints);
+        } catch (WriterException ex) {
+            throw new IllegalStateException("QR-Code konnte nicht erzeugt werden.", ex);
         }
     }
 
-    private byte[] renderPdf(List<String> lines) {
+    private byte[] renderPdf(List<String> lines, String qrPayload) {
         StringBuilder content = new StringBuilder();
         content.append("BT\n/F1 16 Tf\n50 790 Td\n");
         for (int i = 0; i < lines.size(); i++) {
@@ -431,6 +508,7 @@ public class ReturnRequestService {
             content.append('(').append(escapePdfText(lines.get(i))).append(") Tj\n");
         }
         content.append("ET\n");
+        appendQrCodePdf(content, qrPayload, 365, 545, 5);
 
         byte[] contentBytes = content.toString().getBytes(StandardCharsets.ISO_8859_1);
         List<String> objects = List.of(
@@ -438,8 +516,7 @@ public class ReturnRequestService {
                 "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
                 "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
                 "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-                "<< /Length " + contentBytes.length + " >>\nstream\n" + content + "endstream"
-        );
+                "<< /Length " + contentBytes.length + " >>\nstream\n" + content + "endstream");
 
         StringBuilder pdf = new StringBuilder("%PDF-1.4\n");
         List<Integer> offsets = new ArrayList<>();
@@ -459,6 +536,46 @@ public class ReturnRequestService {
                 .append(xrefOffset)
                 .append("\n%%EOF\n");
         return pdf.toString().getBytes(StandardCharsets.ISO_8859_1);
+    }
+
+    private void appendQrCodePdf(StringBuilder content, String payload, int originX, int originY, int cellSize) {
+        BitMatrix matrix = createQrCodeMatrix(payload);
+        int totalCells = matrix.getWidth();
+        int size = totalCells * cellSize;
+
+        content.append("q\n")
+                .append("1 1 1 rg\n")
+                .append(originX).append(' ').append(originY).append(' ').append(size).append(' ').append(size)
+                .append(" re f\n")
+                .append("0 0 0 rg\n");
+
+        for (int y = 0; y < matrix.getHeight(); y++) {
+            for (int x = 0; x < matrix.getWidth(); x++) {
+                if (matrix.get(x, y)) {
+                    appendQrRectPdf(content, originX, originY, x, y, 1, 1, totalCells, cellSize);
+                }
+            }
+        }
+
+        content.append("Q\n");
+    }
+
+    private void appendQrRectPdf(
+            StringBuilder content,
+            int originX,
+            int originY,
+            int x,
+            int y,
+            int width,
+            int height,
+            int totalCells,
+            int cellSize) {
+        int pdfX = originX + x * cellSize;
+        int pdfY = originY + (totalCells - y - height) * cellSize;
+        content.append(pdfX).append(' ')
+                .append(pdfY).append(' ')
+                .append(width * cellSize).append(' ')
+                .append(height * cellSize).append(" re f\n");
     }
 
     private String escapePdfText(String rawText) {

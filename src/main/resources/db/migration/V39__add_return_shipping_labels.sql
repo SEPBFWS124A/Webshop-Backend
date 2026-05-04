@@ -8,8 +8,8 @@ ALTER TABLE return_requests
     ADD COLUMN IF NOT EXISTS sender_postal_code VARCHAR(20),
     ADD COLUMN IF NOT EXISTS sender_city VARCHAR(100),
     ADD COLUMN IF NOT EXISTS sender_country VARCHAR(100),
-    ADD COLUMN IF NOT EXISTS return_center_name VARCHAR(255) NOT NULL DEFAULT 'Webshop Ruecksendezentrum',
-    ADD COLUMN IF NOT EXISTS return_center_street VARCHAR(255) NOT NULL DEFAULT 'Retourenstrasse 12',
+    ADD COLUMN IF NOT EXISTS return_center_name VARCHAR(255) NOT NULL DEFAULT 'Webshop Rücksendezentrum',
+    ADD COLUMN IF NOT EXISTS return_center_street VARCHAR(255) NOT NULL DEFAULT 'Retourenstraße 12',
     ADD COLUMN IF NOT EXISTS return_center_postal_code VARCHAR(20) NOT NULL DEFAULT '33602',
     ADD COLUMN IF NOT EXISTS return_center_city VARCHAR(100) NOT NULL DEFAULT 'Bielefeld',
     ADD COLUMN IF NOT EXISTS return_center_country VARCHAR(100) NOT NULL DEFAULT 'Deutschland';

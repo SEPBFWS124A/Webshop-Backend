@@ -3,10 +3,14 @@ package de.fhdw.webshop.accountlink;
 import de.fhdw.webshop.admin.AuditInitiator;
 import de.fhdw.webshop.admin.AuditLogService;
 import de.fhdw.webshop.accountlink.dto.AccountLinkResponse;
+import de.fhdw.webshop.accountlink.dto.TeamBudgetResponse;
 import de.fhdw.webshop.user.User;
 import de.fhdw.webshop.user.UserRepository;
+import de.fhdw.webshop.user.UserRole;
+import de.fhdw.webshop.user.UserType;
 import de.fhdw.webshop.user.dto.UserProfileResponse;
 import jakarta.persistence.EntityNotFoundException;
+import java.math.BigDecimal;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -28,6 +32,45 @@ public class AccountLinkService {
         return accountLinkRepository.findAllForUserId(user.getId()).stream()
                 .map(link -> toResponse(link, user.getId()))
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<TeamBudgetResponse> listTeamBudgets(User currentUser) {
+        requireBusinessCustomer(currentUser);
+        return accountLinkRepository.findAllForUserId(currentUser.getId()).stream()
+                .map(link -> toTeamBudgetResponse(link, currentUser.getId()))
+                .toList();
+    }
+
+    @Transactional
+    public TeamBudgetResponse updateTeamBudget(User currentUser, Long linkedUserId, BigDecimal maxOrderValueLimit) {
+        requireBusinessCustomer(currentUser);
+        if (currentUser.getId().equals(linkedUserId)) {
+            throw new IllegalArgumentException("A budget limit can only be set for linked employee accounts");
+        }
+
+        Long userAId = Math.min(currentUser.getId(), linkedUserId);
+        Long userBId = Math.max(currentUser.getId(), linkedUserId);
+        AccountLink link = accountLinkRepository.findByUserAIdAndUserBId(userAId, userBId)
+                .orElseThrow(() -> new EntityNotFoundException(
+                        "Account link not found for users: " + currentUser.getId() + " and " + linkedUserId));
+
+        BigDecimal normalizedLimit = normalizeBudgetLimit(maxOrderValueLimit);
+        BigDecimal previousLimit = link.getMaxOrderValueLimit();
+        if (!budgetLimitsEqual(previousLimit, normalizedLimit)) {
+            link.setMaxOrderValueLimit(normalizedLimit);
+            AccountLink savedLink = accountLinkRepository.save(link);
+            User linkedUser = linkedUser(savedLink, currentUser.getId());
+            auditLogService.record(currentUser, "UPDATE_TEAM_BUDGET_LIMIT", "AccountLink", savedLink.getId(),
+                    AuditInitiator.USER,
+                    String.format("B2B admin %s (%d) updated budget limit for %s (%d): %s -> %s",
+                            currentUser.getUsername(), currentUser.getId(),
+                            linkedUser.getUsername(), linkedUser.getId(),
+                            formatBudgetLimit(previousLimit), formatBudgetLimit(normalizedLimit)));
+            return toTeamBudgetResponse(savedLink, currentUser.getId());
+        }
+
+        return toTeamBudgetResponse(link, currentUser.getId());
     }
 
     @Transactional
@@ -109,12 +152,55 @@ public class AccountLinkService {
         return user;
     }
 
+    private void requireBusinessCustomer(User currentUser) {
+        if (currentUser == null
+                || currentUser.getUserType() != UserType.BUSINESS
+                || !currentUser.hasRole(UserRole.CUSTOMER)) {
+            throw new IllegalArgumentException("Team budgets are only available for B2B customer administrators");
+        }
+    }
+
+    private BigDecimal normalizeBudgetLimit(BigDecimal limit) {
+        if (limit == null || BigDecimal.ZERO.compareTo(limit) == 0) {
+            return null;
+        }
+        if (limit.signum() < 0) {
+            throw new IllegalArgumentException("Budget limit must not be negative");
+        }
+        return limit;
+    }
+
+    private boolean budgetLimitsEqual(BigDecimal previous, BigDecimal next) {
+        if (previous == null || next == null) {
+            return previous == next;
+        }
+        return previous.compareTo(next) == 0;
+    }
+
+    private String formatBudgetLimit(BigDecimal limit) {
+        return limit == null ? "unlimited" : limit + " EUR";
+    }
+
     private AccountLinkResponse toResponse(AccountLink link, Long sourceUserId) {
-        User linkedUser = link.getUserA().getId().equals(sourceUserId) ? link.getUserB() : link.getUserA();
+        User linkedUser = linkedUser(link, sourceUserId);
         return new AccountLinkResponse(
                 link.getId(),
                 toProfileResponse(linkedUser),
                 link.getCreatedAt());
+    }
+
+    private TeamBudgetResponse toTeamBudgetResponse(AccountLink link, Long sourceUserId) {
+        BigDecimal limit = link.getMaxOrderValueLimit();
+        return new TeamBudgetResponse(
+                link.getId(),
+                toProfileResponse(linkedUser(link, sourceUserId)),
+                limit,
+                limit == null || BigDecimal.ZERO.compareTo(limit) == 0,
+                link.getCreatedAt());
+    }
+
+    private User linkedUser(AccountLink link, Long sourceUserId) {
+        return link.getUserA().getId().equals(sourceUserId) ? link.getUserB() : link.getUserA();
     }
 
     private UserProfileResponse toProfileResponse(User user) {

@@ -5,12 +5,14 @@ import de.fhdw.webshop.admin.AuditLogService;
 import de.fhdw.webshop.address.AddressLookupService;
 import de.fhdw.webshop.address.AddressValidationRequest;
 import de.fhdw.webshop.address.AddressValidationResponse;
+import de.fhdw.webshop.accountlink.AccountLinkRepository;
 import de.fhdw.webshop.cart.CartItem;
 import de.fhdw.webshop.cart.CartService;
 import de.fhdw.webshop.cart.CartRepository;
 import de.fhdw.webshop.discount.Coupon;
 import de.fhdw.webshop.discount.CouponRepository;
 import de.fhdw.webshop.order.dto.OrderItemResponse;
+import de.fhdw.webshop.order.dto.OrderApprovalResponse;
 import de.fhdw.webshop.order.dto.OrderPreviewItemResponse;
 import de.fhdw.webshop.order.dto.OrderPreviewResponse;
 import de.fhdw.webshop.order.dto.OrderResponse;
@@ -25,6 +27,8 @@ import de.fhdw.webshop.user.PaymentMethodRepository;
 import de.fhdw.webshop.user.PaymentMethodSupport;
 import de.fhdw.webshop.user.User;
 import de.fhdw.webshop.user.UserService;
+import de.fhdw.webshop.user.UserRole;
+import de.fhdw.webshop.user.UserType;
 import de.fhdw.webshop.user.dto.DeliveryAddressRequest;
 import de.fhdw.webshop.user.dto.PaymentMethodRequest;
 import jakarta.persistence.EntityNotFoundException;
@@ -76,6 +80,7 @@ public class OrderService {
     private final AuditLogService auditLogService;
     private final EmailService emailService;
     private final AddressLookupService addressLookupService;
+    private final AccountLinkRepository accountLinkRepository;
 
     public List<OrderResponse> listOrdersForCustomer(Long customerId) {
         return orderRepository.findByCustomerIdOrderByCreatedAtDesc(customerId)
@@ -100,6 +105,67 @@ public class OrderService {
         return toResponse(order);
     }
 
+    @Transactional(readOnly = true)
+    public List<OrderApprovalResponse> listPendingApprovalRequests(User manager) {
+        requireBusinessApprovalManager(manager);
+        return orderRepository.findApprovalRequestsForManager(manager.getId(), OrderStatus.Pending_Approval).stream()
+                .map(order -> toApprovalResponse(order, null))
+                .toList();
+    }
+
+    @Transactional
+    public OrderApprovalResponse approveApprovalRequest(User manager, Long orderId) {
+        requireBusinessApprovalManager(manager);
+        Order order = loadApprovalRequestForManager(manager, orderId);
+        requirePendingApproval(order);
+
+        List<Product> updatedProducts = new ArrayList<>();
+        for (OrderItem orderItem : order.getItems()) {
+            Product product = orderItem.getProduct();
+            if (!product.isPurchasable() || product.getStock() <= 0) {
+                throw new IllegalArgumentException(product.getName() + " is no longer available");
+            }
+            if (orderItem.getQuantity() > product.getStock()) {
+                throw new IllegalArgumentException("Only " + product.getStock() + " units of " + product.getName() + " are available");
+            }
+            product.setStock(product.getStock() - orderItem.getQuantity());
+            updatedProducts.add(product);
+        }
+
+        order.setStatus(OrderStatus.CONFIRMED);
+        order.setApprovalDecidedAt(Instant.now());
+        order.setApprovalDecidedBy(manager);
+        order.setApprovalRejectionReason(null);
+        Order savedOrder = orderRepository.save(order);
+        productRepository.saveAll(updatedProducts);
+        markCouponAsUsedByCode(savedOrder, manager);
+        auditLogService.record(manager, "APPROVE_ORDER_REQUEST", "Order", savedOrder.getId(),
+                AuditInitiator.USER,
+                "Manager approved order request " + savedOrder.getOrderNumber() + " for customer "
+                        + savedOrder.getCustomer().getId());
+        boolean confirmationEmailSent = sendOrderConfirmation(savedOrder);
+        return toApprovalResponse(savedOrder, confirmationEmailSent);
+    }
+
+    @Transactional
+    public OrderApprovalResponse rejectApprovalRequest(User manager, Long orderId, String reason) {
+        requireBusinessApprovalManager(manager);
+        Order order = loadApprovalRequestForManager(manager, orderId);
+        requirePendingApproval(order);
+        String normalizedReason = normalizeRequiredRejectionReason(reason);
+
+        order.setStatus(OrderStatus.Rejected);
+        order.setApprovalRejectionReason(normalizedReason);
+        order.setApprovalDecidedAt(Instant.now());
+        order.setApprovalDecidedBy(manager);
+        Order savedOrder = orderRepository.save(order);
+        auditLogService.record(manager, "REJECT_ORDER_REQUEST", "Order", savedOrder.getId(),
+                AuditInitiator.USER,
+                "Manager rejected order request " + savedOrder.getOrderNumber() + " for customer "
+                        + savedOrder.getCustomer().getId());
+        return toApprovalResponse(savedOrder, null);
+    }
+
     /** US #42 - Convert the current cart into a confirmed order. Coupon reduces the order subtotal. */
     @Transactional(readOnly = true)
     public OrderPreviewResponse previewOrder(User customer, PlaceOrderRequest placeOrderRequest) {
@@ -119,6 +185,11 @@ public class OrderService {
         }
         if (placeOrderRequest != null && Boolean.TRUE.equals(placeOrderRequest.savePaymentMethod()) && paymentMethodRequest != null) {
             userService.savePaymentMethod(customer, paymentMethodRequest);
+        }
+        if (preparedOrder.approvalRequired()) {
+            Order savedOrder = persistApprovalRequest(preparedOrder, placeOrderRequest != null ? placeOrderRequest.approvalReason() : null);
+            cartService.clearCartSilently(customer.getId());
+            return toResponse(savedOrder);
         }
         Order savedOrder = persistPreparedOrder(preparedOrder);
         cartService.clearCartSilently(customer.getId());
@@ -158,6 +229,7 @@ public class OrderService {
         Coupon coupon = resolveCoupon(couponCode, customer);
         String orderNumber = placeOrderRequest != null ? placeOrderRequest.previewOrderNumber() : null;
         boolean carbonCompensationSelected = placeOrderRequest != null && Boolean.TRUE.equals(placeOrderRequest.carbonCompensationSelected());
+        BigDecimal approvalBudgetLimit = resolveApprovalBudgetLimit(customer);
         String confirmationEmail = placeOrderRequest != null && placeOrderRequest.email() != null && !placeOrderRequest.email().isBlank()
                 ? placeOrderRequest.email().trim()
                 : customer.getEmail();
@@ -180,7 +252,8 @@ public class OrderService {
                 coupon,
                 customer.getId(),
                 placeOrderRequest != null && Boolean.TRUE.equals(placeOrderRequest.allowUnverifiedAddress()),
-                carbonCompensationSelected
+                carbonCompensationSelected,
+                approvalBudgetLimit
         );
     }
 
@@ -222,7 +295,8 @@ public class OrderService {
                 null,
                 null,
                 Boolean.TRUE.equals(placeOrderRequest.allowUnverifiedAddress()),
-                Boolean.TRUE.equals(placeOrderRequest.carbonCompensationSelected())
+                Boolean.TRUE.equals(placeOrderRequest.carbonCompensationSelected()),
+                null
         );
     }
 
@@ -237,7 +311,8 @@ public class OrderService {
                                        Coupon coupon,
                                        Long discountCustomerId,
                                        boolean allowUnverifiedAddress,
-                                       boolean carbonCompensationSelected) {
+                                       boolean carbonCompensationSelected,
+                                       BigDecimal approvalBudgetLimit) {
         Order order = new Order();
         DeliveryAddressSnapshot validatedDeliveryAddress = validateDeliveryAddress(deliveryAddress, allowUnverifiedAddress);
         order.setCustomer(customer);
@@ -292,6 +367,10 @@ public class OrderService {
                 carbonCompensationSelected
         );
         BigDecimal totalPrice = subtotal.add(taxAmount).add(shippingCost).add(climateContributionAmount).setScale(2, RoundingMode.HALF_UP);
+        boolean approvalRequired = approvalBudgetLimit != null && totalPrice.compareTo(approvalBudgetLimit) > 0;
+        if (approvalRequired) {
+            order.setApprovalBudgetLimit(approvalBudgetLimit);
+        }
 
         return new PreparedOrder(
                 order,
@@ -304,7 +383,9 @@ public class OrderService {
                 climateContributionAmount,
                 totalCo2EmissionKg,
                 carbonCompensationSelected,
-                totalPrice
+                totalPrice,
+                approvalRequired,
+                approvalRequired ? approvalBudgetLimit : null
         );
     }
 
@@ -365,6 +446,18 @@ public class OrderService {
         }
     }
 
+    private BigDecimal resolveApprovalBudgetLimit(User customer) {
+        if (customer == null) {
+            return null;
+        }
+
+        return accountLinkRepository.findAllForUserId(customer.getId()).stream()
+                .map(link -> link.getMaxOrderValueLimit())
+                .filter(limit -> limit != null && limit.compareTo(BigDecimal.ZERO) > 0)
+                .min(BigDecimal::compareTo)
+                .orElse(null);
+    }
+
     private BigDecimal calculateShippingCost(BigDecimal subtotal, ShippingMethod shippingMethod) {
         if (subtotal == null || subtotal.compareTo(BigDecimal.ZERO) <= 0) {
             return BigDecimal.ZERO;
@@ -412,6 +505,60 @@ public class OrderService {
         Order savedOrder = orderRepository.save(order);
         productRepository.saveAll(updatedProducts);
         return savedOrder;
+    }
+
+    private Order persistApprovalRequest(PreparedOrder preparedOrder, String approvalReason) {
+        Order order = preparedOrder.order();
+        order.setDiscountAmount(preparedOrder.discountAmount());
+        order.setTaxAmount(preparedOrder.taxAmount());
+        order.setShippingCost(preparedOrder.shippingCost());
+        order.setClimateContributionAmount(preparedOrder.climateContributionAmount());
+        order.setCarbonCompensationSelected(preparedOrder.carbonCompensationSelected());
+        order.setTotalCo2EmissionKg(preparedOrder.totalCo2EmissionKg());
+        order.setTotalPrice(preparedOrder.totalPrice());
+        order.setStatus(OrderStatus.Pending_Approval);
+        order.setApprovalBudgetLimit(preparedOrder.approvalBudgetLimit());
+        order.setApprovalReason(normalizeApprovalReason(approvalReason));
+
+        for (PreparedOrderItem preparedItem : preparedOrder.items()) {
+            Product product = preparedItem.product();
+            if (preparedItem.quantity() > product.getStock()) {
+                throw new IllegalArgumentException("Only " + product.getStock() + " units of " + product.getName() + " are available");
+            }
+
+            OrderItem orderItem = new OrderItem();
+            orderItem.setOrder(order);
+            orderItem.setProduct(product);
+            orderItem.setQuantity(preparedItem.quantity());
+            orderItem.setPriceAtOrderTime(preparedItem.unitPrice());
+            order.getItems().add(orderItem);
+        }
+
+        return orderRepository.save(order);
+    }
+
+    private String normalizeApprovalReason(String approvalReason) {
+        if (approvalReason == null || approvalReason.isBlank()) {
+            return null;
+        }
+
+        String normalizedReason = approvalReason.trim();
+        if (normalizedReason.length() > 1000) {
+            throw new IllegalArgumentException("Die Begruendung darf maximal 1000 Zeichen lang sein");
+        }
+        return normalizedReason;
+    }
+
+    private String normalizeRequiredRejectionReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("Bitte einen Ablehnungsgrund eingeben");
+        }
+
+        String normalizedReason = reason.trim();
+        if (normalizedReason.length() > 1000) {
+            throw new IllegalArgumentException("Die Begruendung darf maximal 1000 Zeichen lang sein");
+        }
+        return normalizedReason;
     }
 
     /**
@@ -522,6 +669,53 @@ public class OrderService {
                 "code=" + coupon.getCode() + ", orderId=" + savedOrder.getId());
     }
 
+    private void markCouponAsUsedByCode(Order savedOrder, User manager) {
+        String couponCode = savedOrder.getCouponCode();
+        if (couponCode == null || couponCode.isBlank()) {
+            return;
+        }
+
+        Coupon coupon = couponRepository.findByCode(couponCode)
+                .orElseThrow(() -> new IllegalArgumentException("Coupon code not found: " + couponCode));
+        if (savedOrder.getCustomer() == null || !coupon.getCustomer().getId().equals(savedOrder.getCustomer().getId())) {
+            throw new IllegalArgumentException("Coupon does not belong to the approved customer");
+        }
+        if (coupon.isUsed()) {
+            throw new IllegalArgumentException("Coupon has already been used: " + couponCode);
+        }
+
+        coupon.setUsed(true);
+        coupon.setUsedAt(Instant.now());
+        couponRepository.save(coupon);
+        auditLogService.record(
+                savedOrder.getCustomer(),
+                "APPLY_COUPON",
+                "Coupon",
+                coupon.getId(),
+                AuditInitiator.USER,
+                "code=" + coupon.getCode() + ", orderId=" + savedOrder.getId()
+                        + ", approvedBy=" + manager.getId());
+    }
+
+    private void requireBusinessApprovalManager(User manager) {
+        if (manager == null
+                || manager.getUserType() != UserType.BUSINESS
+                || !manager.hasRole(UserRole.CUSTOMER)) {
+            throw new IllegalArgumentException("Order approvals are only available for B2B customer administrators");
+        }
+    }
+
+    private Order loadApprovalRequestForManager(User manager, Long orderId) {
+        return orderRepository.findApprovalRequestForManager(orderId, manager.getId())
+                .orElseThrow(() -> new EntityNotFoundException("Order approval request not found: " + orderId));
+    }
+
+    private void requirePendingApproval(Order order) {
+        if (order.getStatus() != OrderStatus.Pending_Approval) {
+            throw new IllegalArgumentException("Only pending approval requests can be processed");
+        }
+    }
+
     private String resolveOrderNumber(String requestedOrderNumber) {
         if (requestedOrderNumber != null && !requestedOrderNumber.isBlank()) {
             return requestedOrderNumber.trim();
@@ -575,7 +769,45 @@ public class OrderService {
                 itemResponses,
                 order.getTruckIdentifier(),
                 estimateDeliveryAt(order),
+                order.getApprovalReason(),
+                order.getApprovalBudgetLimit(),
                 null);
+    }
+
+    private OrderApprovalResponse toApprovalResponse(Order order, Boolean confirmationEmailSent) {
+        User requester = order.getCustomer();
+        List<OrderItemResponse> itemResponses = order.getItems().stream()
+                .map(orderItem -> new OrderItemResponse(
+                        orderItem.getId(),
+                        orderItem.getProduct().getId(),
+                        orderItem.getProduct().getName(),
+                        orderItem.getProduct().isPurchasable(),
+                        orderItem.getQuantity(),
+                        orderItem.getPriceAtOrderTime(),
+                        orderItem.getPriceAtOrderTime()
+                                .multiply(BigDecimal.valueOf(orderItem.getQuantity()))))
+                .toList();
+
+        return new OrderApprovalResponse(
+                order.getId(),
+                order.getOrderNumber(),
+                order.getStatus(),
+                requester != null ? requester.getId() : null,
+                requester != null ? requester.getUsername() : order.getCustomerName(),
+                requester != null ? requester.getEmail() : order.getCustomerEmail(),
+                order.getCreatedAt(),
+                order.getTotalPrice(),
+                order.getTaxAmount(),
+                order.getShippingCost(),
+                order.getShippingMethod(),
+                order.getDiscountAmount(),
+                order.getCouponCode(),
+                order.getApprovalReason(),
+                order.getApprovalBudgetLimit(),
+                order.getApprovalRejectionReason(),
+                order.getApprovalDecidedAt(),
+                itemResponses,
+                confirmationEmailSent);
     }
 
     private OrderResponse toResponse(Order order, boolean confirmationEmailSent) {
@@ -609,11 +841,16 @@ public class OrderService {
                 itemResponses,
                 order.getTruckIdentifier(),
                 estimateDeliveryAt(order),
+                order.getApprovalReason(),
+                order.getApprovalBudgetLimit(),
                 confirmationEmailSent);
     }
 
     private Instant estimateDeliveryAt(Order order) {
-        if (order.getStatus() == OrderStatus.DELIVERED || order.getStatus() == OrderStatus.CANCELLED) {
+        if (order.getStatus() == OrderStatus.Pending_Approval
+                || order.getStatus() == OrderStatus.Rejected
+                || order.getStatus() == OrderStatus.DELIVERED
+                || order.getStatus() == OrderStatus.CANCELLED) {
             return null;
         }
 
@@ -633,6 +870,7 @@ public class OrderService {
             case PENDING, CONFIRMED -> expressShipping
                     ? EXPRESS_MIN_REMAINING_EARLY
                     : STANDARD_MIN_REMAINING_EARLY;
+            case Pending_Approval, Rejected -> Duration.ZERO;
             case PACKED_IN_WAREHOUSE -> expressShipping
                     ? EXPRESS_MIN_REMAINING_PACKED
                     : STANDARD_MIN_REMAINING_PACKED;
@@ -668,6 +906,8 @@ public class OrderService {
                 preparedOrder.totalCo2EmissionKg(),
                 preparedOrder.totalPrice(),
                 preparedOrder.order().getCouponCode(),
+                preparedOrder.approvalRequired(),
+                preparedOrder.approvalBudgetLimit(),
                 itemResponses
         );
     }
@@ -744,6 +984,8 @@ public class OrderService {
             BigDecimal climateContributionAmount,
             BigDecimal totalCo2EmissionKg,
             boolean carbonCompensationSelected,
-            BigDecimal totalPrice
+            BigDecimal totalPrice,
+            boolean approvalRequired,
+            BigDecimal approvalBudgetLimit
     ) {}
 }
