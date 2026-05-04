@@ -90,6 +90,12 @@ public class Order {
     @Column(name = "discount_amount", nullable = false, precision = 10, scale = 2)
     private BigDecimal discountAmount = BigDecimal.ZERO;
 
+    @Column(name = "approval_reason", length = 1000)
+    private String approvalReason;
+
+    @Column(name = "approval_budget_limit", precision = 12, scale = 2)
+    private BigDecimal approvalBudgetLimit;
+
     @Column(name = "truck_identifier", length = 50)
     private String truckIdentifier;
 

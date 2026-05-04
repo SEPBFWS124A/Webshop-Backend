@@ -5,6 +5,7 @@ import de.fhdw.webshop.admin.AuditLogService;
 import de.fhdw.webshop.address.AddressLookupService;
 import de.fhdw.webshop.address.AddressValidationRequest;
 import de.fhdw.webshop.address.AddressValidationResponse;
+import de.fhdw.webshop.accountlink.AccountLinkRepository;
 import de.fhdw.webshop.cart.CartItem;
 import de.fhdw.webshop.cart.CartService;
 import de.fhdw.webshop.cart.CartRepository;
@@ -76,6 +77,7 @@ public class OrderService {
     private final AuditLogService auditLogService;
     private final EmailService emailService;
     private final AddressLookupService addressLookupService;
+    private final AccountLinkRepository accountLinkRepository;
 
     public List<OrderResponse> listOrdersForCustomer(Long customerId) {
         return orderRepository.findByCustomerIdOrderByCreatedAtDesc(customerId)
@@ -120,6 +122,11 @@ public class OrderService {
         if (placeOrderRequest != null && Boolean.TRUE.equals(placeOrderRequest.savePaymentMethod()) && paymentMethodRequest != null) {
             userService.savePaymentMethod(customer, paymentMethodRequest);
         }
+        if (preparedOrder.approvalRequired()) {
+            Order savedOrder = persistApprovalRequest(preparedOrder, placeOrderRequest != null ? placeOrderRequest.approvalReason() : null);
+            cartService.clearCartSilently(customer.getId());
+            return toResponse(savedOrder);
+        }
         Order savedOrder = persistPreparedOrder(preparedOrder);
         cartService.clearCartSilently(customer.getId());
         markCouponAsUsed(preparedOrder.coupon(), savedOrder, customer);
@@ -158,6 +165,7 @@ public class OrderService {
         Coupon coupon = resolveCoupon(couponCode, customer);
         String orderNumber = placeOrderRequest != null ? placeOrderRequest.previewOrderNumber() : null;
         boolean carbonCompensationSelected = placeOrderRequest != null && Boolean.TRUE.equals(placeOrderRequest.carbonCompensationSelected());
+        BigDecimal approvalBudgetLimit = resolveApprovalBudgetLimit(customer);
         String confirmationEmail = placeOrderRequest != null && placeOrderRequest.email() != null && !placeOrderRequest.email().isBlank()
                 ? placeOrderRequest.email().trim()
                 : customer.getEmail();
@@ -180,7 +188,8 @@ public class OrderService {
                 coupon,
                 customer.getId(),
                 placeOrderRequest != null && Boolean.TRUE.equals(placeOrderRequest.allowUnverifiedAddress()),
-                carbonCompensationSelected
+                carbonCompensationSelected,
+                approvalBudgetLimit
         );
     }
 
@@ -222,7 +231,8 @@ public class OrderService {
                 null,
                 null,
                 Boolean.TRUE.equals(placeOrderRequest.allowUnverifiedAddress()),
-                Boolean.TRUE.equals(placeOrderRequest.carbonCompensationSelected())
+                Boolean.TRUE.equals(placeOrderRequest.carbonCompensationSelected()),
+                null
         );
     }
 
@@ -237,7 +247,8 @@ public class OrderService {
                                        Coupon coupon,
                                        Long discountCustomerId,
                                        boolean allowUnverifiedAddress,
-                                       boolean carbonCompensationSelected) {
+                                       boolean carbonCompensationSelected,
+                                       BigDecimal approvalBudgetLimit) {
         Order order = new Order();
         DeliveryAddressSnapshot validatedDeliveryAddress = validateDeliveryAddress(deliveryAddress, allowUnverifiedAddress);
         order.setCustomer(customer);
@@ -292,6 +303,10 @@ public class OrderService {
                 carbonCompensationSelected
         );
         BigDecimal totalPrice = subtotal.add(taxAmount).add(shippingCost).add(climateContributionAmount).setScale(2, RoundingMode.HALF_UP);
+        boolean approvalRequired = approvalBudgetLimit != null && totalPrice.compareTo(approvalBudgetLimit) > 0;
+        if (approvalRequired) {
+            order.setApprovalBudgetLimit(approvalBudgetLimit);
+        }
 
         return new PreparedOrder(
                 order,
@@ -304,7 +319,9 @@ public class OrderService {
                 climateContributionAmount,
                 totalCo2EmissionKg,
                 carbonCompensationSelected,
-                totalPrice
+                totalPrice,
+                approvalRequired,
+                approvalRequired ? approvalBudgetLimit : null
         );
     }
 
@@ -365,6 +382,18 @@ public class OrderService {
         }
     }
 
+    private BigDecimal resolveApprovalBudgetLimit(User customer) {
+        if (customer == null) {
+            return null;
+        }
+
+        return accountLinkRepository.findAllForUserId(customer.getId()).stream()
+                .map(link -> link.getMaxOrderValueLimit())
+                .filter(limit -> limit != null && limit.compareTo(BigDecimal.ZERO) > 0)
+                .min(BigDecimal::compareTo)
+                .orElse(null);
+    }
+
     private BigDecimal calculateShippingCost(BigDecimal subtotal, ShippingMethod shippingMethod) {
         if (subtotal == null || subtotal.compareTo(BigDecimal.ZERO) <= 0) {
             return BigDecimal.ZERO;
@@ -412,6 +441,48 @@ public class OrderService {
         Order savedOrder = orderRepository.save(order);
         productRepository.saveAll(updatedProducts);
         return savedOrder;
+    }
+
+    private Order persistApprovalRequest(PreparedOrder preparedOrder, String approvalReason) {
+        Order order = preparedOrder.order();
+        order.setDiscountAmount(preparedOrder.discountAmount());
+        order.setTaxAmount(preparedOrder.taxAmount());
+        order.setShippingCost(preparedOrder.shippingCost());
+        order.setClimateContributionAmount(preparedOrder.climateContributionAmount());
+        order.setCarbonCompensationSelected(preparedOrder.carbonCompensationSelected());
+        order.setTotalCo2EmissionKg(preparedOrder.totalCo2EmissionKg());
+        order.setTotalPrice(preparedOrder.totalPrice());
+        order.setStatus(OrderStatus.Pending_Approval);
+        order.setApprovalBudgetLimit(preparedOrder.approvalBudgetLimit());
+        order.setApprovalReason(normalizeApprovalReason(approvalReason));
+
+        for (PreparedOrderItem preparedItem : preparedOrder.items()) {
+            Product product = preparedItem.product();
+            if (preparedItem.quantity() > product.getStock()) {
+                throw new IllegalArgumentException("Only " + product.getStock() + " units of " + product.getName() + " are available");
+            }
+
+            OrderItem orderItem = new OrderItem();
+            orderItem.setOrder(order);
+            orderItem.setProduct(product);
+            orderItem.setQuantity(preparedItem.quantity());
+            orderItem.setPriceAtOrderTime(preparedItem.unitPrice());
+            order.getItems().add(orderItem);
+        }
+
+        return orderRepository.save(order);
+    }
+
+    private String normalizeApprovalReason(String approvalReason) {
+        if (approvalReason == null || approvalReason.isBlank()) {
+            return null;
+        }
+
+        String normalizedReason = approvalReason.trim();
+        if (normalizedReason.length() > 1000) {
+            throw new IllegalArgumentException("Die Begruendung darf maximal 1000 Zeichen lang sein");
+        }
+        return normalizedReason;
     }
 
     /**
@@ -575,6 +646,8 @@ public class OrderService {
                 itemResponses,
                 order.getTruckIdentifier(),
                 estimateDeliveryAt(order),
+                order.getApprovalReason(),
+                order.getApprovalBudgetLimit(),
                 null);
     }
 
@@ -609,11 +682,15 @@ public class OrderService {
                 itemResponses,
                 order.getTruckIdentifier(),
                 estimateDeliveryAt(order),
+                order.getApprovalReason(),
+                order.getApprovalBudgetLimit(),
                 confirmationEmailSent);
     }
 
     private Instant estimateDeliveryAt(Order order) {
-        if (order.getStatus() == OrderStatus.DELIVERED || order.getStatus() == OrderStatus.CANCELLED) {
+        if (order.getStatus() == OrderStatus.Pending_Approval
+                || order.getStatus() == OrderStatus.DELIVERED
+                || order.getStatus() == OrderStatus.CANCELLED) {
             return null;
         }
 
@@ -633,6 +710,7 @@ public class OrderService {
             case PENDING, CONFIRMED -> expressShipping
                     ? EXPRESS_MIN_REMAINING_EARLY
                     : STANDARD_MIN_REMAINING_EARLY;
+            case Pending_Approval -> Duration.ZERO;
             case PACKED_IN_WAREHOUSE -> expressShipping
                     ? EXPRESS_MIN_REMAINING_PACKED
                     : STANDARD_MIN_REMAINING_PACKED;
@@ -668,6 +746,8 @@ public class OrderService {
                 preparedOrder.totalCo2EmissionKg(),
                 preparedOrder.totalPrice(),
                 preparedOrder.order().getCouponCode(),
+                preparedOrder.approvalRequired(),
+                preparedOrder.approvalBudgetLimit(),
                 itemResponses
         );
     }
@@ -744,6 +824,8 @@ public class OrderService {
             BigDecimal climateContributionAmount,
             BigDecimal totalCo2EmissionKg,
             boolean carbonCompensationSelected,
-            BigDecimal totalPrice
+            BigDecimal totalPrice,
+            boolean approvalRequired,
+            BigDecimal approvalBudgetLimit
     ) {}
 }

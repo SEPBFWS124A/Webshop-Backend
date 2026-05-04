@@ -192,6 +192,7 @@ public class WarehouseService {
             case PACKED_IN_WAREHOUSE -> OrderStatus.IN_TRUCK;
             case IN_TRUCK -> OrderStatus.SHIPPED;
             case SHIPPED -> OrderStatus.DELIVERED;
+            case Pending_Approval -> null;
             case DELIVERED, CANCELLED -> null;
         };
     }

@@ -14,5 +14,7 @@ public record OrderPreviewResponse(
         BigDecimal totalCo2EmissionKg,
         BigDecimal totalPrice,
         String couponCode,
+        Boolean approvalRequired,
+        BigDecimal approvalBudgetLimit,
         List<OrderPreviewItemResponse> items
 ) {}
