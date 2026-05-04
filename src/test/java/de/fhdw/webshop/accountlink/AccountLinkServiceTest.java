@@ -1,5 +1,6 @@
 package de.fhdw.webshop.accountlink;
 
+import de.fhdw.webshop.accountlink.dto.AccountLinkResponse;
 import de.fhdw.webshop.accountlink.dto.TeamBudgetResponse;
 import de.fhdw.webshop.admin.AuditInitiator;
 import de.fhdw.webshop.admin.AuditLogService;
@@ -12,6 +13,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -23,6 +25,59 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class AccountLinkServiceTest {
+
+    @Test
+    void listsAccountLinksWithStoredDirection() {
+        AccountLinkRepository accountLinkRepository = mock(AccountLinkRepository.class);
+        UserRepository userRepository = mock(UserRepository.class);
+        AccountLinkService service = newService(accountLinkRepository, userRepository, mock(AuditLogService.class));
+        User viewedUser = businessCustomer(2L, "target");
+        User sourceUser = businessCustomer(1L, "source");
+        AccountLink link = link(9L, sourceUser, viewedUser, null);
+        link.setSourceUser(sourceUser);
+        link.setTargetUser(viewedUser);
+
+        when(userRepository.findById(2L)).thenReturn(Optional.of(viewedUser));
+        when(accountLinkRepository.findAllForUserId(2L)).thenReturn(List.of(link));
+
+        List<AccountLinkResponse> links = service.listLinks(2L);
+
+        assertThat(links).hasSize(1);
+        assertThat(links.getFirst().linkedUser().id()).isEqualTo(1L);
+        assertThat(links.getFirst().sourceUser().id()).isEqualTo(1L);
+        assertThat(links.getFirst().targetUser().id()).isEqualTo(2L);
+    }
+
+    @Test
+    void createLinksStoresSourceAndTargetDirection() {
+        AccountLinkRepository accountLinkRepository = mock(AccountLinkRepository.class);
+        UserRepository userRepository = mock(UserRepository.class);
+        AuditLogService auditLogService = mock(AuditLogService.class);
+        AccountLinkService service = newService(accountLinkRepository, userRepository, auditLogService);
+        User adminUser = businessCustomer(99L, "admin");
+        User sourceUser = businessCustomer(8L, "source");
+        User targetUser = businessCustomer(3L, "target");
+
+        when(userRepository.findById(8L)).thenReturn(Optional.of(sourceUser));
+        when(userRepository.findById(3L)).thenReturn(Optional.of(targetUser));
+        when(accountLinkRepository.existsByUserAIdAndUserBId(3L, 8L)).thenReturn(false);
+        when(accountLinkRepository.save(org.mockito.ArgumentMatchers.any(AccountLink.class)))
+                .thenAnswer(invocation -> {
+                    AccountLink saved = invocation.getArgument(0);
+                    saved.setId(15L);
+                    return saved;
+                });
+        when(accountLinkRepository.findAllForUserId(8L)).thenReturn(List.of());
+
+        service.createLinks(8L, List.of(3L), adminUser);
+
+        ArgumentCaptor<AccountLink> captor = ArgumentCaptor.forClass(AccountLink.class);
+        verify(accountLinkRepository).save(captor.capture());
+        assertThat(captor.getValue().getUserA().getId()).isEqualTo(3L);
+        assertThat(captor.getValue().getUserB().getId()).isEqualTo(8L);
+        assertThat(captor.getValue().getSourceUser().getId()).isEqualTo(8L);
+        assertThat(captor.getValue().getTargetUser().getId()).isEqualTo(3L);
+    }
 
     @Test
     void listsTeamBudgetsForBusinessCustomer() {

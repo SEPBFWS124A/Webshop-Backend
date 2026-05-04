@@ -132,6 +132,8 @@ public class AccountLinkService {
             link.setUserA(targetUser);
             link.setUserB(sourceUser);
         }
+        link.setSourceUser(sourceUser);
+        link.setTargetUser(targetUser);
 
         AccountLink savedLink = accountLinkRepository.save(link);
         auditLogService.record(adminUser, "CREATE_ACCOUNT_LINK", "AccountLink", savedLink.getId(),
@@ -183,9 +185,13 @@ public class AccountLinkService {
 
     private AccountLinkResponse toResponse(AccountLink link, Long sourceUserId) {
         User linkedUser = linkedUser(link, sourceUserId);
+        User linkSourceUser = link.getSourceUser() != null ? link.getSourceUser() : link.getUserA();
+        User linkTargetUser = link.getTargetUser() != null ? link.getTargetUser() : link.getUserB();
         return new AccountLinkResponse(
                 link.getId(),
                 toProfileResponse(linkedUser),
+                toProfileResponse(linkSourceUser),
+                toProfileResponse(linkTargetUser),
                 link.getCreatedAt());
     }
 
