@@ -27,10 +27,12 @@ import de.fhdw.webshop.user.dto.PaymentMethodRequest;
 import de.fhdw.webshop.notification.EmailService;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -70,6 +72,45 @@ class OrderServiceTest {
         verify(context.cartService).clearCartSilently(context.customer.getId());
         verify(context.productRepository, never()).saveAll(any());
         verify(context.emailService, never()).sendEmail(any(), any(), any());
+    }
+
+    @Test
+    void approveApprovalRequestConfirmsOrderAndAppliesFinalOrderEffects() {
+        TestContext context = newContext(new BigDecimal("100.00"));
+        Order pendingOrder = pendingApprovalOrder(context.customer, context.product);
+        when(context.orderRepository.findApprovalRequestForManager(pendingOrder.getId(), context.manager.getId()))
+                .thenReturn(Optional.of(pendingOrder));
+        when(context.orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(context.emailService.sendEmail(any(), any(), any())).thenReturn(true);
+
+        OrderResponse regularResponse = context.service.placeOrder(context.customer, request("Projektbedarf"));
+        assertThat(regularResponse.status()).isEqualTo(OrderStatus.Pending_Approval);
+
+        var approvalResponse = context.service.approveApprovalRequest(context.manager, pendingOrder.getId());
+
+        assertThat(approvalResponse.status()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(approvalResponse.confirmationEmailSent()).isTrue();
+        assertThat(pendingOrder.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
+        assertThat(pendingOrder.getApprovalDecidedBy()).isEqualTo(context.manager);
+        assertThat(pendingOrder.getApprovalDecidedAt()).isNotNull();
+        assertThat(context.product.getStock()).isEqualTo(4);
+        verify(context.productRepository).saveAll(List.of(context.product));
+        verify(context.emailService).sendEmail(any(), any(), any());
+    }
+
+    @Test
+    void rejectApprovalRequestRequiresReason() {
+        TestContext context = newContext(new BigDecimal("100.00"));
+        Order pendingOrder = pendingApprovalOrder(context.customer, context.product);
+        when(context.orderRepository.findApprovalRequestForManager(pendingOrder.getId(), context.manager.getId()))
+                .thenReturn(Optional.of(pendingOrder));
+
+        assertThatThrownBy(() -> context.service.rejectApprovalRequest(context.manager, pendingOrder.getId(), " "))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Ablehnungsgrund");
+
+        assertThat(pendingOrder.getStatus()).isEqualTo(OrderStatus.Pending_Approval);
+        verify(context.orderRepository, never()).save(pendingOrder);
     }
 
     private static TestContext newContext(BigDecimal budgetLimit) {
@@ -127,7 +168,7 @@ class OrderServiceTest {
                 "Germany",
                 null));
 
-        return new TestContext(service, customer, product, orderRepository, cartService, productRepository, emailService);
+        return new TestContext(service, customer, manager, product, orderRepository, cartService, productRepository, emailService);
     }
 
     private static PlaceOrderRequest request(String approvalReason) {
@@ -172,9 +213,41 @@ class OrderServiceTest {
         return product;
     }
 
+    private static Order pendingApprovalOrder(User customer, Product product) {
+        Order order = new Order();
+        order.setId(500L);
+        order.setCustomer(customer);
+        order.setOrderNumber("ORD-APPROVAL-500");
+        order.setCustomerEmail(customer.getEmail());
+        order.setCustomerName(customer.getUsername());
+        order.setDeliveryStreet("Hauptstrasse 1");
+        order.setDeliveryCity("Bielefeld");
+        order.setDeliveryPostalCode("33602");
+        order.setDeliveryCountry("Germany");
+        order.setPaymentMethodType(PaymentMethodType.BANK_TRANSFER);
+        order.setPaymentMaskedDetails("Rechnung");
+        order.setTotalPrice(new BigDecimal("238.00"));
+        order.setTaxAmount(new BigDecimal("38.00"));
+        order.setShippingCost(BigDecimal.ZERO);
+        order.setDiscountAmount(BigDecimal.ZERO);
+        order.setStatus(OrderStatus.Pending_Approval);
+        order.setApprovalReason("Projektbedarf");
+        order.setApprovalBudgetLimit(new BigDecimal("100.00"));
+
+        OrderItem item = new OrderItem();
+        item.setId(501L);
+        item.setOrder(order);
+        item.setProduct(product);
+        item.setQuantity(1);
+        item.setPriceAtOrderTime(new BigDecimal("200.00"));
+        order.getItems().add(item);
+        return order;
+    }
+
     private record TestContext(
             OrderService service,
             User customer,
+            User manager,
             Product product,
             OrderRepository orderRepository,
             CartService cartService,

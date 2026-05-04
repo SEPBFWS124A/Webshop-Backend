@@ -1,5 +1,7 @@
 package de.fhdw.webshop.order;
 
+import de.fhdw.webshop.order.dto.OrderApprovalDecisionRequest;
+import de.fhdw.webshop.order.dto.OrderApprovalResponse;
 import de.fhdw.webshop.order.dto.OrderResponse;
 import de.fhdw.webshop.order.dto.OrderPreviewResponse;
 import de.fhdw.webshop.order.dto.PlaceOrderRequest;
@@ -38,6 +40,32 @@ public class OrderController {
     public ResponseEntity<OrderResponse> getOrder(@PathVariable Long id,
                                                   @AuthenticationPrincipal User currentUser) {
         return ResponseEntity.ok(orderService.getOrder(id, currentUser.getId()));
+    }
+
+    /** Issue #222 - B2B manager views pending approval requests for linked employees. */
+    @GetMapping("/approvals/pending")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<List<OrderApprovalResponse>> listPendingApprovals(@AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(orderService.listPendingApprovalRequests(currentUser));
+    }
+
+    /** Issue #222 - B2B manager approves a pending request and triggers the regular order flow. */
+    @PostMapping("/approvals/{id}/approve")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<OrderApprovalResponse> approveApproval(
+            @PathVariable Long id,
+            @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(orderService.approveApprovalRequest(currentUser, id));
+    }
+
+    /** Issue #222 - B2B manager rejects a pending request with a required reason. */
+    @PostMapping("/approvals/{id}/reject")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<OrderApprovalResponse> rejectApproval(
+            @PathVariable Long id,
+            @AuthenticationPrincipal User currentUser,
+            @Valid @RequestBody OrderApprovalDecisionRequest request) {
+        return ResponseEntity.ok(orderService.rejectApprovalRequest(currentUser, id, request.reason()));
     }
 
     /** US #42 — Place an order from the current cart contents. */

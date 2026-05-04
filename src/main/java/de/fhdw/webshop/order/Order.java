@@ -96,6 +96,16 @@ public class Order {
     @Column(name = "approval_budget_limit", precision = 12, scale = 2)
     private BigDecimal approvalBudgetLimit;
 
+    @Column(name = "approval_rejection_reason", length = 1000)
+    private String approvalRejectionReason;
+
+    @Column(name = "approval_decided_at")
+    private Instant approvalDecidedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "approval_decided_by_id")
+    private User approvalDecidedBy;
+
     @Column(name = "truck_identifier", length = 50)
     private String truckIdentifier;
 
