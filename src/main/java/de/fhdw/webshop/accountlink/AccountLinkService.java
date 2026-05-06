@@ -217,6 +217,7 @@ public class AccountLinkService {
                 user.getRoles(),
                 user.getUserType(),
                 user.getCustomerNumber(),
-                user.isActive());
+                user.isActive(),
+                user.getAgbAcceptedAt());
     }
 }

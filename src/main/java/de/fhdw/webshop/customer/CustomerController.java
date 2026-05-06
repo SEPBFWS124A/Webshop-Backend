@@ -79,7 +79,8 @@ public class CustomerController {
                         user.getRoles(),
                         user.getUserType(),
                         user.getCustomerNumber(),
-                        user.isActive()))
+                        user.isActive(),
+                        user.getAgbAcceptedAt()))
                 .toList();
         return ResponseEntity.ok(customers);
     }
@@ -108,7 +109,8 @@ public class CustomerController {
                 customer.getRoles(),
                 customer.getUserType(),
                 customer.getCustomerNumber(),
-                customer.isActive()));
+                customer.isActive(),
+                customer.getAgbAcceptedAt()));
     }
 
     /** US #11 - View a customer's cart on their behalf. */
@@ -256,7 +258,8 @@ public class CustomerController {
                 customer.getRoles(),
                 customer.getUserType(),
                 customer.getCustomerNumber(),
-                customer.isActive());
+                customer.isActive(),
+                customer.getAgbAcceptedAt());
 
         CartResponse cart = cartService.getCart(id);
         BigDecimal cartTotal = cart != null && cart.total() != null ? cart.total() : BigDecimal.ZERO;

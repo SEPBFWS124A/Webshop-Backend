@@ -5,6 +5,8 @@ import de.fhdw.webshop.accountlink.AccountLinkRepository;
 import de.fhdw.webshop.address.AddressLookupService;
 import de.fhdw.webshop.address.AddressValidationResponse;
 import de.fhdw.webshop.admin.AuditLogService;
+import de.fhdw.webshop.agb.AgbService;
+import de.fhdw.webshop.user.UserRepository;
 import de.fhdw.webshop.cart.CartItem;
 import de.fhdw.webshop.cart.CartRepository;
 import de.fhdw.webshop.cart.CartService;
@@ -156,6 +158,8 @@ class OrderServiceTest {
         DeliveryAddressRepository deliveryAddressRepository = mock(DeliveryAddressRepository.class);
         PaymentMethodRepository paymentMethodRepository = mock(PaymentMethodRepository.class);
         UserService userService = mock(UserService.class);
+        UserRepository userRepository = mock(UserRepository.class);
+        AgbService agbService = mock(AgbService.class);
         AuditLogService auditLogService = mock(AuditLogService.class);
         EmailService emailService = mock(EmailService.class);
         AddressLookupService addressLookupService = mock(AddressLookupService.class);
@@ -172,6 +176,8 @@ class OrderServiceTest {
                 deliveryAddressRepository,
                 paymentMethodRepository,
                 userService,
+                userRepository,
+                agbService,
                 auditLogService,
                 emailService,
                 addressLookupService,

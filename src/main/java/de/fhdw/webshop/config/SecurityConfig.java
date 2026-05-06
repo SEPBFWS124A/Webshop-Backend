@@ -58,6 +58,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/health").permitAll()
                         // Actuator endpoints — only reachable on internal management port 8081 (not exposed via Docker)
                         .requestMatchers("/actuator/**").permitAll()
+                        // AGB – latest version readable without login (shown on /agb page and checkout)
+                        .requestMatchers(HttpMethod.GET, "/api/agb/latest").permitAll()
                         // Shoppi chatbot — public, auth-aware (personal context only when authenticated)
                         .requestMatchers(HttpMethod.POST, "/api/chat/message").permitAll()
                         // All other endpoints require authentication

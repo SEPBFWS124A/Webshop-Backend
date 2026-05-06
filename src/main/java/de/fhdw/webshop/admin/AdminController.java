@@ -61,7 +61,7 @@ public class AdminController {
                 .map(user -> new UserProfileResponse(
                         user.getId(), user.getUsername(), user.getEmail(),
                         user.getRoles(), user.getUserType(), user.getCustomerNumber(),
-                        user.isActive()))
+                        user.isActive(), user.getAgbAcceptedAt()))
                 .toList();
         return ResponseEntity.ok(users);
     }
@@ -190,7 +190,8 @@ public class AdminController {
                 user.getRoles(),
                 user.getUserType(),
                 user.getCustomerNumber(),
-                user.isActive());
+                user.isActive(),
+                user.getAgbAcceptedAt());
     }
 
     @PatchMapping("/users/{id}/deactivate")

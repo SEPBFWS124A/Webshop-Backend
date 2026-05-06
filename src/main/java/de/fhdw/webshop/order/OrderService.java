@@ -6,6 +6,7 @@ import de.fhdw.webshop.address.AddressLookupService;
 import de.fhdw.webshop.address.AddressValidationRequest;
 import de.fhdw.webshop.address.AddressValidationResponse;
 import de.fhdw.webshop.accountlink.AccountLinkRepository;
+import de.fhdw.webshop.agb.AgbService;
 import de.fhdw.webshop.cart.CartItem;
 import de.fhdw.webshop.cart.CartService;
 import de.fhdw.webshop.cart.CartRepository;
@@ -27,6 +28,7 @@ import de.fhdw.webshop.user.PaymentMethod;
 import de.fhdw.webshop.user.PaymentMethodRepository;
 import de.fhdw.webshop.user.PaymentMethodSupport;
 import de.fhdw.webshop.user.User;
+import de.fhdw.webshop.user.UserRepository;
 import de.fhdw.webshop.user.UserService;
 import de.fhdw.webshop.user.UserRole;
 import de.fhdw.webshop.user.UserType;
@@ -78,6 +80,8 @@ public class OrderService {
     private final DeliveryAddressRepository deliveryAddressRepository;
     private final PaymentMethodRepository paymentMethodRepository;
     private final UserService userService;
+    private final UserRepository userRepository;
+    private final AgbService agbService;
     private final AuditLogService auditLogService;
     private final EmailService emailService;
     private final AddressLookupService addressLookupService;
@@ -181,7 +185,17 @@ public class OrderService {
     /** US #42 - Convert the current cart into a confirmed order. Coupon reduces the order subtotal. */
     @Transactional
     public OrderResponse placeOrder(User customer, PlaceOrderRequest placeOrderRequest) {
-        validateLegalAcceptance(placeOrderRequest);
+        boolean needsAcceptance = agbService.userNeedsToAcceptAgb(customer);
+        if (needsAcceptance) {
+            if (!Boolean.TRUE.equals(placeOrderRequest != null ? placeOrderRequest.acceptedTermsAndConditions() : null)) {
+                throw new IllegalArgumentException("Bitte akzeptiere die aktuellen AGB vor der Bestellung.");
+            }
+            customer.setAgbAcceptedAt(Instant.now());
+            userRepository.save(customer);
+        }
+        if (placeOrderRequest == null || !Boolean.TRUE.equals(placeOrderRequest.acceptedPrivacyPolicy())) {
+            throw new IllegalArgumentException("Bitte akzeptiere AGB, Widerrufsbelehrung und Datenschutzhinweise vor der Bestellung");
+        }
         PreparedOrder preparedOrder = prepareCustomerOrder(customer, placeOrderRequest);
         DeliveryAddressRequest deliveryAddressRequest = placeOrderRequest != null ? placeOrderRequest.deliveryAddress() : null;
         PaymentMethodRequest paymentMethodRequest = placeOrderRequest != null ? placeOrderRequest.paymentMethod() : null;
