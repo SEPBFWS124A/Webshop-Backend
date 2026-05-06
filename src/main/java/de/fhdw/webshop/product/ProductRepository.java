@@ -31,7 +31,8 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
      */
     @Query("""
             SELECT p FROM Product p
-            WHERE (:purchasableOnly IS NULL OR p.purchasable = :purchasableOnly)
+            WHERE p.parentProduct IS NULL
+              AND (:purchasableOnly IS NULL OR p.purchasable = :purchasableOnly)
               AND (:category = '' OR LOWER(p.category) = LOWER(:category))
               AND (:filterByEcoScore = false OR p.ecoScore IN :ecoScores)
               AND (:searchTerm = ''

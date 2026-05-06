@@ -4,6 +4,8 @@ import de.fhdw.webshop.product.ProductEcoScore;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 
 public record ProductResponse(
         Long id,
@@ -15,7 +17,13 @@ public record ProductResponse(
         ProductEcoScore ecoScore,
         String category,
         int stock,
+        String sku,
         boolean purchasable,
         boolean promoted,
+        boolean hasVariants,
+        Long parentProductId,
+        Map<String, String> variantValues,
+        List<ProductVariantAttributeResponse> variantAttributes,
+        List<ProductResponse> variants,
         Instant createdAt
 ) {}
