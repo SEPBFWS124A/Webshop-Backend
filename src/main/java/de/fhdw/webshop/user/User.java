@@ -72,6 +72,9 @@ public class User implements UserDetails {
     @Column(name = "current_login_streak", nullable = false)
     private int currentLoginStreak = 0;
 
+    @Column(name = "agb_accepted_at")
+    private Instant agbAcceptedAt;
+
     // ── Convenience helpers ────────────────────────────────────────────────────
 
     public boolean hasRole(UserRole role) {

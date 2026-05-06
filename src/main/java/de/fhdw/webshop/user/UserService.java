@@ -109,7 +109,8 @@ public class UserService {
                 user.getRoles(),
                 user.getUserType(),
                 user.getCustomerNumber(),
-                user.isActive()
+                user.isActive(),
+                user.getAgbAcceptedAt()
         );
     }
 
