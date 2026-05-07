@@ -149,6 +149,44 @@ class OrderServiceTest {
         verify(context.orderRepository, never()).save(pendingOrder);
     }
 
+    @Test
+    void cancelConfirmedOrderSetsCancelledAndRestoresStock() {
+        TestContext context = newContext(new BigDecimal("500.00"));
+        Order order = customerOrder(context.customer, context.product, OrderStatus.CONFIRMED, PaymentMethodType.CREDIT_CARD);
+        when(context.orderRepository.findByIdAndCustomerId(order.getId(), context.customer.getId()))
+                .thenReturn(Optional.of(order));
+        when(context.orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        OrderResponse response = context.service.cancelOrder(order.getId(), context.customer);
+
+        assertThat(response.status()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(context.product.getStock()).isEqualTo(5);
+        verify(context.productRepository).saveAll(List.of(context.product));
+
+        ArgumentCaptor<String> actionCaptor = ArgumentCaptor.forClass(String.class);
+        verify(context.auditLogService, times(2)).record(any(), actionCaptor.capture(), any(), any(), any(), any());
+        assertThat(actionCaptor.getAllValues()).contains("CANCEL_ORDER", "ORDER_REFUND_TRIGGERED");
+    }
+
+    @Test
+    void cancelOrderRejectsWarehouseProcessedOrders() {
+        TestContext context = newContext(new BigDecimal("500.00"));
+        Order order = customerOrder(context.customer, context.product, OrderStatus.PACKED_IN_WAREHOUSE, PaymentMethodType.BANK_TRANSFER);
+        when(context.orderRepository.findByIdAndCustomerId(order.getId(), context.customer.getId()))
+                .thenReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> context.service.cancelOrder(order.getId(), context.customer))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Aufgegeben");
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PACKED_IN_WAREHOUSE);
+        assertThat(context.product.getStock()).isEqualTo(3);
+        verify(context.orderRepository, never()).save(order);
+        verify(context.productRepository, never()).saveAll(any());
+        verify(context.auditLogService, never()).record(any(), any(), any(), any(), any(), any());
+    }
+
     private static TestContext newContext(BigDecimal budgetLimit) {
         OrderRepository orderRepository = mock(OrderRepository.class);
         CartRepository cartRepository = mock(CartRepository.class);
@@ -212,7 +250,7 @@ class OrderServiceTest {
                 "Germany",
                 null));
 
-        return new TestContext(service, customer, manager, product, orderRepository, cartService, productRepository, emailService);
+        return new TestContext(service, customer, manager, product, orderRepository, cartService, productRepository, emailService, auditLogService);
     }
 
     private static PlaceOrderRequest request(String approvalReason) {
@@ -289,6 +327,36 @@ class OrderServiceTest {
         return order;
     }
 
+    private static Order customerOrder(User customer, Product product, OrderStatus status, PaymentMethodType paymentMethodType) {
+        product.setStock(3);
+        Order order = new Order();
+        order.setId(600L);
+        order.setCustomer(customer);
+        order.setOrderNumber("ORD-CANCEL-600");
+        order.setCustomerEmail(customer.getEmail());
+        order.setCustomerName(customer.getUsername());
+        order.setDeliveryStreet("Hauptstrasse 1");
+        order.setDeliveryCity("Bielefeld");
+        order.setDeliveryPostalCode("33602");
+        order.setDeliveryCountry("Germany");
+        order.setPaymentMethodType(paymentMethodType);
+        order.setPaymentMaskedDetails("Testzahlung");
+        order.setTotalPrice(new BigDecimal("238.00"));
+        order.setTaxAmount(new BigDecimal("38.00"));
+        order.setShippingCost(BigDecimal.ZERO);
+        order.setDiscountAmount(BigDecimal.ZERO);
+        order.setStatus(status);
+
+        OrderItem item = new OrderItem();
+        item.setId(601L);
+        item.setOrder(order);
+        item.setProduct(product);
+        item.setQuantity(2);
+        item.setPriceAtOrderTime(new BigDecimal("100.00"));
+        order.getItems().add(item);
+        return order;
+    }
+
     private record TestContext(
             OrderService service,
             User customer,
@@ -297,6 +365,7 @@ class OrderServiceTest {
             OrderRepository orderRepository,
             CartService cartService,
             ProductRepository productRepository,
-            EmailService emailService
+            EmailService emailService,
+            AuditLogService auditLogService
     ) {}
 }

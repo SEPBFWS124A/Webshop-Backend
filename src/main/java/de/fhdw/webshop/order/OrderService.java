@@ -30,6 +30,7 @@ import de.fhdw.webshop.user.DeliveryAddressRepository;
 import de.fhdw.webshop.user.PaymentMethod;
 import de.fhdw.webshop.user.PaymentMethodRepository;
 import de.fhdw.webshop.user.PaymentMethodSupport;
+import de.fhdw.webshop.user.PaymentMethodType;
 import de.fhdw.webshop.user.User;
 import de.fhdw.webshop.user.UserRepository;
 import de.fhdw.webshop.user.UserService;
@@ -116,6 +117,27 @@ public class OrderService {
         Order order = orderRepository.findByIdAndCustomerId(orderId, customerId)
                 .orElseThrow(() -> new EntityNotFoundException("Order not found: " + orderId));
         return toResponse(order);
+    }
+
+    @Transactional
+    public OrderResponse cancelOrder(Long orderId, User customer) {
+        Order order = orderRepository.findByIdAndCustomerId(orderId, customer.getId())
+                .orElseThrow(() -> new EntityNotFoundException("Order not found: " + orderId));
+
+        if (!canCustomerCancel(order)) {
+            throw new IllegalArgumentException("Bestellungen koennen nur im Status Aufgegeben storniert werden.");
+        }
+
+        restoreReservedStock(order);
+        order.setStatus(OrderStatus.CANCELLED);
+        Order savedOrder = orderRepository.save(order);
+
+        auditLogService.record(customer, "CANCEL_ORDER", "Order", savedOrder.getId(),
+                AuditInitiator.USER,
+                "Status geaendert auf Storniert fuer Bestellung " + savedOrder.getOrderNumber());
+        triggerRefundIfRequired(savedOrder, customer);
+
+        return toResponse(savedOrder);
     }
 
     @Transactional(readOnly = true)
@@ -735,6 +757,35 @@ public class OrderService {
                 AuditInitiator.USER,
                 "code=" + coupon.getCode() + ", orderId=" + savedOrder.getId()
                         + ", approvedBy=" + manager.getId());
+    }
+
+    private boolean canCustomerCancel(Order order) {
+        return order.getStatus() == OrderStatus.CONFIRMED;
+    }
+
+    private void restoreReservedStock(Order order) {
+        List<Product> updatedProducts = new ArrayList<>();
+        for (OrderItem orderItem : order.getItems()) {
+            Product product = orderItem.getProduct();
+            product.setStock(product.getStock() + orderItem.getQuantity());
+            updatedProducts.add(product);
+        }
+
+        if (!updatedProducts.isEmpty()) {
+            productRepository.saveAll(updatedProducts);
+        }
+    }
+
+    private void triggerRefundIfRequired(Order order, User customer) {
+        if (order.getPaymentMethodType() != PaymentMethodType.CREDIT_CARD
+                && order.getPaymentMethodType() != PaymentMethodType.SEPA_DIRECT_DEBIT) {
+            return;
+        }
+
+        auditLogService.record(customer, "ORDER_REFUND_TRIGGERED", "Order", order.getId(),
+                AuditInitiator.SYSTEM,
+                "Automatische Rueckerstattung fuer " + order.getPaymentMethodType()
+                        + " angestossen, Betrag=" + order.getTotalPrice());
     }
 
     private void requireBusinessApprovalManager(User manager) {

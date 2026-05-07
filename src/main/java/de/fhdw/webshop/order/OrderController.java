@@ -42,6 +42,14 @@ public class OrderController {
         return ResponseEntity.ok(orderService.getOrder(id, currentUser.getId()));
     }
 
+    /** Issue #252 - Customers may cancel orders before warehouse processing starts. */
+    @PostMapping("/{id}/cancel")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<OrderResponse> cancelOrder(@PathVariable Long id,
+                                                     @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(orderService.cancelOrder(id, currentUser));
+    }
+
     /** Issue #222 - B2B manager views pending approval requests for linked employees. */
     @GetMapping("/approvals/pending")
     @PreAuthorize("hasRole('CUSTOMER')")
