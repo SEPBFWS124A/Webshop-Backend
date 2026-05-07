@@ -19,6 +19,9 @@ import de.fhdw.webshop.order.dto.OrderPreviewItemResponse;
 import de.fhdw.webshop.order.dto.OrderPreviewResponse;
 import de.fhdw.webshop.order.dto.OrderResponse;
 import de.fhdw.webshop.order.dto.PlaceOrderRequest;
+import de.fhdw.webshop.pickup.PickupStore;
+import de.fhdw.webshop.pickup.PickupStoreRepository;
+import de.fhdw.webshop.pickup.PickupStoreService;
 import de.fhdw.webshop.product.Product;
 import de.fhdw.webshop.product.ProductRepository;
 import de.fhdw.webshop.product.ProductService;
@@ -86,6 +89,8 @@ public class OrderService {
     private final EmailService emailService;
     private final AddressLookupService addressLookupService;
     private final AccountLinkRepository accountLinkRepository;
+    private final PickupStoreRepository pickupStoreRepository;
+    private final PickupStoreService pickupStoreService;
 
     @Value("${app.frontend.base-url:http://localhost:5173}")
     private String frontendBaseUrl;
@@ -246,6 +251,7 @@ public class OrderService {
         PaymentMethodSnapshot paymentMethod = resolvePaymentMethod(customer, paymentMethodRequest);
         String couponCode = placeOrderRequest != null ? placeOrderRequest.couponCode() : null;
         Coupon coupon = resolveCoupon(couponCode, customer);
+        PickupStore pickupStore = resolvePickupStore(placeOrderRequest);
         String orderNumber = placeOrderRequest != null ? placeOrderRequest.previewOrderNumber() : null;
         boolean carbonCompensationSelected = placeOrderRequest != null && Boolean.TRUE.equals(placeOrderRequest.carbonCompensationSelected());
         BigDecimal approvalBudgetLimit = resolveApprovalBudgetLimit(customer);
@@ -272,7 +278,8 @@ public class OrderService {
                 customer.getId(),
                 placeOrderRequest != null && Boolean.TRUE.equals(placeOrderRequest.allowUnverifiedAddress()),
                 carbonCompensationSelected,
-                approvalBudgetLimit
+                approvalBudgetLimit,
+                pickupStore
         );
     }
 
@@ -315,7 +322,8 @@ public class OrderService {
                 null,
                 Boolean.TRUE.equals(placeOrderRequest.allowUnverifiedAddress()),
                 Boolean.TRUE.equals(placeOrderRequest.carbonCompensationSelected()),
-                null
+                null,
+                resolvePickupStore(placeOrderRequest)
         );
     }
 
@@ -331,7 +339,8 @@ public class OrderService {
                                        Long discountCustomerId,
                                        boolean allowUnverifiedAddress,
                                        boolean carbonCompensationSelected,
-                                       BigDecimal approvalBudgetLimit) {
+                                       BigDecimal approvalBudgetLimit,
+                                       PickupStore pickupStore) {
         Order order = new Order();
         DeliveryAddressSnapshot validatedDeliveryAddress = validateDeliveryAddress(deliveryAddress, allowUnverifiedAddress);
         order.setCustomer(customer);
@@ -350,6 +359,7 @@ public class OrderService {
         order.setPaymentMethodType(paymentMethod.methodType());
         order.setPaymentMaskedDetails(paymentMethod.maskedDetails());
         order.setCouponCode(coupon != null ? coupon.getCode() : null);
+        order.setPickupStore(pickupStore);
 
         BigDecimal itemSubtotal = BigDecimal.ZERO;
         BigDecimal totalCo2EmissionKg = BigDecimal.ZERO;
@@ -455,6 +465,15 @@ public class OrderService {
             return ShippingMethod.STANDARD;
         }
         return placeOrderRequest.shippingMethod();
+    }
+
+    private PickupStore resolvePickupStore(PlaceOrderRequest placeOrderRequest) {
+        if (placeOrderRequest == null || placeOrderRequest.pickupStoreId() == null) {
+            return null;
+        }
+
+        return pickupStoreRepository.findByIdAndActiveTrue(placeOrderRequest.pickupStoreId())
+                .orElseThrow(() -> new IllegalArgumentException("Der ausgewaehlte Abhol-Store ist nicht verfuegbar"));
     }
 
     private void validateLegalAcceptance(PlaceOrderRequest placeOrderRequest) {
@@ -824,6 +843,7 @@ public class OrderService {
                 estimateDeliveryAt(order),
                 order.getApprovalReason(),
                 order.getApprovalBudgetLimit(),
+                pickupStoreService.toResponse(order.getPickupStore()),
                 null);
     }
 
@@ -896,6 +916,7 @@ public class OrderService {
                 estimateDeliveryAt(order),
                 order.getApprovalReason(),
                 order.getApprovalBudgetLimit(),
+                pickupStoreService.toResponse(order.getPickupStore()),
                 confirmationEmailSent);
     }
 
@@ -969,11 +990,23 @@ public class OrderService {
         StringBuilder body = new StringBuilder()
                 .append("Vielen Dank fuer deine Bestellung.\n\n")
                 .append("Bestellnummer: ").append(order.getOrderNumber()).append('\n')
-                .append("Gesamtbetrag: ").append(order.getTotalPrice()).append(" EUR\n")
-                .append("Versand an: ").append(order.getDeliveryStreet()).append(", ")
-                .append(order.getDeliveryPostalCode()).append(' ')
-                .append(order.getDeliveryCity()).append(", ")
-                .append(order.getDeliveryCountry()).append('\n');
+                .append("Gesamtbetrag: ").append(order.getTotalPrice()).append(" EUR\n");
+
+        if (order.getPickupStore() != null) {
+            PickupStore pickupStore = order.getPickupStore();
+            body.append("Abholung im Store: ")
+                    .append(pickupStore.getName()).append(", ")
+                    .append(pickupStore.getStreet()).append(", ")
+                    .append(pickupStore.getPostalCode()).append(' ')
+                    .append(pickupStore.getCity()).append('\n')
+                    .append("Oeffnungszeiten: ")
+                    .append(pickupStore.getOpeningHours()).append('\n');
+        } else {
+            body.append("Versand an: ").append(order.getDeliveryStreet()).append(", ")
+                    .append(order.getDeliveryPostalCode()).append(' ')
+                    .append(order.getDeliveryCity()).append(", ")
+                    .append(order.getDeliveryCountry()).append('\n');
+        }
 
         if (order.getClimateContributionAmount() != null
                 && order.getClimateContributionAmount().compareTo(BigDecimal.ZERO) > 0) {
