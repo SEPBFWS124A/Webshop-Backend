@@ -3,7 +3,11 @@ package de.fhdw.webshop.warehouse;
 import de.fhdw.webshop.order.OrderStatus;
 import de.fhdw.webshop.warehouse.dto.AdvanceWarehouseOrderRequest;
 import de.fhdw.webshop.warehouse.dto.AutoAssignTruckIdentifiersResponse;
+import de.fhdw.webshop.warehouse.dto.WarehouseLocationResponse;
 import de.fhdw.webshop.warehouse.dto.WarehouseOrderResponse;
+import de.fhdw.webshop.warehouse.dto.WarehouseTransferRequest;
+import de.fhdw.webshop.warehouse.dto.WarehouseTransferResponse;
+import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -27,8 +31,26 @@ public class WarehouseController {
     @GetMapping("/orders")
     @PreAuthorize("hasAnyRole('WAREHOUSE_EMPLOYEE', 'ADMIN')")
     public ResponseEntity<List<WarehouseOrderResponse>> listOrders(
-            @RequestParam(required = false) OrderStatus status) {
-        return ResponseEntity.ok(warehouseService.listOrders(status));
+            @RequestParam(required = false) OrderStatus status,
+            @RequestParam(required = false) Long warehouseLocationId) {
+        return ResponseEntity.ok(warehouseService.listOrders(status, warehouseLocationId));
+    }
+
+    @GetMapping("/locations")
+    @PreAuthorize("hasAnyRole('WAREHOUSE_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<List<WarehouseLocationResponse>> listLocations() {
+        return ResponseEntity.ok(warehouseService.listLocations());
+    }
+
+    @PutMapping("/orders/{id}/warehouse")
+    @PreAuthorize("hasAnyRole('WAREHOUSE_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<WarehouseOrderResponse> updateFulfillmentWarehouse(
+            @PathVariable Long id,
+            @RequestBody AdvanceWarehouseOrderRequest request) {
+        return ResponseEntity.ok(warehouseService.updateFulfillmentWarehouse(
+                id,
+                request != null ? request.warehouseLocationId() : null
+        ));
     }
 
     @PutMapping("/orders/{id}/truck")
@@ -49,8 +71,16 @@ public class WarehouseController {
             @RequestBody(required = false) AdvanceWarehouseOrderRequest request) {
         return ResponseEntity.ok(warehouseService.advanceOrder(
                 id,
-                request != null ? request.truckIdentifier() : null
+                request != null ? request.truckIdentifier() : null,
+                request != null ? request.warehouseLocationId() : null
         ));
+    }
+
+    @PostMapping("/transfers")
+    @PreAuthorize("hasAnyRole('WAREHOUSE_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<WarehouseTransferResponse> transferStock(
+            @Valid @RequestBody WarehouseTransferRequest request) {
+        return ResponseEntity.ok(warehouseService.transferStock(request));
     }
 
     @PostMapping("/orders/auto-assign-trucks")

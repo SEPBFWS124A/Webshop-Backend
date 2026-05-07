@@ -69,6 +69,22 @@ INSERT INTO products (
   ('Office Chair', 'Lumbar support mesh chair', '/office-chair.jpg', 349.99, 33.200, 'D', 'Furniture', 18, 'B-02-05', TRUE, TRUE),
   ('Notebook (Draft)', 'Not yet available to customers', NULL, 9.99, 0.350, 'A', 'Stationery', 0, 'C-01-01', FALSE, FALSE);
 
+-- Warehouse stock per location
+INSERT INTO warehouse_product_stocks (product_id, warehouse_location_id, quantity)
+SELECT
+    p.id,
+    wl.id,
+    CASE
+        WHEN wl.code = 'MAIN' THEN p.stock
+        WHEN wl.code = 'WAREHOUSE_B' AND p.category = 'Furniture' THEN GREATEST(0, p.stock / 2)
+        WHEN wl.code = 'WAREHOUSE_C' AND p.category = 'Electronics' THEN GREATEST(0, p.stock / 3)
+        ELSE 0
+    END
+FROM products p
+CROSS JOIN warehouse_locations wl
+WHERE wl.code IN ('MAIN', 'WAREHOUSE_B', 'WAREHOUSE_C')
+ON CONFLICT (product_id, warehouse_location_id) DO NOTHING;
+
 -- Advertisements / Werbeflächen
 INSERT INTO advertisements (title, description, content_type, image_url, target_url, active)
 SELECT title, description, content_type, image_url, target_url, active

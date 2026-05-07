@@ -5,5 +5,6 @@ public record WarehouseOrderItemResponse(
         String productName,
         int quantity,
         int availableStock,
+        int warehouseStock,
         String warehousePosition
 ) {}
