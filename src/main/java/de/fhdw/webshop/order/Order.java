@@ -1,6 +1,7 @@
 package de.fhdw.webshop.order;
 
 import de.fhdw.webshop.user.User;
+import de.fhdw.webshop.warehouse.WarehouseLocation;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -109,6 +110,10 @@ public class Order {
 
     @Column(name = "truck_identifier", length = 50)
     private String truckIdentifier;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "fulfillment_warehouse_id")
+    private WarehouseLocation fulfillmentWarehouse;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "pickup_store_id")

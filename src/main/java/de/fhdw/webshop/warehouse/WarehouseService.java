@@ -5,15 +5,21 @@ import de.fhdw.webshop.address.GeocodedAddressResponse;
 import de.fhdw.webshop.order.Order;
 import de.fhdw.webshop.order.OrderRepository;
 import de.fhdw.webshop.order.OrderStatus;
+import de.fhdw.webshop.product.Product;
+import de.fhdw.webshop.product.ProductRepository;
 import de.fhdw.webshop.user.DeliveryAddress;
 import de.fhdw.webshop.user.DeliveryAddressRepository;
 import de.fhdw.webshop.warehouse.dto.AutoAssignTruckIdentifiersResponse;
 import de.fhdw.webshop.warehouse.dto.TruckAssignmentChangeResponse;
+import de.fhdw.webshop.warehouse.dto.WarehouseLocationResponse;
 import de.fhdw.webshop.warehouse.dto.WarehouseOrderItemResponse;
 import de.fhdw.webshop.warehouse.dto.WarehouseOrderResponse;
+import de.fhdw.webshop.warehouse.dto.WarehouseTransferRequest;
+import de.fhdw.webshop.warehouse.dto.WarehouseTransferResponse;
 import jakarta.persistence.EntityNotFoundException;
 import java.text.Normalizer;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -48,9 +54,17 @@ public class WarehouseService {
     private final OrderRepository orderRepository;
     private final DeliveryAddressRepository deliveryAddressRepository;
     private final AddressLookupService addressLookupService;
+    private final ProductRepository productRepository;
+    private final WarehouseLocationRepository warehouseLocationRepository;
+    private final WarehouseProductStockRepository warehouseProductStockRepository;
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<WarehouseOrderResponse> listOrders(OrderStatus status) {
+        return listOrders(status, null);
+    }
+
+    @Transactional
+    public List<WarehouseOrderResponse> listOrders(OrderStatus status, Long warehouseLocationId) {
         List<Order> orders = status == null
                 ? orderRepository.findByStatusNotInOrderByCreatedAtAsc(List.of(
                         OrderStatus.DELIVERED,
@@ -61,6 +75,13 @@ public class WarehouseService {
 
         List<Order> filteredOrders = orders.stream()
                 .filter(order -> status != null || ACTIVE_WAREHOUSE_STATUSES.contains(order.getStatus()))
+                .map(order -> {
+                    ensureFulfillmentWarehouse(order);
+                    return order;
+                })
+                .filter(order -> warehouseLocationId == null
+                        || (order.getFulfillmentWarehouse() != null
+                        && warehouseLocationId.equals(order.getFulfillmentWarehouse().getId())))
                 .toList();
 
         Map<String, String> regionLabels = buildRegionLabels(filteredOrders);
@@ -76,8 +97,20 @@ public class WarehouseService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<WarehouseLocationResponse> listLocations() {
+        return warehouseLocationRepository.findActiveLocations().stream()
+                .map(this::toLocationResponse)
+                .toList();
+    }
+
     @Transactional
     public WarehouseOrderResponse advanceOrder(Long orderId, String requestedTruckIdentifier) {
+        return advanceOrder(orderId, requestedTruckIdentifier, null);
+    }
+
+    @Transactional
+    public WarehouseOrderResponse advanceOrder(Long orderId, String requestedTruckIdentifier, Long warehouseLocationId) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new EntityNotFoundException("Order not found: " + orderId));
 
@@ -97,10 +130,37 @@ public class WarehouseService {
             order.setTruckIdentifier(resolvedTruckIdentifier);
         }
 
+        WarehouseLocation fulfillmentWarehouse = resolveWarehouseForOrder(order, warehouseLocationId);
+        order.setFulfillmentWarehouse(fulfillmentWarehouse);
+        if (nextStatus == OrderStatus.PACKED_IN_WAREHOUSE) {
+            deductWarehouseStock(order, fulfillmentWarehouse);
+        }
+
         order.setStatus(nextStatus);
         if (nextStatus == OrderStatus.DELIVERED && order.getDeliveredAt() == null) {
             order.setDeliveredAt(Instant.now());
         }
+        Order savedOrder = orderRepository.save(order);
+        String regionKey = resolveRegionKey(savedOrder);
+        return toResponse(
+                savedOrder,
+                regionKey,
+                Map.of(regionKey, buildRegionLabel(regionKey, List.of(savedOrder))),
+                Map.of(regionKey, normalizeTruckIdentifier(savedOrder.getTruckIdentifier(), createSuggestedTruckIdentifier(savedOrder)))
+        );
+    }
+
+    @Transactional
+    public WarehouseOrderResponse updateFulfillmentWarehouse(Long orderId, Long warehouseLocationId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new EntityNotFoundException("Order not found: " + orderId));
+
+        if (!List.of(OrderStatus.PENDING, OrderStatus.CONFIRMED).contains(order.getStatus())) {
+            throw new IllegalArgumentException("Das Auslieferungslager kann nur vor dem Packen im Lager geändert werden");
+        }
+
+        WarehouseLocation warehouseLocation = resolveWarehouseForOrder(order, warehouseLocationId);
+        order.setFulfillmentWarehouse(warehouseLocation);
         Order savedOrder = orderRepository.save(order);
         String regionKey = resolveRegionKey(savedOrder);
         return toResponse(
@@ -187,6 +247,159 @@ public class WarehouseService {
 
         orderRepository.saveAll(activeOrders);
         return new AutoAssignTruckIdentifiersResponse(listOrders(null), changes);
+    }
+
+    @Transactional
+    public WarehouseTransferResponse transferStock(WarehouseTransferRequest request) {
+        if (request.fromWarehouseLocationId().equals(request.toWarehouseLocationId())) {
+            throw new IllegalArgumentException("Quell- und Ziellager müssen unterschiedlich sein");
+        }
+
+        Product product = productRepository.findById(request.productId())
+                .orElseThrow(() -> new EntityNotFoundException("Product not found: " + request.productId()));
+        WarehouseLocation fromWarehouse = resolveWarehouseLocation(request.fromWarehouseLocationId());
+        WarehouseLocation toWarehouse = resolveWarehouseLocation(request.toWarehouseLocationId());
+        WarehouseProductStock fromStock = getOrCreateStock(product, fromWarehouse);
+        WarehouseProductStock toStock = getOrCreateStock(product, toWarehouse);
+
+        if (fromStock.getQuantity() < request.quantity()) {
+            throw new IllegalArgumentException("Im Quelllager sind nur " + fromStock.getQuantity()
+                    + " Stück von " + product.getName() + " verfügbar");
+        }
+
+        fromStock.setQuantity(fromStock.getQuantity() - request.quantity());
+        toStock.setQuantity(toStock.getQuantity() + request.quantity());
+        warehouseProductStockRepository.saveAll(List.of(fromStock, toStock));
+
+        return new WarehouseTransferResponse(
+                product.getId(),
+                product.getName(),
+                toLocationResponse(fromWarehouse),
+                toLocationResponse(toWarehouse),
+                request.quantity(),
+                fromStock.getQuantity(),
+                toStock.getQuantity()
+        );
+    }
+
+    private WarehouseLocation ensureFulfillmentWarehouse(Order order) {
+        if (order.getFulfillmentWarehouse() != null) {
+            return order.getFulfillmentWarehouse();
+        }
+
+        WarehouseLocation mainWarehouse = resolveMainWarehouse();
+        order.setFulfillmentWarehouse(mainWarehouse);
+        return mainWarehouse;
+    }
+
+    private WarehouseLocation resolveWarehouseForOrder(Order order, Long requestedWarehouseLocationId) {
+        if (requestedWarehouseLocationId != null) {
+            return resolveWarehouseLocation(requestedWarehouseLocationId);
+        }
+
+        return ensureFulfillmentWarehouse(order);
+    }
+
+    private WarehouseLocation resolveWarehouseLocation(Long warehouseLocationId) {
+        return warehouseLocationRepository.findById(warehouseLocationId)
+                .filter(WarehouseLocation::isActive)
+                .orElseThrow(() -> new EntityNotFoundException("Warehouse location not found: " + warehouseLocationId));
+    }
+
+    private WarehouseLocation resolveMainWarehouse() {
+        return warehouseLocationRepository.findFirstByMainLocationTrueAndActiveTrueOrderByIdAsc()
+                .orElseThrow(() -> new EntityNotFoundException("No active main warehouse configured"));
+    }
+
+    private WarehouseProductStock getOrCreateStock(Product product, WarehouseLocation warehouseLocation) {
+        return warehouseProductStockRepository
+                .findByProductIdAndWarehouseLocationId(product.getId(), warehouseLocation.getId())
+                .orElseGet(() -> {
+                    WarehouseProductStock stock = new WarehouseProductStock();
+                    stock.setProduct(product);
+                    stock.setWarehouseLocation(warehouseLocation);
+                    stock.setQuantity(warehouseLocation.isMainLocation() ? product.getStock() : 0);
+                    return stock;
+                });
+    }
+
+    private Map<Long, Integer> resolveWarehouseStockByProductId(Order order, WarehouseLocation warehouseLocation) {
+        List<Long> productIds = order.getItems().stream()
+                .map(orderItem -> orderItem.getProduct().getId())
+                .distinct()
+                .toList();
+
+        if (productIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<Long, Integer> persistedStock = warehouseProductStockRepository
+                .findByWarehouseLocationIdAndProductIdIn(warehouseLocation.getId(), productIds)
+                .stream()
+                .collect(Collectors.toMap(
+                        stock -> stock.getProduct().getId(),
+                        WarehouseProductStock::getQuantity
+                ));
+
+        Map<Long, Integer> resolvedStock = new LinkedHashMap<>(persistedStock);
+        if (warehouseLocation.isMainLocation()) {
+            order.getItems().forEach(orderItem -> resolvedStock.putIfAbsent(
+                    orderItem.getProduct().getId(),
+                    orderItem.getProduct().getStock()
+            ));
+        }
+
+        productIds.forEach(productId -> resolvedStock.putIfAbsent(productId, 0));
+        return resolvedStock;
+    }
+
+    private List<String> buildWarehouseWarnings(
+            Order order,
+            WarehouseLocation warehouseLocation,
+            Map<Long, Integer> stockByProductId
+    ) {
+        List<String> warnings = new ArrayList<>();
+        order.getItems().forEach(orderItem -> {
+            int stock = stockByProductId.getOrDefault(orderItem.getProduct().getId(), 0);
+            if (stock < orderItem.getQuantity()) {
+                warnings.add(orderItem.getProduct().getName() + ": benötigt "
+                        + orderItem.getQuantity() + ", im Lager " + warehouseLocation.getName()
+                        + " verfügbar " + stock);
+            }
+        });
+        return warnings;
+    }
+
+    private void deductWarehouseStock(Order order, WarehouseLocation warehouseLocation) {
+        List<WarehouseProductStock> updatedStocks = new ArrayList<>();
+
+        order.getItems().forEach(orderItem -> {
+            WarehouseProductStock stock = getOrCreateStock(orderItem.getProduct(), warehouseLocation);
+            if (stock.getQuantity() < orderItem.getQuantity()) {
+                throw new IllegalArgumentException("Nicht ausreichend Bestand im Lager "
+                        + warehouseLocation.getName() + " für " + orderItem.getProduct().getName()
+                        + ": benötigt " + orderItem.getQuantity()
+                        + ", verfügbar " + stock.getQuantity());
+            }
+
+            stock.setQuantity(stock.getQuantity() - orderItem.getQuantity());
+            updatedStocks.add(stock);
+        });
+
+        warehouseProductStockRepository.saveAll(updatedStocks);
+    }
+
+    private WarehouseLocationResponse toLocationResponse(WarehouseLocation warehouseLocation) {
+        return new WarehouseLocationResponse(
+                warehouseLocation.getId(),
+                warehouseLocation.getCode(),
+                warehouseLocation.getName(),
+                warehouseLocation.getStreet(),
+                warehouseLocation.getPostalCode(),
+                warehouseLocation.getCity(),
+                warehouseLocation.getCountry(),
+                warehouseLocation.isMainLocation()
+        );
     }
 
     private OrderStatus determineNextStatus(OrderStatus currentStatus) {
@@ -354,12 +567,16 @@ public class WarehouseService {
             Map<String, String> suggestedTruckIdentifiers
     ) {
         DeliverySnapshot deliverySnapshot = resolveDeliverySnapshot(order);
+        WarehouseLocation fulfillmentWarehouse = ensureFulfillmentWarehouse(order);
+        Map<Long, Integer> stockByProductId = resolveWarehouseStockByProductId(order, fulfillmentWarehouse);
+        List<String> warehouseWarnings = buildWarehouseWarnings(order, fulfillmentWarehouse, stockByProductId);
         List<WarehouseOrderItemResponse> items = order.getItems().stream()
                 .map(orderItem -> new WarehouseOrderItemResponse(
                         orderItem.getProduct().getId(),
                         orderItem.getProduct().getName(),
                         orderItem.getQuantity(),
                         orderItem.getProduct().getStock(),
+                        stockByProductId.getOrDefault(orderItem.getProduct().getId(), 0),
                         orderItem.getProduct().getWarehousePosition()
                 ))
                 .toList();
@@ -374,6 +591,9 @@ public class WarehouseService {
                 regionLabels.getOrDefault(regionKey, "Unbekannte Route"),
                 order.getTruckIdentifier(),
                 suggestedTruckIdentifiers.get(regionKey),
+                toLocationResponse(fulfillmentWarehouse),
+                warehouseWarnings.isEmpty(),
+                warehouseWarnings,
                 order.getShippingMethod(),
                 deliverySnapshot.street(),
                 deliverySnapshot.city(),
