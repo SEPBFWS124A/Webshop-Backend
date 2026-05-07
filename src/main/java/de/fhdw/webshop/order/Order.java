@@ -8,6 +8,7 @@ import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import de.fhdw.webshop.pickup.PickupStore;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -108,6 +109,10 @@ public class Order {
 
     @Column(name = "truck_identifier", length = 50)
     private String truckIdentifier;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "pickup_store_id")
+    private PickupStore pickupStore;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();

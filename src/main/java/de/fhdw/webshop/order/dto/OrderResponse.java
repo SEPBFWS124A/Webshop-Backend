@@ -2,6 +2,7 @@ package de.fhdw.webshop.order.dto;
 
 import de.fhdw.webshop.order.OrderStatus;
 import de.fhdw.webshop.order.ShippingMethod;
+import de.fhdw.webshop.pickup.dto.PickupStoreResponse;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -27,5 +28,6 @@ public record OrderResponse(
         Instant estimatedDeliveryAt,
         String approvalReason,
         BigDecimal approvalBudgetLimit,
+        PickupStoreResponse pickupStore,
         Boolean confirmationEmailSent
 ) {}

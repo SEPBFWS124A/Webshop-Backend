@@ -12,6 +12,8 @@ import de.fhdw.webshop.discount.CouponRepository;
 import de.fhdw.webshop.order.dto.OrderPreviewResponse;
 import de.fhdw.webshop.order.dto.OrderResponse;
 import de.fhdw.webshop.order.dto.PlaceOrderRequest;
+import de.fhdw.webshop.pickup.PickupStoreRepository;
+import de.fhdw.webshop.pickup.PickupStoreService;
 import de.fhdw.webshop.product.Product;
 import de.fhdw.webshop.product.ProductRepository;
 import de.fhdw.webshop.product.ProductService;
@@ -160,6 +162,8 @@ class OrderServiceTest {
         EmailService emailService = mock(EmailService.class);
         AddressLookupService addressLookupService = mock(AddressLookupService.class);
         AccountLinkRepository accountLinkRepository = mock(AccountLinkRepository.class);
+        PickupStoreRepository pickupStoreRepository = mock(PickupStoreRepository.class);
+        PickupStoreService pickupStoreService = mock(PickupStoreService.class);
 
         OrderService service = new OrderService(
                 orderRepository,
@@ -175,7 +179,9 @@ class OrderServiceTest {
                 auditLogService,
                 emailService,
                 addressLookupService,
-                accountLinkRepository);
+                accountLinkRepository,
+                pickupStoreRepository,
+                pickupStoreService);
 
         User customer = businessCustomer(10L, "employee");
         User manager = businessCustomer(11L, "manager");
@@ -219,6 +225,7 @@ class OrderServiceTest {
                 false,
                 false,
                 false,
+                null,
                 approvalReason,
                 null);
     }
