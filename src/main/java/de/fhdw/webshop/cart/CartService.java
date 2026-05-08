@@ -20,7 +20,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -207,6 +209,7 @@ public class CartService {
                 cartItem.getId(),
                 cartItem.getProduct().getId(),
                 cartItem.getProduct().getName(),
+                toVariantValues(cartItem.getProduct()),
                 cartItem.getProduct().getImageUrl(),
                 effectiveUnitPrice,
                 co2EmissionKg,
@@ -280,5 +283,13 @@ public class CartService {
 
     private int getAvailableStock(Product product) {
         return product.isPurchasable() ? Math.max(product.getStock(), 0) : 0;
+    }
+
+    private Map<String, String> toVariantValues(Product product) {
+        Map<String, String> values = new LinkedHashMap<>();
+        product.getVariantOptions().stream()
+                .sorted((left, right) -> Integer.compare(left.getDisplayOrder(), right.getDisplayOrder()))
+                .forEach(option -> values.put(option.getAttributeName(), option.getAttributeValue()));
+        return values;
     }
 }

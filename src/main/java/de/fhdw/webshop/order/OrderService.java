@@ -42,7 +42,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -783,6 +785,7 @@ public class OrderService {
                         orderItem.getId(),
                         orderItem.getProduct().getId(),
                         orderItem.getProduct().getName(),
+                        toVariantValues(orderItem.getProduct()),
                         orderItem.getProduct().isPurchasable(),
                         orderItem.getQuantity(),
                         orderItem.getPriceAtOrderTime(),
@@ -820,6 +823,7 @@ public class OrderService {
                         orderItem.getId(),
                         orderItem.getProduct().getId(),
                         orderItem.getProduct().getName(),
+                        toVariantValues(orderItem.getProduct()),
                         orderItem.getProduct().isPurchasable(),
                         orderItem.getQuantity(),
                         orderItem.getPriceAtOrderTime(),
@@ -855,6 +859,7 @@ public class OrderService {
                         orderItem.getId(),
                         orderItem.getProduct().getId(),
                         orderItem.getProduct().getName(),
+                        toVariantValues(orderItem.getProduct()),
                         orderItem.getProduct().isPurchasable(),
                         orderItem.getQuantity(),
                         orderItem.getPriceAtOrderTime(),
@@ -928,6 +933,7 @@ public class OrderService {
                 .map(item -> new OrderPreviewItemResponse(
                         item.product().getId(),
                         item.product().getName(),
+                        toVariantValues(item.product()),
                         item.quantity(),
                         item.unitPrice(),
                         item.lineTotal()
@@ -985,6 +991,14 @@ public class OrderService {
                 "Bestellbestaetigung " + order.getOrderNumber(),
                 body.toString()
         );
+    }
+
+    private Map<String, String> toVariantValues(Product product) {
+        Map<String, String> values = new LinkedHashMap<>();
+        product.getVariantOptions().stream()
+                .sorted((left, right) -> Integer.compare(left.getDisplayOrder(), right.getDisplayOrder()))
+                .forEach(option -> values.put(option.getAttributeName(), option.getAttributeValue()));
+        return values;
     }
 
     private String buildApprovalRequestEmailBody(Order order, User manager) {
