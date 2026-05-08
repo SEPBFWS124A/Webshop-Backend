@@ -107,14 +107,19 @@ public class CartService {
         if (!product.isPurchasable() || getAvailableStock(product) <= 0) {
             throw new IllegalArgumentException("Product is not available for purchase: " + product.getId());
         }
+        String personalizationText = normalizePersonalizationText(product, addToCartRequest.personalizationText());
 
         CartItem cartItem = cartRepository
-                .findByUserIdAndProductId(user.getId(), addToCartRequest.productId())
+                .findByUserIdAndProductIdAndPersonalizationText(
+                        user.getId(),
+                        addToCartRequest.productId(),
+                        personalizationText)
                 .orElseGet(() -> {
                     CartItem newCartItem = new CartItem();
                     newCartItem.setUser(user);
                     newCartItem.setProduct(product);
                     newCartItem.setQuantity(0);
+                    newCartItem.setPersonalizationText(personalizationText);
                     return newCartItem;
                 });
 
@@ -132,6 +137,14 @@ public class CartService {
         return getCart(user.getId());
     }
 
+    @Transactional
+    public CartResponse removeItemByCartItemId(User user, Long cartItemId) {
+        CartItem cartItem = cartRepository.findByIdAndUserId(cartItemId, user.getId())
+                .orElseThrow(() -> new EntityNotFoundException("Item not in cart: cartItemId=" + cartItemId));
+        cartRepository.delete(cartItem);
+        return getCart(user.getId());
+    }
+
     /** US #73 — Set a new quantity; quantity 0 removes the item entirely. */
     @Transactional
     public CartResponse updateItemQuantity(User user, Long productId, int quantity) {
@@ -141,6 +154,19 @@ public class CartService {
 
         CartItem cartItem = cartRepository.findByUserIdAndProductId(user.getId(), productId)
                 .orElseThrow(() -> new EntityNotFoundException("Item not in cart: productId=" + productId));
+        cartItem.setQuantity(quantity);
+        cartRepository.save(cartItem);
+        return getCart(user.getId());
+    }
+
+    @Transactional
+    public CartResponse updateItemQuantityByCartItemId(User user, Long cartItemId, int quantity) {
+        if (quantity <= 0) {
+            return removeItemByCartItemId(user, cartItemId);
+        }
+
+        CartItem cartItem = cartRepository.findByIdAndUserId(cartItemId, user.getId())
+                .orElseThrow(() -> new EntityNotFoundException("Item not in cart: cartItemId=" + cartItemId));
         cartItem.setQuantity(quantity);
         cartRepository.save(cartItem);
         return getCart(user.getId());
@@ -161,12 +187,16 @@ public class CartService {
                 continue;
             }
             CartItem cartItem = cartRepository
-                    .findByUserIdAndProductId(user.getId(), product.getId())
+                    .findByUserIdAndProductIdAndPersonalizationText(
+                            user.getId(),
+                            product.getId(),
+                            orderItem.getPersonalizationText())
                     .orElseGet(() -> {
                         CartItem newCartItem = new CartItem();
                         newCartItem.setUser(user);
                         newCartItem.setProduct(product);
                         newCartItem.setQuantity(0);
+                        newCartItem.setPersonalizationText(orderItem.getPersonalizationText());
                         return newCartItem;
                     });
             cartItem.setQuantity(cartItem.getQuantity() + orderItem.getQuantity());
@@ -210,6 +240,7 @@ public class CartService {
                 cartItem.getProduct().getId(),
                 cartItem.getProduct().getName(),
                 toVariantValues(cartItem.getProduct()),
+                cartItem.getPersonalizationText(),
                 cartItem.getProduct().getImageUrl(),
                 effectiveUnitPrice,
                 co2EmissionKg,
@@ -283,6 +314,31 @@ public class CartService {
 
     private int getAvailableStock(Product product) {
         return product.isPurchasable() ? Math.max(product.getStock(), 0) : 0;
+    }
+
+    private String normalizePersonalizationText(Product product, String personalizationText) {
+        String normalizedText = trimToNull(personalizationText);
+        if (!product.isPersonalizable()) {
+            if (normalizedText != null) {
+                throw new IllegalArgumentException("Dieser Artikel ist nicht personalisierbar.");
+            }
+            return null;
+        }
+        if (normalizedText == null) {
+            return null;
+        }
+        Integer maxLength = product.getPersonalizationMaxLength();
+        if (maxLength != null && normalizedText.length() > maxLength) {
+            throw new IllegalArgumentException("Der Wunschtext darf maximal " + maxLength + " Zeichen lang sein.");
+        }
+        return normalizedText;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
+        return value.trim();
     }
 
     private Map<String, String> toVariantValues(Product product) {

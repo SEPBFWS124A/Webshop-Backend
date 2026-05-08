@@ -33,4 +33,7 @@ public class OrderItem {
     /** Price captured at the moment the order was placed — immune to future price changes. */
     @Column(name = "price_at_order_time", nullable = false, precision = 10, scale = 2)
     private BigDecimal priceAtOrderTime;
+
+    @Column(name = "personalization_text", length = 1000)
+    private String personalizationText;
 }

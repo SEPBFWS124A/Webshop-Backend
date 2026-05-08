@@ -102,6 +102,8 @@ class ProductServiceVariantTest {
                 20,
                 "TEAM-SHIRT",
                 true,
+                false,
+                null,
                 true,
                 List.of(
                         new ProductVariantAttributeRequest("Farbe", List.of("Rot", "Blau")),

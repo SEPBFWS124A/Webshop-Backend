@@ -34,6 +34,9 @@ public class CartItem {
     @Column(nullable = false)
     private int quantity = 1;
 
+    @Column(name = "personalization_text", length = 1000)
+    private String personalizationText;
+
     @Column(name = "added_at", nullable = false, updatable = false)
     private Instant addedAt = Instant.now();
 }

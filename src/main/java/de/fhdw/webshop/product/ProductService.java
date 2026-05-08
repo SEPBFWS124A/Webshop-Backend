@@ -208,6 +208,8 @@ public class ProductService {
                 product.getSku(),
                 product.isPurchasable(),
                 product.isPromoted(),
+                product.isPersonalizable(),
+                product.getPersonalizationMaxLength(),
                 product.isHasVariants(),
                 product.getParentProduct() == null ? null : product.getParentProduct().getId(),
                 toVariantValues(product),
@@ -232,6 +234,9 @@ public class ProductService {
         if (productRequest.purchasable() != null) {
             product.setPurchasable(productRequest.purchasable());
         }
+        boolean personalizable = Boolean.TRUE.equals(productRequest.personalizable());
+        product.setPersonalizable(personalizable);
+        product.setPersonalizationMaxLength(resolvePersonalizationMaxLength(personalizable, productRequest.personalizationMaxLength()));
         product.setHasVariants(productRequest.hasVariants());
     }
 
@@ -315,6 +320,8 @@ public class ProductService {
         variant.setSku(firstNonBlank(variantRequest.sku(), buildGeneratedSku(parent, index)));
         variant.setPurchasable(parent.isPurchasable());
         variant.setPromoted(false);
+        variant.setPersonalizable(parent.isPersonalizable());
+        variant.setPersonalizationMaxLength(parent.getPersonalizationMaxLength());
         variant.setHasVariants(false);
 
         variant.getVariantOptions().clear();
@@ -474,6 +481,19 @@ public class ProductService {
             return null;
         }
         return value.trim();
+    }
+
+    private Integer resolvePersonalizationMaxLength(boolean personalizable, Integer personalizationMaxLength) {
+        if (!personalizable) {
+            return null;
+        }
+        if (personalizationMaxLength == null || personalizationMaxLength <= 0) {
+            throw new IllegalArgumentException("Die maximale Zeichenlaenge fuer Personalisierung muss groesser als 0 sein.");
+        }
+        if (personalizationMaxLength > 1000) {
+            throw new IllegalArgumentException("Die maximale Zeichenlaenge fuer Personalisierung darf hoechstens 1000 betragen.");
+        }
+        return personalizationMaxLength;
     }
 
     private void recordProductAction(User actingUser, String action, Product product, String details) {
