@@ -60,6 +60,15 @@ public class ProductController {
         return ResponseEntity.status(HttpStatus.CREATED).body(productService.createProduct(productRequest, currentUser));
     }
 
+    /** US #229 - Update article data including variant matrix. */
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<ProductResponse> updateProduct(@PathVariable Long id,
+                                                         @Valid @RequestBody ProductRequest productRequest,
+                                                         @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(productService.updateProduct(id, productRequest, currentUser));
+    }
+
     /** US #14 — Delete a product. */
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
@@ -112,6 +121,15 @@ public class ProductController {
                                                        @Valid @RequestBody UpdatePriceRequest updatePriceRequest,
                                                        @AuthenticationPrincipal User currentUser) {
         return ResponseEntity.ok(productService.updatePrice(id, updatePriceRequest, currentUser));
+    }
+
+    /** US #229 - Update product or variant stock. */
+    @PutMapping("/{id}/stock")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<ProductResponse> updateStock(@PathVariable Long id,
+                                                       @Valid @RequestBody UpdateStockRequest updateStockRequest,
+                                                       @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(productService.updateStock(id, updateStockRequest, currentUser));
     }
 
     /** US #34 — Sales statistics (units sold, revenue) for a product over a date range. */
