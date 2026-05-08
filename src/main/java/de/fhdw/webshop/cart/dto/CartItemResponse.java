@@ -2,11 +2,13 @@ package de.fhdw.webshop.cart.dto;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Map;
 
 public record CartItemResponse(
         Long cartItemId,
         Long productId,
         String productName,
+        Map<String, String> variantValues,
         String imageUrl,
         BigDecimal unitPrice,
         BigDecimal co2EmissionKg,
