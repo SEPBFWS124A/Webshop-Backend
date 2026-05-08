@@ -5,5 +5,6 @@ import jakarta.validation.constraints.NotNull;
 
 public record PlaceOrderItemRequest(
         @NotNull Long productId,
-        @Min(1) int quantity
+        @Min(1) int quantity,
+        String personalizationText
 ) {}

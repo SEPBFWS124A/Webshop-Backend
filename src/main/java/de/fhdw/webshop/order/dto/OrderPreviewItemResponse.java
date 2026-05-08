@@ -7,6 +7,7 @@ public record OrderPreviewItemResponse(
         Long productId,
         String productName,
         Map<String, String> variantValues,
+        String personalizationText,
         int quantity,
         BigDecimal unitPrice,
         BigDecimal lineTotal

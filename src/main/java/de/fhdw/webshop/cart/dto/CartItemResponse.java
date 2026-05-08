@@ -9,6 +9,7 @@ public record CartItemResponse(
         Long productId,
         String productName,
         Map<String, String> variantValues,
+        String personalizationText,
         String imageUrl,
         BigDecimal unitPrice,
         BigDecimal co2EmissionKg,

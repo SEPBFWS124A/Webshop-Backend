@@ -42,6 +42,14 @@ public class CartController {
         return ResponseEntity.ok(cartService.removeItem(currentUser, productId));
     }
 
+    /** Issue #231 - Remove an exact cart line, including personalization text. */
+    @DeleteMapping("/line-items/{cartItemId}")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<CartResponse> removeLineItem(@AuthenticationPrincipal User currentUser,
+                                                       @PathVariable Long cartItemId) {
+        return ResponseEntity.ok(cartService.removeItemByCartItemId(currentUser, cartItemId));
+    }
+
     /** US #73 — Update the quantity of a cart item; quantity 0 removes it. */
     @PutMapping("/items/{productId}")
     @PreAuthorize("hasRole('CUSTOMER')")
@@ -49,6 +57,15 @@ public class CartController {
                                                            @PathVariable Long productId,
                                                            @Valid @RequestBody UpdateCartItemQuantityRequest request) {
         return ResponseEntity.ok(cartService.updateItemQuantity(currentUser, productId, request.quantity()));
+    }
+
+    /** Issue #231 - Update an exact cart line, including personalization text. */
+    @PutMapping("/line-items/{cartItemId}")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<CartResponse> updateLineItemQuantity(@AuthenticationPrincipal User currentUser,
+                                                               @PathVariable Long cartItemId,
+                                                               @Valid @RequestBody UpdateCartItemQuantityRequest request) {
+        return ResponseEntity.ok(cartService.updateItemQuantityByCartItemId(currentUser, cartItemId, request.quantity()));
     }
 
     /** US #76 — Clear the full cart. */

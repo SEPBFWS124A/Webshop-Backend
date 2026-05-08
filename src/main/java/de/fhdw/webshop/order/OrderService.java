@@ -293,7 +293,10 @@ public class OrderService {
                 confirmationEmail,
                 displayName,
                 cartItems.stream()
-                        .map(cartItem -> new RequestedOrderItem(cartItem.getProduct(), cartItem.getQuantity()))
+                        .map(cartItem -> new RequestedOrderItem(
+                                cartItem.getProduct(),
+                                cartItem.getQuantity(),
+                                cartItem.getPersonalizationText()))
                         .toList(),
                 deliveryAddress,
                 shippingMethod,
@@ -325,7 +328,10 @@ public class OrderService {
         }
 
         List<RequestedOrderItem> requestedItems = placeOrderRequest.items().stream()
-                .map(item -> new RequestedOrderItem(productService.loadProduct(item.productId()), item.quantity()))
+                .map(item -> new RequestedOrderItem(
+                        productService.loadProduct(item.productId()),
+                        item.quantity(),
+                        item.personalizationText()))
                 .toList();
 
         return prepareOrder(
@@ -396,6 +402,7 @@ public class OrderService {
             if (requestedItem.quantity() > product.getStock()) {
                 throw new IllegalArgumentException("Only " + product.getStock() + " units of " + product.getName() + " are available");
             }
+            String personalizationText = normalizePersonalizationText(product, requestedItem.personalizationText());
 
             BigDecimal discountPercent = discountCustomerId != null
                     ? discountLookupPort.findBestActiveDiscountPercent(discountCustomerId, product.getId())
@@ -407,7 +414,7 @@ public class OrderService {
                 totalCo2EmissionKg = totalCo2EmissionKg.add(
                         product.getCo2EmissionKg().multiply(BigDecimal.valueOf(requestedItem.quantity())));
             }
-            preparedItems.add(new PreparedOrderItem(product, requestedItem.quantity(), unitPrice, lineTotal));
+            preparedItems.add(new PreparedOrderItem(product, requestedItem.quantity(), personalizationText, unitPrice, lineTotal));
         }
         totalCo2EmissionKg = totalCo2EmissionKg.setScale(3, RoundingMode.HALF_UP);
 
@@ -560,6 +567,7 @@ public class OrderService {
             orderItem.setOrder(order);
             orderItem.setProduct(product);
             orderItem.setQuantity(preparedItem.quantity());
+            orderItem.setPersonalizationText(preparedItem.personalizationText());
             orderItem.setPriceAtOrderTime(preparedItem.unitPrice());
             order.getItems().add(orderItem);
         }
@@ -592,6 +600,7 @@ public class OrderService {
             orderItem.setOrder(order);
             orderItem.setProduct(product);
             orderItem.setQuantity(preparedItem.quantity());
+            orderItem.setPersonalizationText(preparedItem.personalizationText());
             orderItem.setPriceAtOrderTime(preparedItem.unitPrice());
             order.getItems().add(orderItem);
         }
@@ -870,6 +879,7 @@ public class OrderService {
                         orderItem.getProduct().getId(),
                         orderItem.getProduct().getName(),
                         toVariantValues(orderItem.getProduct()),
+                        orderItem.getPersonalizationText(),
                         orderItem.getProduct().isPurchasable(),
                         orderItem.getQuantity(),
                         orderItem.getPriceAtOrderTime(),
@@ -909,6 +919,7 @@ public class OrderService {
                         orderItem.getProduct().getId(),
                         orderItem.getProduct().getName(),
                         toVariantValues(orderItem.getProduct()),
+                        orderItem.getPersonalizationText(),
                         orderItem.getProduct().isPurchasable(),
                         orderItem.getQuantity(),
                         orderItem.getPriceAtOrderTime(),
@@ -945,6 +956,7 @@ public class OrderService {
                         orderItem.getProduct().getId(),
                         orderItem.getProduct().getName(),
                         toVariantValues(orderItem.getProduct()),
+                        orderItem.getPersonalizationText(),
                         orderItem.getProduct().isPurchasable(),
                         orderItem.getQuantity(),
                         orderItem.getPriceAtOrderTime(),
@@ -1020,6 +1032,7 @@ public class OrderService {
                         item.product().getId(),
                         item.product().getName(),
                         toVariantValues(item.product()),
+                        item.personalizationText(),
                         item.quantity(),
                         item.unitPrice(),
                         item.lineTotal()
@@ -1082,6 +1095,11 @@ public class OrderService {
                     .append(" = ")
                     .append(item.getPriceAtOrderTime().multiply(BigDecimal.valueOf(item.getQuantity())))
                     .append(" EUR\n");
+            if (item.getPersonalizationText() != null && !item.getPersonalizationText().isBlank()) {
+                body.append("  Wunschtext: ")
+                        .append(item.getPersonalizationText())
+                        .append('\n');
+            }
         }
 
         return emailService.sendEmail(
@@ -1097,6 +1115,31 @@ public class OrderService {
                 .sorted((left, right) -> Integer.compare(left.getDisplayOrder(), right.getDisplayOrder()))
                 .forEach(option -> values.put(option.getAttributeName(), option.getAttributeValue()));
         return values;
+    }
+
+    private String normalizePersonalizationText(Product product, String personalizationText) {
+        String normalizedText = trimToNull(personalizationText);
+        if (!product.isPersonalizable()) {
+            if (normalizedText != null) {
+                throw new IllegalArgumentException("Dieser Artikel ist nicht personalisierbar.");
+            }
+            return null;
+        }
+        if (normalizedText == null) {
+            return null;
+        }
+        Integer maxLength = product.getPersonalizationMaxLength();
+        if (maxLength != null && normalizedText.length() > maxLength) {
+            throw new IllegalArgumentException("Der Wunschtext darf maximal " + maxLength + " Zeichen lang sein.");
+        }
+        return normalizedText;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
+        return value.trim();
     }
 
     private String buildApprovalRequestEmailBody(Order order, User manager) {
@@ -1164,12 +1207,14 @@ public class OrderService {
 
     private record RequestedOrderItem(
             Product product,
-            int quantity
+            int quantity,
+            String personalizationText
     ) {}
 
     private record PreparedOrderItem(
             Product product,
             int quantity,
+            String personalizationText,
             BigDecimal unitPrice,
             BigDecimal lineTotal
     ) {}

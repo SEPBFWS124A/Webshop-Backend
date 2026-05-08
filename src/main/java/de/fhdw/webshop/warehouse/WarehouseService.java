@@ -574,6 +574,7 @@ public class WarehouseService {
                 .map(orderItem -> new WarehouseOrderItemResponse(
                         orderItem.getProduct().getId(),
                         orderItem.getProduct().getName(),
+                        orderItem.getPersonalizationText(),
                         orderItem.getQuantity(),
                         orderItem.getProduct().getStock(),
                         stockByProductId.getOrDefault(orderItem.getProduct().getId(), 0),

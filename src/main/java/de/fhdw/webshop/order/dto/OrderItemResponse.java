@@ -8,6 +8,7 @@ public record OrderItemResponse(
         Long productId,
         String productName,
         Map<String, String> variantValues,
+        String personalizationText,
         boolean productPurchasable,
         int quantity,
         BigDecimal priceAtOrderTime,

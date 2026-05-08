@@ -21,6 +21,8 @@ public record ProductRequest(
         @PositiveOrZero Integer stock,
         String sku,
         Boolean purchasable,
+        Boolean personalizable,
+        @PositiveOrZero Integer personalizationMaxLength,
         boolean hasVariants,
         List<ProductVariantAttributeRequest> variantAttributes,
         List<ProductVariantRequest> variants

@@ -52,6 +52,12 @@ public class Product {
     @Column(name = "has_variants", nullable = false)
     private boolean hasVariants = false;
 
+    @Column(nullable = false)
+    private boolean personalizable = false;
+
+    @Column(name = "personalization_max_length")
+    private Integer personalizationMaxLength;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_product_id")
     private Product parentProduct;

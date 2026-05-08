@@ -20,6 +20,8 @@ public record ProductResponse(
         String sku,
         boolean purchasable,
         boolean promoted,
+        boolean personalizable,
+        Integer personalizationMaxLength,
         boolean hasVariants,
         Long parentProductId,
         Map<String, String> variantValues,
