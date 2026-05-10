@@ -7,12 +7,22 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 public class SellerApplicationService {
 
     private final SellerApplicationRepository sellerApplicationRepository;
     private final AuditLogService auditLogService;
+
+    @Transactional(readOnly = true)
+    public List<SellerApplicationResponse> listAll() {
+        return sellerApplicationRepository.findAllByOrderByCreatedAtDescIdDesc()
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
 
     @Transactional
     public SellerApplicationResponse create(CreateSellerApplicationRequest request) {
