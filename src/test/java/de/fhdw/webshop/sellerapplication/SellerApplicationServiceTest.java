@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -63,5 +64,39 @@ class SellerApplicationServiceTest {
         assertThat(auditCaptor.getValue().getEntityType()).isEqualTo("SellerApplication");
         assertThat(auditCaptor.getValue().getEntityId()).isEqualTo(17L);
         assertThat(auditCaptor.getValue().getDetails()).contains("Studio Nord GmbH");
+    }
+
+    @Test
+    void listAllReturnsNewestApplicationsFirst() {
+        SellerApplicationRepository repository = mock(SellerApplicationRepository.class);
+        AuditLogService auditLogService = new AuditLogService(mock(AuditLogRepository.class));
+        SellerApplicationService service = new SellerApplicationService(repository, auditLogService);
+
+        SellerApplication newest = new SellerApplication();
+        newest.setId(2L);
+        newest.setCompanyName("Nord Sales");
+        newest.setContactName("Maja Koch");
+        newest.setEmail("maja@nord-sales.de");
+        newest.setProductCategory("Elektronik & Technik");
+        newest.setStatus(SellerApplicationStatus.RECEIVED);
+        newest.setCreatedAt(Instant.parse("2026-05-10T11:00:00Z"));
+
+        SellerApplication older = new SellerApplication();
+        older.setId(1L);
+        older.setCompanyName("Studio Süd");
+        older.setContactName("Noah Berg");
+        older.setEmail("noah@studio-sued.de");
+        older.setProductCategory("Möbel & Einrichtung");
+        older.setStatus(SellerApplicationStatus.RECEIVED);
+        older.setCreatedAt(Instant.parse("2026-05-09T09:00:00Z"));
+
+        when(repository.findAllByOrderByCreatedAtDescIdDesc()).thenReturn(List.of(newest, older));
+
+        List<SellerApplicationResponse> result = service.listAll();
+
+        assertThat(result).hasSize(2);
+        assertThat(result).extracting(SellerApplicationResponse::id).containsExactly(2L, 1L);
+        assertThat(result).extracting(SellerApplicationResponse::companyName)
+                .containsExactly("Nord Sales", "Studio Süd");
     }
 }
