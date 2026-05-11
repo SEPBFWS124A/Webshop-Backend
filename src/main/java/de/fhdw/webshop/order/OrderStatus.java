@@ -6,6 +6,7 @@ public enum OrderStatus {
     Rejected,
     CONFIRMED,
     PACKED_IN_WAREHOUSE,
+    READY_FOR_PICKUP,
     IN_TRUCK,
     SHIPPED,
     DELIVERED,

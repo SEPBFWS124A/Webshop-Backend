@@ -39,6 +39,7 @@ public class WarehouseService {
             OrderStatus.PENDING,
             OrderStatus.CONFIRMED,
             OrderStatus.PACKED_IN_WAREHOUSE,
+            OrderStatus.READY_FOR_PICKUP,
             OrderStatus.IN_TRUCK,
             OrderStatus.SHIPPED
     );
@@ -114,7 +115,7 @@ public class WarehouseService {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new EntityNotFoundException("Order not found: " + orderId));
 
-        OrderStatus nextStatus = determineNextStatus(order.getStatus());
+        OrderStatus nextStatus = determineNextStatus(order);
         if (nextStatus == null) {
             throw new IllegalArgumentException("Order status can no longer be advanced");
         }
@@ -128,6 +129,8 @@ public class WarehouseService {
                 throw new IllegalArgumentException("A truck identifier is required before the order can be moved into the truck");
             }
             order.setTruckIdentifier(resolvedTruckIdentifier);
+        } else if (isClickAndCollectOrder(order)) {
+            order.setTruckIdentifier(null);
         }
 
         WarehouseLocation fulfillmentWarehouse = resolveWarehouseForOrder(order, warehouseLocationId);
@@ -179,6 +182,9 @@ public class WarehouseService {
         if (!TRUCK_ASSIGNABLE_STATUSES.contains(order.getStatus())) {
             throw new IllegalArgumentException("Truck assignments can only be changed before the order is in delivery");
         }
+        if (isClickAndCollectOrder(order)) {
+            throw new IllegalArgumentException("Für Click & Collect wird keine LKW-ID benötigt");
+        }
 
         String resolvedTruckIdentifier = normalizeTruckIdentifier(requestedTruckIdentifier, null);
         if (resolvedTruckIdentifier == null) {
@@ -201,6 +207,7 @@ public class WarehouseService {
         List<Order> activeOrders = orderRepository.findByStatusNotInOrderByCreatedAtAsc(
                 List.of(OrderStatus.DELIVERED, OrderStatus.CANCELLED, OrderStatus.Pending_Approval, OrderStatus.Rejected)
         ).stream()
+                .filter(order -> !isClickAndCollectOrder(order))
                 .filter(order -> TRUCK_ASSIGNABLE_STATUSES.contains(order.getStatus()))
                 .toList();
 
@@ -402,16 +409,23 @@ public class WarehouseService {
         );
     }
 
-    private OrderStatus determineNextStatus(OrderStatus currentStatus) {
-        return switch (currentStatus) {
+    private OrderStatus determineNextStatus(Order order) {
+        boolean clickAndCollect = isClickAndCollectOrder(order);
+
+        return switch (order.getStatus()) {
             case PENDING -> OrderStatus.CONFIRMED;
             case CONFIRMED -> OrderStatus.PACKED_IN_WAREHOUSE;
-            case PACKED_IN_WAREHOUSE -> OrderStatus.IN_TRUCK;
+            case PACKED_IN_WAREHOUSE -> clickAndCollect ? OrderStatus.READY_FOR_PICKUP : OrderStatus.IN_TRUCK;
+            case READY_FOR_PICKUP -> OrderStatus.DELIVERED;
             case IN_TRUCK -> OrderStatus.SHIPPED;
             case SHIPPED -> OrderStatus.DELIVERED;
             case Pending_Approval, Rejected -> null;
             case DELIVERED, CANCELLED -> null;
         };
+    }
+
+    private boolean isClickAndCollectOrder(Order order) {
+        return order.getPickupStore() != null;
     }
 
     private String normalizeTruckIdentifier(String requestedTruckIdentifier, String existingTruckIdentifier) {
@@ -570,6 +584,7 @@ public class WarehouseService {
         WarehouseLocation fulfillmentWarehouse = ensureFulfillmentWarehouse(order);
         Map<Long, Integer> stockByProductId = resolveWarehouseStockByProductId(order, fulfillmentWarehouse);
         List<String> warehouseWarnings = buildWarehouseWarnings(order, fulfillmentWarehouse, stockByProductId);
+        boolean clickAndCollect = isClickAndCollectOrder(order);
         List<WarehouseOrderItemResponse> items = order.getItems().stream()
                 .map(orderItem -> new WarehouseOrderItemResponse(
                         orderItem.getProduct().getId(),
@@ -591,11 +606,12 @@ public class WarehouseService {
                 regionKey,
                 regionLabels.getOrDefault(regionKey, "Unbekannte Route"),
                 order.getTruckIdentifier(),
-                suggestedTruckIdentifiers.get(regionKey),
+                clickAndCollect ? null : suggestedTruckIdentifiers.get(regionKey),
                 toLocationResponse(fulfillmentWarehouse),
                 warehouseWarnings.isEmpty(),
                 warehouseWarnings,
                 order.getShippingMethod(),
+                clickAndCollect,
                 deliverySnapshot.street(),
                 deliverySnapshot.city(),
                 deliverySnapshot.postalCode(),
