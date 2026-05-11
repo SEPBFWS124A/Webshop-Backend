@@ -10,6 +10,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.LocalDate;
 import java.util.List;
 
 @Service
@@ -18,6 +20,7 @@ public class AdvertisementService {
 
     private final AdvertisementRepository advertisementRepository;
     private final AuditLogService auditLogService;
+    private final Clock clock = Clock.systemDefaultZone();
 
     @Transactional(readOnly = true)
     public List<AdvertisementResponse> listAll() {
@@ -29,7 +32,9 @@ public class AdvertisementService {
 
     @Transactional(readOnly = true)
     public List<AdvertisementResponse> listActive() {
-        return advertisementRepository.findByActiveTrueOrderByCreatedAtDescIdDesc()
+        LocalDate today = today();
+        return advertisementRepository
+                .findByActiveTrueAndStartDateLessThanEqualAndEndDateGreaterThanEqualOrderByStartDateDescCreatedAtDescIdDesc(today, today)
                 .stream()
                 .map(this::toResponse)
                 .toList();
@@ -87,6 +92,9 @@ public class AdvertisementService {
         if (request.contentType() == AdvertisementType.IMAGE && normalizedImageUrl == null) {
             throw new IllegalArgumentException("Für Werbeflächen vom Typ Bild ist eine Bild-URL erforderlich.");
         }
+        if (request.endDate().isBefore(request.startDate())) {
+            throw new IllegalArgumentException("Das Enddatum darf nicht vor dem Startdatum liegen.");
+        }
 
         advertisement.setTitle(normalizedTitle);
         advertisement.setDescription(normalizedDescription);
@@ -94,6 +102,8 @@ public class AdvertisementService {
         advertisement.setImageUrl(normalizedImageUrl);
         advertisement.setTargetUrl(normalizedTargetUrl);
         advertisement.setActive(Boolean.TRUE.equals(request.active()));
+        advertisement.setStartDate(request.startDate());
+        advertisement.setEndDate(request.endDate());
     }
 
     private String normalizeNullable(String value) {
@@ -113,9 +123,23 @@ public class AdvertisementService {
                 advertisement.getImageUrl(),
                 advertisement.getTargetUrl(),
                 advertisement.isActive(),
+                advertisement.getStartDate(),
+                advertisement.getEndDate(),
+                isCurrentlyVisible(advertisement),
                 advertisement.getCreatedAt(),
                 advertisement.getUpdatedAt()
         );
+    }
+
+    private boolean isCurrentlyVisible(Advertisement advertisement) {
+        LocalDate today = today();
+        return advertisement.isActive()
+                && !advertisement.getStartDate().isAfter(today)
+                && !advertisement.getEndDate().isBefore(today);
+    }
+
+    private LocalDate today() {
+        return LocalDate.now(clock);
     }
 
     private void recordAction(User actingUser, String action, Advertisement advertisement, String details) {

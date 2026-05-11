@@ -86,14 +86,14 @@ WHERE wl.code IN ('MAIN', 'WAREHOUSE_B', 'WAREHOUSE_C')
 ON CONFLICT (product_id, warehouse_location_id) DO NOTHING;
 
 -- Advertisements / Werbeflächen
-INSERT INTO advertisements (title, description, content_type, image_url, target_url, active)
-SELECT title, description, content_type, image_url, target_url, active
+INSERT INTO advertisements (title, description, content_type, image_url, target_url, active, start_date, end_date)
+SELECT title, description, content_type, image_url, target_url, active, start_date, end_date
 FROM (
     VALUES
-      ('Sommeraktion im Home Office', 'Ergonomische Favoriten, clevere Bundles und schnelle Upgrades für deinen Arbeitsplatz.', 'IMAGE', '/standing-desk.jpg', '/products/3', TRUE),
-      ('Top Auswahl für Entscheider', 'Vergleiche Bestseller, Empfehlungen und sofort verfügbare Geräte direkt im Sortiment.', 'TEXT', NULL, '/', TRUE),
-      ('Verkäufer-Aktion vorbereiten', 'Diese Werbefläche ist angelegt, aber noch nicht aktiv geschaltet.', 'TEXT', NULL, '/admin/marketing/placements', FALSE)
-) AS seed_data(title, description, content_type, image_url, target_url, active)
+      ('Sommeraktion im Home Office', 'Ergonomische Favoriten, clevere Bundles und schnelle Upgrades für deinen Arbeitsplatz.', 'IMAGE', '/standing-desk.jpg', '/products/3', TRUE, CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days'),
+      ('Top Auswahl für Entscheider', 'Vergleiche Bestseller, Empfehlungen und sofort verfügbare Geräte direkt im Sortiment.', 'TEXT', NULL, '/', TRUE, CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days'),
+      ('Verkäufer-Aktion vorbereiten', 'Diese Werbefläche ist angelegt, aber noch nicht aktiv geschaltet.', 'TEXT', NULL, '/admin/marketing/placements', FALSE, CURRENT_DATE + INTERVAL '7 days', CURRENT_DATE + INTERVAL '21 days')
+) AS seed_data(title, description, content_type, image_url, target_url, active, start_date, end_date)
 WHERE NOT EXISTS (
     SELECT 1
     FROM advertisements existing

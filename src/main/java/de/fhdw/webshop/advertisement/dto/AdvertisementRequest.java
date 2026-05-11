@@ -4,6 +4,7 @@ import de.fhdw.webshop.advertisement.AdvertisementType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import java.time.LocalDate;
 
 public record AdvertisementRequest(
         @NotBlank @Size(max = 180) String title,
@@ -11,6 +12,8 @@ public record AdvertisementRequest(
         @NotNull AdvertisementType contentType,
         @Size(max = 500) String imageUrl,
         @NotBlank @Size(max = 500) String targetUrl,
-        @NotNull Boolean active
+        @NotNull Boolean active,
+        @NotNull LocalDate startDate,
+        @NotNull LocalDate endDate
 ) {
 }
