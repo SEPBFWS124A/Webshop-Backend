@@ -29,5 +29,9 @@ public record OrderResponse(
         String approvalReason,
         BigDecimal approvalBudgetLimit,
         PickupStoreResponse pickupStore,
-        Boolean confirmationEmailSent
+        Boolean confirmationEmailSent,
+        String discountType,
+        String discountLabel,
+        BigDecimal discountPercent,
+        List<String> discountMessages
 ) {}

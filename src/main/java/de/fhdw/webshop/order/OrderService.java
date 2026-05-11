@@ -12,6 +12,8 @@ import de.fhdw.webshop.cart.CartService;
 import de.fhdw.webshop.cart.CartRepository;
 import de.fhdw.webshop.discount.Coupon;
 import de.fhdw.webshop.discount.CouponRepository;
+import de.fhdw.webshop.discount.VolumeDiscountPolicy;
+import de.fhdw.webshop.discount.VolumeDiscountPolicy.VolumeDiscountResult;
 import de.fhdw.webshop.notification.EmailService;
 import de.fhdw.webshop.order.dto.OrderItemResponse;
 import de.fhdw.webshop.order.dto.OrderApprovalResponse;
@@ -418,7 +420,13 @@ public class OrderService {
         }
         totalCo2EmissionKg = totalCo2EmissionKg.setScale(3, RoundingMode.HALF_UP);
 
-        BigDecimal discountAmount = calculateCouponDiscount(itemSubtotal, coupon);
+        int totalItemCount = preparedItems.stream()
+                .mapToInt(PreparedOrderItem::quantity)
+                .sum();
+        VolumeDiscountResult volumeDiscount = VolumeDiscountPolicy.resolve(itemSubtotal, totalItemCount, coupon != null);
+        BigDecimal discountAmount = coupon != null
+                ? calculateCouponDiscount(itemSubtotal, coupon)
+                : volumeDiscount.amount();
         BigDecimal subtotal = itemSubtotal.subtract(discountAmount).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
         BigDecimal shippingCost = calculateShippingCost(subtotal, shippingMethod);
         BigDecimal taxAmount = subtotal.multiply(TAX_RATE).setScale(2, RoundingMode.HALF_UP);
@@ -437,6 +445,10 @@ public class OrderService {
                 preparedItems,
                 coupon,
                 discountAmount,
+                resolveDiscountType(coupon, volumeDiscount),
+                resolveDiscountLabel(coupon, volumeDiscount),
+                resolveDiscountPercent(coupon, volumeDiscount),
+                resolveDiscountMessages(volumeDiscount),
                 taxAmount,
                 subtotal,
                 shippingCost,
@@ -715,6 +727,53 @@ public class OrderService {
         return subtotal.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
     }
 
+    private String resolveDiscountType(Coupon coupon, VolumeDiscountResult volumeDiscount) {
+        if (coupon != null) {
+            return "COUPON";
+        }
+        return volumeDiscount.applied() ? VolumeDiscountPolicy.DISCOUNT_TYPE : null;
+    }
+
+    private String resolveDiscountLabel(Coupon coupon, VolumeDiscountResult volumeDiscount) {
+        if (coupon != null) {
+            return "Gutschein " + coupon.getCode();
+        }
+        return volumeDiscount.label();
+    }
+
+    private BigDecimal resolveDiscountPercent(Coupon coupon, VolumeDiscountResult volumeDiscount) {
+        if (coupon != null) {
+            return coupon.getDiscountPercent();
+        }
+        return volumeDiscount.percent();
+    }
+
+    private List<String> resolveDiscountMessages(VolumeDiscountResult volumeDiscount) {
+        if (volumeDiscount.exclusionMessage() == null || volumeDiscount.exclusionMessage().isBlank()) {
+            return List.of();
+        }
+        return List.of(volumeDiscount.exclusionMessage());
+    }
+
+    private String resolvePersistedDiscountType(Order order) {
+        if (order.getDiscountAmount() == null || order.getDiscountAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        return order.getCouponCode() != null && !order.getCouponCode().isBlank()
+                ? "COUPON"
+                : VolumeDiscountPolicy.DISCOUNT_TYPE;
+    }
+
+    private String resolvePersistedDiscountLabel(Order order) {
+        if (order.getDiscountAmount() == null || order.getDiscountAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        if (order.getCouponCode() != null && !order.getCouponCode().isBlank()) {
+            return "Gutschein " + order.getCouponCode();
+        }
+        return "Mengenrabatt";
+    }
+
     private BigDecimal calculateClimateContributionAmount(BigDecimal totalCo2EmissionKg, boolean selected) {
         if (!selected || totalCo2EmissionKg == null || totalCo2EmissionKg.compareTo(BigDecimal.ZERO) <= 0) {
             return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
@@ -908,7 +967,11 @@ public class OrderService {
                 order.getApprovalReason(),
                 order.getApprovalBudgetLimit(),
                 pickupStoreService.toResponse(order.getPickupStore()),
-                null);
+                null,
+                resolvePersistedDiscountType(order),
+                resolvePersistedDiscountLabel(order),
+                null,
+                List.of());
     }
 
     private OrderApprovalResponse toApprovalResponse(Order order, Boolean confirmationEmailSent) {
@@ -985,7 +1048,11 @@ public class OrderService {
                 order.getApprovalReason(),
                 order.getApprovalBudgetLimit(),
                 pickupStoreService.toResponse(order.getPickupStore()),
-                confirmationEmailSent);
+                confirmationEmailSent,
+                resolvePersistedDiscountType(order),
+                resolvePersistedDiscountLabel(order),
+                null,
+                List.of());
     }
 
     private Instant estimateDeliveryAt(Order order) {
@@ -1052,7 +1119,11 @@ public class OrderService {
                 preparedOrder.order().getCouponCode(),
                 preparedOrder.approvalRequired(),
                 preparedOrder.approvalBudgetLimit(),
-                itemResponses
+                itemResponses,
+                preparedOrder.discountType(),
+                preparedOrder.discountLabel(),
+                preparedOrder.discountPercent(),
+                preparedOrder.discountMessages()
         );
     }
 
@@ -1224,6 +1295,10 @@ public class OrderService {
             List<PreparedOrderItem> items,
             Coupon coupon,
             BigDecimal discountAmount,
+            String discountType,
+            String discountLabel,
+            BigDecimal discountPercent,
+            List<String> discountMessages,
             BigDecimal taxAmount,
             BigDecimal subtotal,
             BigDecimal shippingCost,

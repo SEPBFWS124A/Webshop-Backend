@@ -16,5 +16,9 @@ public record OrderPreviewResponse(
         String couponCode,
         Boolean approvalRequired,
         BigDecimal approvalBudgetLimit,
-        List<OrderPreviewItemResponse> items
+        List<OrderPreviewItemResponse> items,
+        String discountType,
+        String discountLabel,
+        BigDecimal discountPercent,
+        List<String> discountMessages
 ) {}

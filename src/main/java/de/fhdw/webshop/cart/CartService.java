@@ -5,6 +5,8 @@ import de.fhdw.webshop.cart.dto.CartItemResponse;
 import de.fhdw.webshop.cart.dto.CartResponse;
 import de.fhdw.webshop.discount.Coupon;
 import de.fhdw.webshop.discount.CouponRepository;
+import de.fhdw.webshop.discount.VolumeDiscountPolicy;
+import de.fhdw.webshop.discount.VolumeDiscountPolicy.VolumeDiscountResult;
 import de.fhdw.webshop.order.Order;
 import de.fhdw.webshop.order.OrderItem;
 import de.fhdw.webshop.order.OrderRepository;
@@ -59,7 +61,17 @@ public class CartService {
                 .setScale(2, RoundingMode.HALF_UP);
 
         Coupon coupon = resolveCoupon(couponCode, userId);
-        BigDecimal discountAmount = calculateDiscount(itemSubtotal, coupon);
+        int totalItemCount = itemResponses.stream()
+                .mapToInt(CartItemResponse::quantity)
+                .sum();
+        VolumeDiscountResult volumeDiscount = VolumeDiscountPolicy.resolve(itemSubtotal, totalItemCount, coupon != null);
+        BigDecimal discountAmount = coupon != null
+                ? calculateDiscount(itemSubtotal, coupon)
+                : volumeDiscount.amount();
+        String discountType = resolveDiscountType(coupon, volumeDiscount);
+        String discountLabel = resolveDiscountLabel(coupon, volumeDiscount);
+        BigDecimal discountPercent = resolveDiscountPercent(coupon, volumeDiscount);
+        List<String> discountMessages = resolveDiscountMessages(volumeDiscount);
         BigDecimal subtotal = itemSubtotal.subtract(discountAmount)
                 .max(BigDecimal.ZERO)
                 .setScale(2, RoundingMode.HALF_UP);
@@ -96,7 +108,11 @@ public class CartService {
                 co2EmissionCoveredItemCount,
                 co2EmissionTotalItemCount,
                 coupon != null ? coupon.getCode() : null,
-                messages
+                messages,
+                discountType,
+                discountLabel,
+                discountPercent,
+                discountMessages
         );
     }
 
@@ -298,6 +314,34 @@ public class CartService {
 
         BigDecimal multiplier = coupon.getDiscountPercent().divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
         return subtotal.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private String resolveDiscountType(Coupon coupon, VolumeDiscountResult volumeDiscount) {
+        if (coupon != null) {
+            return "COUPON";
+        }
+        return volumeDiscount.applied() ? VolumeDiscountPolicy.DISCOUNT_TYPE : null;
+    }
+
+    private String resolveDiscountLabel(Coupon coupon, VolumeDiscountResult volumeDiscount) {
+        if (coupon != null) {
+            return "Gutschein " + coupon.getCode();
+        }
+        return volumeDiscount.label();
+    }
+
+    private BigDecimal resolveDiscountPercent(Coupon coupon, VolumeDiscountResult volumeDiscount) {
+        if (coupon != null) {
+            return coupon.getDiscountPercent();
+        }
+        return volumeDiscount.percent();
+    }
+
+    private List<String> resolveDiscountMessages(VolumeDiscountResult volumeDiscount) {
+        if (volumeDiscount.exclusionMessage() == null || volumeDiscount.exclusionMessage().isBlank()) {
+            return List.of();
+        }
+        return List.of(volumeDiscount.exclusionMessage());
     }
 
     private BigDecimal calculateShippingCost(BigDecimal subtotal, boolean emptyCart) {
