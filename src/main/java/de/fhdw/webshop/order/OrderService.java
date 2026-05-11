@@ -268,14 +268,15 @@ public class OrderService {
         if (cartItems.isEmpty()) {
             throw new IllegalArgumentException("Cannot place an order with an empty cart");
         }
-        DeliveryAddressRequest deliveryAddressRequest = placeOrderRequest != null ? placeOrderRequest.deliveryAddress() : null;
         PaymentMethodRequest paymentMethodRequest = placeOrderRequest != null ? placeOrderRequest.paymentMethod() : null;
         ShippingMethod shippingMethod = resolveShippingMethod(placeOrderRequest);
-        DeliveryAddressSnapshot deliveryAddress = resolveDeliveryAddress(customer, deliveryAddressRequest);
+        PickupStore pickupStore = resolvePickupStore(placeOrderRequest);
+        DeliveryAddressSnapshot deliveryAddress = pickupStore != null
+                ? toDeliveryAddressSnapshot(pickupStore)
+                : resolveDeliveryAddress(customer, placeOrderRequest != null ? placeOrderRequest.deliveryAddress() : null);
         PaymentMethodSnapshot paymentMethod = resolvePaymentMethod(customer, paymentMethodRequest);
         String couponCode = placeOrderRequest != null ? placeOrderRequest.couponCode() : null;
         Coupon coupon = resolveCoupon(couponCode, customer);
-        PickupStore pickupStore = resolvePickupStore(placeOrderRequest);
         String orderNumber = placeOrderRequest != null ? placeOrderRequest.previewOrderNumber() : null;
         boolean carbonCompensationSelected = placeOrderRequest != null && Boolean.TRUE.equals(placeOrderRequest.carbonCompensationSelected());
         BigDecimal approvalBudgetLimit = resolveApprovalBudgetLimit(customer);
@@ -317,7 +318,8 @@ public class OrderService {
         if (placeOrderRequest.email() == null || placeOrderRequest.email().isBlank()) {
             throw new IllegalArgumentException("Email is required for guest checkout");
         }
-        if (placeOrderRequest.deliveryAddress() == null) {
+        PickupStore pickupStore = resolvePickupStore(placeOrderRequest);
+        if (pickupStore == null && placeOrderRequest.deliveryAddress() == null) {
             throw new IllegalArgumentException("Delivery address is required");
         }
         if (placeOrderRequest.paymentMethod() == null) {
@@ -340,12 +342,14 @@ public class OrderService {
                 placeOrderRequest.email().trim(),
                 formatCustomerName(placeOrderRequest.customerSalutation(), placeOrderRequest.customerName(), placeOrderRequest.email()),
                 requestedItems,
-                new DeliveryAddressSnapshot(
-                        placeOrderRequest.deliveryAddress().street(),
-                        placeOrderRequest.deliveryAddress().city(),
-                        placeOrderRequest.deliveryAddress().postalCode(),
-                        placeOrderRequest.deliveryAddress().country()
-                ),
+                pickupStore != null
+                        ? toDeliveryAddressSnapshot(pickupStore)
+                        : new DeliveryAddressSnapshot(
+                                placeOrderRequest.deliveryAddress().street(),
+                                placeOrderRequest.deliveryAddress().city(),
+                                placeOrderRequest.deliveryAddress().postalCode(),
+                                placeOrderRequest.deliveryAddress().country()
+                        ),
                 resolveShippingMethod(placeOrderRequest),
                 resolveGuestPaymentMethod(placeOrderRequest.paymentMethod()),
                 null,
@@ -353,7 +357,7 @@ public class OrderService {
                 Boolean.TRUE.equals(placeOrderRequest.allowUnverifiedAddress()),
                 Boolean.TRUE.equals(placeOrderRequest.carbonCompensationSelected()),
                 null,
-                resolvePickupStore(placeOrderRequest)
+                pickupStore
         );
     }
 
@@ -372,7 +376,9 @@ public class OrderService {
                                        BigDecimal approvalBudgetLimit,
                                        PickupStore pickupStore) {
         Order order = new Order();
-        DeliveryAddressSnapshot validatedDeliveryAddress = validateDeliveryAddress(deliveryAddress, allowUnverifiedAddress);
+        DeliveryAddressSnapshot validatedDeliveryAddress = pickupStore != null
+                ? toDeliveryAddressSnapshot(pickupStore)
+                : validateDeliveryAddress(deliveryAddress, allowUnverifiedAddress);
         order.setCustomer(customer);
         order.setOrderNumber(resolveOrderNumber(requestedOrderNumber));
         order.setCustomerEmail(customerEmail);
@@ -420,7 +426,9 @@ public class OrderService {
 
         BigDecimal discountAmount = calculateCouponDiscount(itemSubtotal, coupon);
         BigDecimal subtotal = itemSubtotal.subtract(discountAmount).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal shippingCost = calculateShippingCost(subtotal, shippingMethod);
+        BigDecimal shippingCost = pickupStore != null
+                ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
+                : calculateShippingCost(subtotal, shippingMethod);
         BigDecimal taxAmount = subtotal.multiply(TAX_RATE).setScale(2, RoundingMode.HALF_UP);
         BigDecimal climateContributionAmount = calculateClimateContributionAmount(
                 totalCo2EmissionKg,
@@ -504,7 +512,16 @@ public class OrderService {
         }
 
         return pickupStoreRepository.findByIdAndActiveTrue(placeOrderRequest.pickupStoreId())
-                .orElseThrow(() -> new IllegalArgumentException("Der ausgewaehlte Abhol-Store ist nicht verfuegbar"));
+                .orElseThrow(() -> new IllegalArgumentException("Der ausgewählte Abhol-Store ist nicht verfügbar"));
+    }
+
+    private DeliveryAddressSnapshot toDeliveryAddressSnapshot(PickupStore pickupStore) {
+        return new DeliveryAddressSnapshot(
+                pickupStore.getStreet(),
+                pickupStore.getCity(),
+                pickupStore.getPostalCode(),
+                pickupStore.getCountry()
+        );
     }
 
     private void validateLegalAcceptance(PlaceOrderRequest placeOrderRequest) {
@@ -991,6 +1008,7 @@ public class OrderService {
     private Instant estimateDeliveryAt(Order order) {
         if (order.getStatus() == OrderStatus.Pending_Approval
                 || order.getStatus() == OrderStatus.Rejected
+                || order.getStatus() == OrderStatus.READY_FOR_PICKUP
                 || order.getStatus() == OrderStatus.DELIVERED
                 || order.getStatus() == OrderStatus.CANCELLED) {
             return null;
@@ -1016,6 +1034,7 @@ public class OrderService {
             case PACKED_IN_WAREHOUSE -> expressShipping
                     ? EXPRESS_MIN_REMAINING_PACKED
                     : STANDARD_MIN_REMAINING_PACKED;
+            case READY_FOR_PICKUP -> Duration.ZERO;
             case IN_TRUCK -> expressShipping
                     ? EXPRESS_MIN_REMAINING_TRUCK
                     : STANDARD_MIN_REMAINING_TRUCK;

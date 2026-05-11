@@ -19,6 +19,7 @@ public record WarehouseOrderResponse(
         boolean warehouseStockAvailable,
         List<String> warehouseWarnings,
         ShippingMethod shippingMethod,
+        boolean clickAndCollect,
         String deliveryStreet,
         String deliveryCity,
         String deliveryPostalCode,

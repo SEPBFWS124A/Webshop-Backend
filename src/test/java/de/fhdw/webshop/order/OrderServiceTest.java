@@ -14,6 +14,7 @@ import de.fhdw.webshop.discount.CouponRepository;
 import de.fhdw.webshop.order.dto.OrderPreviewResponse;
 import de.fhdw.webshop.order.dto.OrderResponse;
 import de.fhdw.webshop.order.dto.PlaceOrderRequest;
+import de.fhdw.webshop.pickup.PickupStore;
 import de.fhdw.webshop.pickup.PickupStoreRepository;
 import de.fhdw.webshop.pickup.PickupStoreService;
 import de.fhdw.webshop.product.Product;
@@ -150,6 +151,28 @@ class OrderServiceTest {
     }
 
     @Test
+    void placeOrderWithPickupStoreStoresClickAndCollectAddress() {
+        TestContext context = newContext(new BigDecimal("500.00"));
+        PickupStore pickupStore = pickupStore();
+        when(context.pickupStoreRepository.findByIdAndActiveTrue(pickupStore.getId())).thenReturn(Optional.of(pickupStore));
+        when(context.orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        context.service.placeOrder(context.customer, requestWithPickupStore(pickupStore.getId()));
+
+        ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+        verify(context.orderRepository).save(orderCaptor.capture());
+        Order savedOrder = orderCaptor.getValue();
+
+        assertThat(savedOrder.getPickupStore()).isEqualTo(pickupStore);
+        assertThat(savedOrder.getDeliveryStreet()).isEqualTo(pickupStore.getStreet());
+        assertThat(savedOrder.getDeliveryPostalCode()).isEqualTo(pickupStore.getPostalCode());
+        assertThat(savedOrder.getDeliveryCity()).isEqualTo(pickupStore.getCity());
+        assertThat(savedOrder.getDeliveryCountry()).isEqualTo(pickupStore.getCountry());
+        assertThat(savedOrder.getShippingCost()).isEqualByComparingTo("0.00");
+        verify(context.addressLookupService, never()).validateAddress(any());
+    }
+
+    @Test
     void cancelConfirmedOrderSetsCancelledAndRestoresStock() {
         TestContext context = newContext(new BigDecimal("500.00"));
         Order order = customerOrder(context.customer, context.product, OrderStatus.CONFIRMED, PaymentMethodType.CREDIT_CARD);
@@ -250,7 +273,8 @@ class OrderServiceTest {
                 "Germany",
                 null));
 
-        return new TestContext(service, customer, manager, product, orderRepository, cartService, productRepository, emailService, auditLogService);
+        return new TestContext(service, customer, manager, product, orderRepository, cartService, productRepository,
+                emailService, auditLogService, addressLookupService, pickupStoreRepository);
     }
 
     private static PlaceOrderRequest request(String approvalReason) {
@@ -272,6 +296,40 @@ class OrderServiceTest {
                 null,
                 approvalReason,
                 null);
+    }
+
+    private static PlaceOrderRequest requestWithPickupStore(Long pickupStoreId) {
+        return new PlaceOrderRequest(
+                null,
+                "employee@example.test",
+                "Employee Buyer",
+                "Keine Angabe",
+                "ORD-PICKUP-TEST",
+                new DeliveryAddressRequest("Hauptstrasse 1", "Bielefeld", "33602", "Germany"),
+                ShippingMethod.STANDARD,
+                new PaymentMethodRequest(PaymentMethodType.BANK_TRANSFER, "Rechnung", null, null, null, null),
+                false,
+                true,
+                true,
+                false,
+                false,
+                false,
+                pickupStoreId,
+                null,
+                null);
+    }
+
+    private static PickupStore pickupStore() {
+        PickupStore pickupStore = new PickupStore();
+        pickupStore.setId(7L);
+        pickupStore.setName("Zentrallager Köln");
+        pickupStore.setStreet("Marconistraße 10");
+        pickupStore.setPostalCode("50769");
+        pickupStore.setCity("Köln");
+        pickupStore.setCountry("Deutschland");
+        pickupStore.setOpeningHours("Mo-Fr 09:00-18:00");
+        pickupStore.setActive(true);
+        return pickupStore;
     }
 
     private static User businessCustomer(Long id, String username) {
@@ -366,6 +424,8 @@ class OrderServiceTest {
             CartService cartService,
             ProductRepository productRepository,
             EmailService emailService,
-            AuditLogService auditLogService
+            AuditLogService auditLogService,
+            AddressLookupService addressLookupService,
+            PickupStoreRepository pickupStoreRepository
     ) {}
 }
