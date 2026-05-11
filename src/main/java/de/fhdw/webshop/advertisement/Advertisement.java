@@ -6,6 +6,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.Instant;
+import java.time.LocalDate;
 
 @Entity
 @Table(name = "advertisements")
@@ -36,6 +37,12 @@ public class Advertisement {
 
     @Column(nullable = false)
     private boolean active = false;
+
+    @Column(name = "start_date", nullable = false)
+    private LocalDate startDate;
+
+    @Column(name = "end_date", nullable = false)
+    private LocalDate endDate;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
