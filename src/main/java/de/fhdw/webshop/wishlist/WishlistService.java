@@ -4,12 +4,16 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.fhdw.webshop.user.User;
 import de.fhdw.webshop.user.UserRepository;
+import de.fhdw.webshop.wishlist.dto.SharedWishlistResponse;
+import de.fhdw.webshop.wishlist.dto.UpdateWishlistSharingRequest;
 import de.fhdw.webshop.wishlist.dto.WishlistItemDto;
 import de.fhdw.webshop.wishlist.dto.WishlistListDto;
 import de.fhdw.webshop.wishlist.dto.WishlistStateDto;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -17,6 +21,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -55,9 +60,76 @@ public class WishlistService {
         return normalizedState;
     }
 
+    @Transactional
+    public WishlistStateDto enableWishlistSharing(User currentUser, String listId) {
+        return updateWishlistSharing(currentUser, listId, new UpdateWishlistSharingRequest(true));
+    }
+
+    @Transactional
+    public WishlistStateDto updateWishlistSharing(
+            User currentUser,
+            String listId,
+            UpdateWishlistSharingRequest request
+    ) {
+        boolean shared = Boolean.TRUE.equals(request != null ? request.shared() : null);
+        WishlistStateDto currentState = getWishlistState(currentUser);
+        Instant now = Instant.now();
+        boolean[] listFound = {false};
+
+        List<WishlistListDto> updatedLists = currentState.lists().stream()
+                .map(list -> {
+                    if (!list.id().equals(listId)) {
+                        return list;
+                    }
+
+                    listFound[0] = true;
+                    String shareToken = normalizeNullableText(list.shareToken());
+                    String sharedAt = normalizeNullableText(list.sharedAt());
+                    if (shared) {
+                        shareToken = shareToken != null ? shareToken : generateUniqueShareToken();
+                        sharedAt = sharedAt != null ? sharedAt : now.toString();
+                    }
+
+                    return new WishlistListDto(
+                            list.id(),
+                            list.name(),
+                            list.createdAt(),
+                            shared,
+                            shareToken,
+                            sharedAt
+                    );
+                })
+                .toList();
+
+        if (!listFound[0]) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Merkliste wurde nicht gefunden.");
+        }
+
+        return saveWishlistState(
+                currentUser,
+                new WishlistStateDto(updatedLists, currentState.activeListId(), currentState.items())
+        );
+    }
+
+    public SharedWishlistResponse getSharedWishlist(String shareToken) {
+        String normalizedToken = normalizeNullableText(shareToken);
+        if (normalizedToken == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Diese Liste ist nicht mehr öffentlich.");
+        }
+
+        return userRepository.findByWishlistStateContaining(normalizedToken).stream()
+                .map(user -> toSharedWishlistResponse(user, normalizedToken))
+                .filter(response -> response != null)
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Diese Liste ist nicht mehr öffentlich."
+                ));
+    }
+
     private WishlistStateDto createDefaultWishlistState() {
         return new WishlistStateDto(
-                List.of(new WishlistListDto(DEFAULT_WISHLIST_ID, DEFAULT_WISHLIST_NAME, Instant.now().toString())),
+                List.of(new WishlistListDto(DEFAULT_WISHLIST_ID, DEFAULT_WISHLIST_NAME, Instant.now().toString(), false, null, null)),
                 DEFAULT_WISHLIST_ID,
                 List.of()
         );
@@ -68,7 +140,7 @@ public class WishlistService {
         List<WishlistListDto> inputLists = state.lists() != null ? state.lists() : List.of();
 
         Map<String, WishlistListDto> listsById = new LinkedHashMap<>();
-        listsById.put(DEFAULT_WISHLIST_ID, new WishlistListDto(DEFAULT_WISHLIST_ID, DEFAULT_WISHLIST_NAME, Instant.now().toString()));
+        listsById.put(DEFAULT_WISHLIST_ID, new WishlistListDto(DEFAULT_WISHLIST_ID, DEFAULT_WISHLIST_NAME, Instant.now().toString(), false, null, null));
 
         inputLists.stream()
                 .filter(list -> list != null && list.id() != null && !list.id().isBlank())
@@ -79,7 +151,17 @@ public class WishlistService {
                             ? DEFAULT_WISHLIST_NAME
                             : normalizeCustomListName(list.name());
                     String createdAt = normalizeText(list.createdAt(), Instant.now().toString());
-                    listsById.put(listId, new WishlistListDto(listId, listName, createdAt));
+                    String shareToken = normalizeNullableText(list.shareToken());
+                    boolean shared = Boolean.TRUE.equals(list.shared()) && shareToken != null;
+                    String sharedAt = normalizeNullableText(list.sharedAt());
+                    listsById.put(listId, new WishlistListDto(
+                            listId,
+                            listName,
+                            createdAt,
+                            shared,
+                            shareToken,
+                            sharedAt
+                    ));
                 });
 
         List<WishlistItemDto> normalizedItems = new ArrayList<>();
@@ -118,6 +200,13 @@ public class WishlistService {
         return value.trim();
     }
 
+    private String normalizeNullableText(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
+    }
+
     private String normalizeCustomListName(String value) {
         String normalizedName = normalizeText(value, "Liste");
         if (normalizedName.length() <= CUSTOM_LIST_NAME_MAX_LENGTH) {
@@ -125,4 +214,44 @@ public class WishlistService {
         }
         return normalizedName.substring(0, CUSTOM_LIST_NAME_MAX_LENGTH);
     }
+
+    private String generateUniqueShareToken() {
+        for (int attempt = 0; attempt < 10; attempt += 1) {
+            String candidate = UUID.randomUUID().toString();
+            if (userRepository.findByWishlistStateContaining(candidate).isEmpty()) {
+                return candidate;
+            }
+        }
+
+        throw new IllegalStateException("Wishlist share token could not be generated");
+    }
+
+    private SharedWishlistResponse toSharedWishlistResponse(User owner, String shareToken) {
+        WishlistStateDto state = getWishlistState(owner);
+        WishlistListDto sharedList = state.lists().stream()
+                .filter(list -> Boolean.TRUE.equals(list.shared()))
+                .filter(list -> shareToken.equals(list.shareToken()))
+                .findFirst()
+                .orElse(null);
+
+        if (sharedList == null) {
+            return null;
+        }
+
+        List<WishlistItemDto> sharedItems = state.items().stream()
+                .filter(item -> sharedList.id().equals(item.listId()))
+                .toList();
+
+        return new SharedWishlistResponse(
+                sharedList.id(),
+                sharedList.name(),
+                sharedList.createdAt(),
+                true,
+                sharedList.shareToken(),
+                sharedList.sharedAt(),
+                owner.getUsername(),
+                sharedItems
+        );
+    }
+
 }
