@@ -15,6 +15,15 @@ public interface CartRepository extends JpaRepository<CartItem, Long> {
 
     Optional<CartItem> findByUserIdAndProductIdAndPersonalizationText(Long userId, Long productId, String personalizationText);
 
+    Optional<CartItem> findByUserIdAndProductIdAndPersonalizationTextAndGiftCardAmountAndGiftCardRecipientEmailAndGiftCardMessage(
+            Long userId,
+            Long productId,
+            String personalizationText,
+            java.math.BigDecimal giftCardAmount,
+            String giftCardRecipientEmail,
+            String giftCardMessage
+    );
+
     void deleteByUserId(Long userId);
 
     void deleteByUserIdAndProductId(Long userId, Long productId);

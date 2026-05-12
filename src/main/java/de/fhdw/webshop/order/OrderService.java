@@ -27,6 +27,7 @@ import de.fhdw.webshop.pickup.PickupStoreService;
 import de.fhdw.webshop.product.Product;
 import de.fhdw.webshop.product.ProductRepository;
 import de.fhdw.webshop.product.ProductService;
+import de.fhdw.webshop.product.ProductType;
 import de.fhdw.webshop.user.DeliveryAddress;
 import de.fhdw.webshop.user.DeliveryAddressRepository;
 import de.fhdw.webshop.user.PaymentMethod;
@@ -53,6 +54,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -77,8 +80,15 @@ public class OrderService {
     private static final Duration EXPRESS_MIN_REMAINING_TRUCK = Duration.ofHours(12);
     private static final Duration STANDARD_MIN_REMAINING_SHIPPED = Duration.ofHours(18);
     private static final Duration EXPRESS_MIN_REMAINING_SHIPPED = Duration.ofHours(6);
+    private static final Set<BigDecimal> GIFT_CARD_AMOUNTS = Set.of(
+            new BigDecimal("15.00"),
+            new BigDecimal("25.00"),
+            new BigDecimal("50.00"),
+            new BigDecimal("100.00")
+    );
 
     private final OrderRepository orderRepository;
+    private final OrderItemRepository orderItemRepository;
     private final CartRepository cartRepository;
     private final CartService cartService;
     private final CouponRepository couponRepository;
@@ -161,14 +171,19 @@ public class OrderService {
         List<Product> updatedProducts = new ArrayList<>();
         for (OrderItem orderItem : order.getItems()) {
             Product product = orderItem.getProduct();
-            if (!product.isPurchasable() || product.getStock() <= 0) {
+            boolean giftCard = product.getProductType() == ProductType.DIGITAL_GIFT_CARD;
+            if (!product.isPurchasable() || (!giftCard && product.getStock() <= 0)) {
                 throw new IllegalArgumentException(product.getName() + " is no longer available");
             }
-            if (orderItem.getQuantity() > product.getStock()) {
+            if (!giftCard && orderItem.getQuantity() > product.getStock()) {
                 throw new IllegalArgumentException("Only " + product.getStock() + " units of " + product.getName() + " are available");
             }
-            product.setStock(product.getStock() - orderItem.getQuantity());
-            updatedProducts.add(product);
+            if (giftCard) {
+                ensureGiftCardCode(orderItem);
+            } else {
+                product.setStock(product.getStock() - orderItem.getQuantity());
+                updatedProducts.add(product);
+            }
         }
 
         order.setStatus(OrderStatus.CONFIRMED);
@@ -177,12 +192,13 @@ public class OrderService {
         order.setApprovalRejectionReason(null);
         Order savedOrder = orderRepository.save(order);
         productRepository.saveAll(updatedProducts);
-        markCouponAsUsedByCode(savedOrder, manager);
+        markCheckoutCodeAsUsedByCode(savedOrder, manager);
         auditLogService.record(manager, "APPROVE_ORDER_REQUEST", "Order", savedOrder.getId(),
                 AuditInitiator.USER,
                 "Manager approved order request " + savedOrder.getOrderNumber() + " for customer "
                         + savedOrder.getCustomer().getId());
         boolean confirmationEmailSent = sendOrderConfirmation(savedOrder);
+        sendGiftCardEmails(savedOrder);
         return toApprovalResponse(savedOrder, confirmationEmailSent);
     }
 
@@ -243,8 +259,9 @@ public class OrderService {
         }
         Order savedOrder = persistPreparedOrder(preparedOrder);
         cartService.clearCartSilently(customer.getId());
-        markCouponAsUsed(preparedOrder.coupon(), savedOrder, customer);
+        markCheckoutCodeAsUsed(preparedOrder, savedOrder, customer);
         boolean confirmationEmailSent = sendOrderConfirmation(savedOrder);
+        sendGiftCardEmails(savedOrder);
         return toResponse(savedOrder, confirmationEmailSent);
     }
 
@@ -261,7 +278,9 @@ public class OrderService {
         validateLegalAcceptance(placeOrderRequest);
         PreparedOrder preparedOrder = prepareGuestOrder(placeOrderRequest);
         Order savedOrder = persistPreparedOrder(preparedOrder);
+        markCheckoutCodeAsUsed(preparedOrder, savedOrder, null);
         boolean confirmationEmailSent = sendOrderConfirmation(savedOrder);
+        sendGiftCardEmails(savedOrder);
         return toResponse(savedOrder, confirmationEmailSent);
     }
 
@@ -278,7 +297,7 @@ public class OrderService {
                 : resolveDeliveryAddress(customer, placeOrderRequest != null ? placeOrderRequest.deliveryAddress() : null);
         PaymentMethodSnapshot paymentMethod = resolvePaymentMethod(customer, paymentMethodRequest);
         String couponCode = placeOrderRequest != null ? placeOrderRequest.couponCode() : null;
-        Coupon coupon = resolveCoupon(couponCode, customer);
+        CheckoutDiscount checkoutDiscount = resolveCheckoutDiscount(couponCode, customer);
         String orderNumber = placeOrderRequest != null ? placeOrderRequest.previewOrderNumber() : null;
         boolean carbonCompensationSelected = placeOrderRequest != null && Boolean.TRUE.equals(placeOrderRequest.carbonCompensationSelected());
         BigDecimal approvalBudgetLimit = resolveApprovalBudgetLimit(customer);
@@ -299,12 +318,15 @@ public class OrderService {
                         .map(cartItem -> new RequestedOrderItem(
                                 cartItem.getProduct(),
                                 cartItem.getQuantity(),
-                                cartItem.getPersonalizationText()))
+                                cartItem.getPersonalizationText(),
+                                cartItem.getGiftCardAmount(),
+                                cartItem.getGiftCardRecipientEmail(),
+                                cartItem.getGiftCardMessage()))
                         .toList(),
                 deliveryAddress,
                 shippingMethod,
                 paymentMethod,
-                coupon,
+                checkoutDiscount,
                 customer.getId(),
                 placeOrderRequest != null && Boolean.TRUE.equals(placeOrderRequest.allowUnverifiedAddress()),
                 carbonCompensationSelected,
@@ -327,15 +349,21 @@ public class OrderService {
         if (placeOrderRequest.paymentMethod() == null) {
             throw new IllegalArgumentException("Payment method is required");
         }
-        if (placeOrderRequest.couponCode() != null && !placeOrderRequest.couponCode().isBlank()) {
+        if (placeOrderRequest.couponCode() != null
+                && !placeOrderRequest.couponCode().isBlank()
+                && !isGiftCardCode(placeOrderRequest.couponCode())) {
             throw new IllegalArgumentException("Coupons are only available for logged-in customers");
         }
+        CheckoutDiscount checkoutDiscount = resolveCheckoutDiscount(placeOrderRequest.couponCode(), null);
 
         List<RequestedOrderItem> requestedItems = placeOrderRequest.items().stream()
                 .map(item -> new RequestedOrderItem(
                         productService.loadProduct(item.productId()),
                         item.quantity(),
-                        item.personalizationText()))
+                        item.personalizationText(),
+                        item.giftCardAmount(),
+                        item.giftCardRecipientEmail(),
+                        item.giftCardMessage()))
                 .toList();
 
         return prepareOrder(
@@ -354,7 +382,7 @@ public class OrderService {
                         ),
                 resolveShippingMethod(placeOrderRequest),
                 resolveGuestPaymentMethod(placeOrderRequest.paymentMethod()),
-                null,
+                checkoutDiscount,
                 null,
                 Boolean.TRUE.equals(placeOrderRequest.allowUnverifiedAddress()),
                 Boolean.TRUE.equals(placeOrderRequest.carbonCompensationSelected()),
@@ -371,7 +399,7 @@ public class OrderService {
                                        DeliveryAddressSnapshot deliveryAddress,
                                        ShippingMethod shippingMethod,
                                        PaymentMethodSnapshot paymentMethod,
-                                       Coupon coupon,
+                                       CheckoutDiscount checkoutDiscount,
                                        Long discountCustomerId,
                                        boolean allowUnverifiedAddress,
                                        boolean carbonCompensationSelected,
@@ -396,7 +424,7 @@ public class OrderService {
         order.setShippingMethod(shippingMethod);
         order.setPaymentMethodType(paymentMethod.methodType());
         order.setPaymentMaskedDetails(paymentMethod.maskedDetails());
-        order.setCouponCode(coupon != null ? coupon.getCode() : null);
+        order.setCouponCode(checkoutDiscount != null ? checkoutDiscount.code() : null);
         order.setPickupStore(pickupStore);
 
         BigDecimal itemSubtotal = BigDecimal.ZERO;
@@ -404,34 +432,46 @@ public class OrderService {
         List<PreparedOrderItem> preparedItems = new ArrayList<>();
         for (RequestedOrderItem requestedItem : requestedItems) {
             Product product = requestedItem.product();
-            if (!product.isPurchasable() || product.getStock() <= 0) {
+            boolean giftCard = product.getProductType() == ProductType.DIGITAL_GIFT_CARD;
+            if (!product.isPurchasable() || (!giftCard && product.getStock() <= 0)) {
                 throw new IllegalArgumentException(product.getName() + " is no longer available");
             }
-            if (requestedItem.quantity() > product.getStock()) {
+            if (!giftCard && requestedItem.quantity() > product.getStock()) {
                 throw new IllegalArgumentException("Only " + product.getStock() + " units of " + product.getName() + " are available");
             }
             String personalizationText = normalizePersonalizationText(product, requestedItem.personalizationText());
+            BigDecimal giftCardAmount = resolveGiftCardAmount(product, requestedItem.giftCardAmount());
+            String giftCardRecipientEmail = normalizeEmail(requestedItem.giftCardRecipientEmail());
+            String giftCardMessage = normalizeGiftCardMessage(requestedItem.giftCardMessage());
 
             BigDecimal discountPercent = discountCustomerId != null
                     ? discountLookupPort.findBestActiveDiscountPercent(discountCustomerId, product.getId())
                     : BigDecimal.ZERO;
-            BigDecimal unitPrice = applyDiscount(product.getRecommendedRetailPrice(), discountPercent);
+            BigDecimal unitPrice = giftCard ? giftCardAmount : applyDiscount(product.getRecommendedRetailPrice(), discountPercent);
             BigDecimal lineTotal = unitPrice.multiply(BigDecimal.valueOf(requestedItem.quantity())).setScale(2, RoundingMode.HALF_UP);
             itemSubtotal = itemSubtotal.add(lineTotal);
             if (product.getCo2EmissionKg() != null) {
                 totalCo2EmissionKg = totalCo2EmissionKg.add(
                         product.getCo2EmissionKg().multiply(BigDecimal.valueOf(requestedItem.quantity())));
             }
-            preparedItems.add(new PreparedOrderItem(product, requestedItem.quantity(), personalizationText, unitPrice, lineTotal));
+            preparedItems.add(new PreparedOrderItem(
+                    product,
+                    requestedItem.quantity(),
+                    personalizationText,
+                    giftCardAmount,
+                    giftCardRecipientEmail,
+                    giftCardMessage,
+                    unitPrice,
+                    lineTotal));
         }
         totalCo2EmissionKg = totalCo2EmissionKg.setScale(3, RoundingMode.HALF_UP);
 
         int totalItemCount = preparedItems.stream()
                 .mapToInt(PreparedOrderItem::quantity)
                 .sum();
-        VolumeDiscountResult volumeDiscount = VolumeDiscountPolicy.resolve(itemSubtotal, totalItemCount, coupon != null);
-        BigDecimal discountAmount = coupon != null
-                ? calculateCouponDiscount(itemSubtotal, coupon)
+        VolumeDiscountResult volumeDiscount = VolumeDiscountPolicy.resolve(itemSubtotal, totalItemCount, checkoutDiscount != null);
+        BigDecimal discountAmount = checkoutDiscount != null
+                ? calculateCheckoutDiscount(itemSubtotal, checkoutDiscount)
                 : volumeDiscount.amount();
         BigDecimal subtotal = itemSubtotal.subtract(discountAmount).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
         BigDecimal shippingCost = pickupStore != null
@@ -451,11 +491,11 @@ public class OrderService {
         return new PreparedOrder(
                 order,
                 preparedItems,
-                coupon,
+                checkoutDiscount,
                 discountAmount,
-                resolveDiscountType(coupon, volumeDiscount),
-                resolveDiscountLabel(coupon, volumeDiscount),
-                resolveDiscountPercent(coupon, volumeDiscount),
+                resolveDiscountType(checkoutDiscount, volumeDiscount),
+                resolveDiscountLabel(checkoutDiscount, volumeDiscount),
+                resolveDiscountPercent(checkoutDiscount, volumeDiscount),
                 resolveDiscountMessages(volumeDiscount),
                 taxAmount,
                 subtotal,
@@ -586,17 +626,21 @@ public class OrderService {
         List<Product> updatedProducts = new ArrayList<>();
         for (PreparedOrderItem preparedItem : preparedOrder.items()) {
             Product product = preparedItem.product();
-            if (preparedItem.quantity() > product.getStock()) {
+            boolean giftCard = product.getProductType() == ProductType.DIGITAL_GIFT_CARD;
+            if (!giftCard && preparedItem.quantity() > product.getStock()) {
                 throw new IllegalArgumentException("Only " + product.getStock() + " units of " + product.getName() + " are available");
             }
-            product.setStock(product.getStock() - preparedItem.quantity());
-            updatedProducts.add(product);
+            if (!giftCard) {
+                product.setStock(product.getStock() - preparedItem.quantity());
+                updatedProducts.add(product);
+            }
 
             OrderItem orderItem = new OrderItem();
             orderItem.setOrder(order);
             orderItem.setProduct(product);
             orderItem.setQuantity(preparedItem.quantity());
             orderItem.setPersonalizationText(preparedItem.personalizationText());
+            applyGiftCardDetails(orderItem, preparedItem, true);
             orderItem.setPriceAtOrderTime(preparedItem.unitPrice());
             order.getItems().add(orderItem);
         }
@@ -621,7 +665,8 @@ public class OrderService {
 
         for (PreparedOrderItem preparedItem : preparedOrder.items()) {
             Product product = preparedItem.product();
-            if (preparedItem.quantity() > product.getStock()) {
+            boolean giftCard = product.getProductType() == ProductType.DIGITAL_GIFT_CARD;
+            if (!giftCard && preparedItem.quantity() > product.getStock()) {
                 throw new IllegalArgumentException("Only " + product.getStock() + " units of " + product.getName() + " are available");
             }
 
@@ -630,6 +675,7 @@ public class OrderService {
             orderItem.setProduct(product);
             orderItem.setQuantity(preparedItem.quantity());
             orderItem.setPersonalizationText(preparedItem.personalizationText());
+            applyGiftCardDetails(orderItem, preparedItem, false);
             orderItem.setPriceAtOrderTime(preparedItem.unitPrice());
             order.getItems().add(orderItem);
         }
@@ -668,15 +714,27 @@ public class OrderService {
      * Throws IllegalArgumentException if the code is invalid, expired, already used,
      * or does not belong to the placing customer.
      */
-    private Coupon resolveCoupon(String couponCode, User customer) {
+    private CheckoutDiscount resolveCheckoutDiscount(String couponCode, User customer) {
         if (couponCode == null || couponCode.isBlank()) {
             return null;
         }
+        String normalizedCode = couponCode.trim();
+        if (isGiftCardCode(normalizedCode)) {
+            OrderItem giftCardItem = orderItemRepository.findByGiftCardCodeIgnoreCase(normalizedCode)
+                    .orElseThrow(() -> new IllegalArgumentException("Gutscheincode nicht gefunden: " + couponCode));
+            if (giftCardItem.getGiftCardAmount() == null || giftCardItem.getGiftCardCode() == null) {
+                throw new IllegalArgumentException("Gutscheincode ist ungültig: " + couponCode);
+            }
+            if (giftCardItem.getGiftCardRedeemedAt() != null) {
+                throw new IllegalArgumentException("Gutscheincode wurde bereits eingelöst: " + couponCode);
+            }
+            return new CheckoutDiscount(null, giftCardItem, giftCardItem.getGiftCardCode(), "GIFT_CARD");
+        }
 
-        Coupon coupon = couponRepository.findByCode(couponCode)
+        Coupon coupon = couponRepository.findByCode(normalizedCode)
                 .orElseThrow(() -> new IllegalArgumentException("Coupon code not found: " + couponCode));
 
-        if (!coupon.getCustomer().getId().equals(customer.getId())) {
+        if (customer == null || !coupon.getCustomer().getId().equals(customer.getId())) {
             throw new IllegalArgumentException("Coupon does not belong to this customer");
         }
         if (coupon.isUsed()) {
@@ -685,7 +743,7 @@ public class OrderService {
         if (coupon.getValidUntil() != null && coupon.getValidUntil().isBefore(LocalDate.now())) {
             throw new IllegalArgumentException("Coupon has expired: " + couponCode);
         }
-        return coupon;
+        return new CheckoutDiscount(coupon, null, coupon.getCode(), "COUPON");
     }
 
     private DeliveryAddressSnapshot resolveDeliveryAddress(User customer, DeliveryAddressRequest deliveryAddressRequest) {
@@ -736,33 +794,48 @@ public class OrderService {
         );
     }
 
-    private BigDecimal calculateCouponDiscount(BigDecimal subtotal, Coupon coupon) {
-        if (coupon == null) {
+    private BigDecimal calculateCheckoutDiscount(BigDecimal subtotal, CheckoutDiscount checkoutDiscount) {
+        if (checkoutDiscount == null) {
             return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
         }
-        BigDecimal multiplier = coupon.getDiscountPercent().divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
+        if (checkoutDiscount.giftCardItem() != null) {
+            return checkoutDiscount.giftCardItem().getGiftCardAmount()
+                    .min(subtotal)
+                    .setScale(2, RoundingMode.HALF_UP);
+        }
+        BigDecimal multiplier = checkoutDiscount.coupon().getDiscountPercent().divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
         return subtotal.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
     }
 
-    private String resolveDiscountType(Coupon coupon, VolumeDiscountResult volumeDiscount) {
-        if (coupon != null) {
-            return "COUPON";
+    private String resolveDiscountType(CheckoutDiscount checkoutDiscount, VolumeDiscountResult volumeDiscount) {
+        if (checkoutDiscount != null) {
+            return checkoutDiscount.type();
         }
         return volumeDiscount.applied() ? VolumeDiscountPolicy.DISCOUNT_TYPE : null;
     }
 
-    private String resolveDiscountLabel(Coupon coupon, VolumeDiscountResult volumeDiscount) {
-        if (coupon != null) {
-            return "Gutschein " + coupon.getCode();
+    private String resolveDiscountLabel(CheckoutDiscount checkoutDiscount, VolumeDiscountResult volumeDiscount) {
+        if (checkoutDiscount != null && checkoutDiscount.coupon() != null) {
+            return "Gutschein " + checkoutDiscount.coupon().getCode();
+        }
+        if (checkoutDiscount != null && checkoutDiscount.giftCardItem() != null) {
+            return "Geschenkgutschein " + checkoutDiscount.giftCardItem().getGiftCardCode();
         }
         return volumeDiscount.label();
     }
 
-    private BigDecimal resolveDiscountPercent(Coupon coupon, VolumeDiscountResult volumeDiscount) {
-        if (coupon != null) {
-            return coupon.getDiscountPercent();
+    private BigDecimal resolveDiscountPercent(CheckoutDiscount checkoutDiscount, VolumeDiscountResult volumeDiscount) {
+        if (checkoutDiscount != null && checkoutDiscount.coupon() != null) {
+            return checkoutDiscount.coupon().getDiscountPercent();
+        }
+        if (checkoutDiscount != null) {
+            return null;
         }
         return volumeDiscount.percent();
+    }
+
+    private boolean isGiftCardCode(String couponCode) {
+        return couponCode != null && couponCode.trim().toUpperCase().startsWith("GUT-");
     }
 
     private List<String> resolveDiscountMessages(VolumeDiscountResult volumeDiscount) {
@@ -776,9 +849,10 @@ public class OrderService {
         if (order.getDiscountAmount() == null || order.getDiscountAmount().compareTo(BigDecimal.ZERO) <= 0) {
             return null;
         }
-        return order.getCouponCode() != null && !order.getCouponCode().isBlank()
-                ? "COUPON"
-                : VolumeDiscountPolicy.DISCOUNT_TYPE;
+        if (order.getCouponCode() != null && !order.getCouponCode().isBlank()) {
+            return isGiftCardCode(order.getCouponCode()) ? "GIFT_CARD" : "COUPON";
+        }
+        return VolumeDiscountPolicy.DISCOUNT_TYPE;
     }
 
     private String resolvePersistedDiscountLabel(Order order) {
@@ -786,7 +860,7 @@ public class OrderService {
             return null;
         }
         if (order.getCouponCode() != null && !order.getCouponCode().isBlank()) {
-            return "Gutschein " + order.getCouponCode();
+            return (isGiftCardCode(order.getCouponCode()) ? "Geschenkgutschein " : "Gutschein ") + order.getCouponCode();
         }
         return "Mengenrabatt";
     }
@@ -801,11 +875,17 @@ public class OrderService {
                 .setScale(2, RoundingMode.HALF_UP);
     }
 
-    private void markCouponAsUsed(Coupon coupon, Order savedOrder, User customer) {
-        if (coupon == null) {
+    private void markCheckoutCodeAsUsed(PreparedOrder preparedOrder, Order savedOrder, User customer) {
+        CheckoutDiscount checkoutDiscount = preparedOrder.checkoutDiscount();
+        if (checkoutDiscount == null) {
+            return;
+        }
+        if (checkoutDiscount.giftCardItem() != null) {
+            markGiftCardAsRedeemed(checkoutDiscount.giftCardItem(), savedOrder, customer, null);
             return;
         }
 
+        Coupon coupon = checkoutDiscount.coupon();
         coupon.setUsed(true);
         coupon.setUsedAt(Instant.now());
         couponRepository.save(coupon);
@@ -818,9 +898,15 @@ public class OrderService {
                 "code=" + coupon.getCode() + ", orderId=" + savedOrder.getId());
     }
 
-    private void markCouponAsUsedByCode(Order savedOrder, User manager) {
+    private void markCheckoutCodeAsUsedByCode(Order savedOrder, User manager) {
         String couponCode = savedOrder.getCouponCode();
         if (couponCode == null || couponCode.isBlank()) {
+            return;
+        }
+        if (isGiftCardCode(couponCode)) {
+            OrderItem giftCardItem = orderItemRepository.findByGiftCardCodeIgnoreCase(couponCode)
+                    .orElseThrow(() -> new IllegalArgumentException("Gutscheincode nicht gefunden: " + couponCode));
+            markGiftCardAsRedeemed(giftCardItem, savedOrder, savedOrder.getCustomer(), manager);
             return;
         }
 
@@ -844,6 +930,23 @@ public class OrderService {
                 AuditInitiator.USER,
                 "code=" + coupon.getCode() + ", orderId=" + savedOrder.getId()
                         + ", approvedBy=" + manager.getId());
+    }
+
+    private void markGiftCardAsRedeemed(OrderItem giftCardItem, Order savedOrder, User customer, User manager) {
+        if (giftCardItem.getGiftCardRedeemedAt() != null) {
+            throw new IllegalArgumentException("Gutscheincode wurde bereits eingelöst: " + giftCardItem.getGiftCardCode());
+        }
+        giftCardItem.setGiftCardRedeemedAt(Instant.now());
+        giftCardItem.setGiftCardRedeemedOrderNumber(savedOrder.getOrderNumber());
+        orderItemRepository.save(giftCardItem);
+        auditLogService.record(
+                customer,
+                "APPLY_GIFT_CARD",
+                "OrderItem",
+                giftCardItem.getId(),
+                AuditInitiator.USER,
+                "code=" + giftCardItem.getGiftCardCode() + ", orderId=" + savedOrder.getId()
+                        + (manager != null ? ", approvedBy=" + manager.getId() : ""));
     }
 
     private boolean canCustomerCancel(Order order) {
@@ -950,17 +1053,7 @@ public class OrderService {
 
     private OrderResponse toResponse(Order order) {
         List<OrderItemResponse> itemResponses = order.getItems().stream()
-                .map(orderItem -> new OrderItemResponse(
-                        orderItem.getId(),
-                        orderItem.getProduct().getId(),
-                        orderItem.getProduct().getName(),
-                        toVariantValues(orderItem.getProduct()),
-                        orderItem.getPersonalizationText(),
-                        orderItem.getProduct().isPurchasable(),
-                        orderItem.getQuantity(),
-                        orderItem.getPriceAtOrderTime(),
-                        orderItem.getPriceAtOrderTime()
-                                .multiply(BigDecimal.valueOf(orderItem.getQuantity()))))
+                .map(this::toOrderItemResponse)
                 .toList();
 
         return new OrderResponse(
@@ -994,17 +1087,7 @@ public class OrderService {
     private OrderApprovalResponse toApprovalResponse(Order order, Boolean confirmationEmailSent) {
         User requester = order.getCustomer();
         List<OrderItemResponse> itemResponses = order.getItems().stream()
-                .map(orderItem -> new OrderItemResponse(
-                        orderItem.getId(),
-                        orderItem.getProduct().getId(),
-                        orderItem.getProduct().getName(),
-                        toVariantValues(orderItem.getProduct()),
-                        orderItem.getPersonalizationText(),
-                        orderItem.getProduct().isPurchasable(),
-                        orderItem.getQuantity(),
-                        orderItem.getPriceAtOrderTime(),
-                        orderItem.getPriceAtOrderTime()
-                                .multiply(BigDecimal.valueOf(orderItem.getQuantity()))))
+                .map(this::toOrderItemResponse)
                 .toList();
 
         return new OrderApprovalResponse(
@@ -1031,17 +1114,7 @@ public class OrderService {
 
     private OrderResponse toResponse(Order order, boolean confirmationEmailSent) {
         List<OrderItemResponse> itemResponses = order.getItems().stream()
-                .map(orderItem -> new OrderItemResponse(
-                        orderItem.getId(),
-                        orderItem.getProduct().getId(),
-                        orderItem.getProduct().getName(),
-                        toVariantValues(orderItem.getProduct()),
-                        orderItem.getPersonalizationText(),
-                        orderItem.getProduct().isPurchasable(),
-                        orderItem.getQuantity(),
-                        orderItem.getPriceAtOrderTime(),
-                        orderItem.getPriceAtOrderTime()
-                                .multiply(BigDecimal.valueOf(orderItem.getQuantity()))))
+                .map(this::toOrderItemResponse)
                 .toList();
 
         return new OrderResponse(
@@ -1119,6 +1192,9 @@ public class OrderService {
                         item.product().getName(),
                         toVariantValues(item.product()),
                         item.personalizationText(),
+                        item.giftCardAmount(),
+                        item.giftCardRecipientEmail(),
+                        item.giftCardMessage(),
                         item.quantity(),
                         item.unitPrice(),
                         item.lineTotal()
@@ -1199,12 +1275,53 @@ public class OrderService {
         );
     }
 
+    private void sendGiftCardEmails(Order order) {
+        for (OrderItem item : order.getItems()) {
+            if (item.getProduct().getProductType() != ProductType.DIGITAL_GIFT_CARD) {
+                continue;
+            }
+            ensureGiftCardCode(item);
+            String recipientEmail = item.getGiftCardRecipientEmail() != null
+                    ? item.getGiftCardRecipientEmail()
+                    : order.getCustomerEmail();
+            String message = item.getGiftCardMessage() != null && !item.getGiftCardMessage().isBlank()
+                    ? "\nPersönliche Nachricht:\n" + item.getGiftCardMessage() + "\n"
+                    : "";
+            String body = "Hallo,\n\n"
+                    + "du hast einen digitalen Geschenkgutschein für unseren Webshop erhalten.\n\n"
+                    + "Gutscheinwert: " + item.getGiftCardAmount() + " EUR\n"
+                    + "Gutscheincode: " + item.getGiftCardCode() + "\n"
+                    + message
+                    + "\nDer Code kann flexibel im Webshop eingelöst werden.\n\n"
+                    + "Viel Freude beim Einkaufen!";
+            emailService.sendEmail(recipientEmail, "Dein digitaler Geschenkgutschein", body);
+        }
+    }
+
     private Map<String, String> toVariantValues(Product product) {
         Map<String, String> values = new LinkedHashMap<>();
         product.getVariantOptions().stream()
                 .sorted((left, right) -> Integer.compare(left.getDisplayOrder(), right.getDisplayOrder()))
                 .forEach(option -> values.put(option.getAttributeName(), option.getAttributeValue()));
         return values;
+    }
+
+    private OrderItemResponse toOrderItemResponse(OrderItem orderItem) {
+        return new OrderItemResponse(
+                orderItem.getId(),
+                orderItem.getProduct().getId(),
+                orderItem.getProduct().getName(),
+                toVariantValues(orderItem.getProduct()),
+                orderItem.getPersonalizationText(),
+                orderItem.getGiftCardAmount(),
+                orderItem.getGiftCardRecipientEmail(),
+                orderItem.getGiftCardMessage(),
+                orderItem.getGiftCardCode(),
+                orderItem.getProduct().isPurchasable(),
+                orderItem.getQuantity(),
+                orderItem.getPriceAtOrderTime(),
+                orderItem.getPriceAtOrderTime()
+                        .multiply(BigDecimal.valueOf(orderItem.getQuantity())));
     }
 
     private String normalizePersonalizationText(Product product, String personalizationText) {
@@ -1223,6 +1340,60 @@ public class OrderService {
             throw new IllegalArgumentException("Der Wunschtext darf maximal " + maxLength + " Zeichen lang sein.");
         }
         return normalizedText;
+    }
+
+    private BigDecimal resolveGiftCardAmount(Product product, BigDecimal requestedAmount) {
+        if (product.getProductType() != ProductType.DIGITAL_GIFT_CARD) {
+            return null;
+        }
+        if (requestedAmount == null) {
+            throw new IllegalArgumentException("Bitte wähle einen Gutscheinbetrag aus.");
+        }
+        BigDecimal normalizedAmount = requestedAmount.setScale(2, RoundingMode.HALF_UP);
+        if (!GIFT_CARD_AMOUNTS.contains(normalizedAmount)) {
+            throw new IllegalArgumentException("Der gewählte Gutscheinbetrag ist nicht verfügbar.");
+        }
+        return normalizedAmount;
+    }
+
+    private String normalizeEmail(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalizedValue = value.trim();
+        if (!normalizedValue.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
+            throw new IllegalArgumentException("Die Empfänger-E-Mail-Adresse ist ungültig.");
+        }
+        return normalizedValue;
+    }
+
+    private String normalizeGiftCardMessage(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalizedValue = value.trim();
+        if (normalizedValue.length() > 1000) {
+            throw new IllegalArgumentException("Die persönliche Nachricht darf maximal 1000 Zeichen lang sein.");
+        }
+        return normalizedValue;
+    }
+
+    private void applyGiftCardDetails(OrderItem orderItem, PreparedOrderItem preparedItem, boolean issueCode) {
+        if (preparedItem.product().getProductType() != ProductType.DIGITAL_GIFT_CARD) {
+            return;
+        }
+        orderItem.setGiftCardAmount(preparedItem.giftCardAmount());
+        orderItem.setGiftCardRecipientEmail(preparedItem.giftCardRecipientEmail());
+        orderItem.setGiftCardMessage(preparedItem.giftCardMessage());
+        if (issueCode) {
+            ensureGiftCardCode(orderItem);
+        }
+    }
+
+    private void ensureGiftCardCode(OrderItem orderItem) {
+        if (orderItem.getGiftCardCode() == null || orderItem.getGiftCardCode().isBlank()) {
+            orderItem.setGiftCardCode("GUT-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
+        }
     }
 
     private String trimToNull(String value) {
@@ -1298,13 +1469,19 @@ public class OrderService {
     private record RequestedOrderItem(
             Product product,
             int quantity,
-            String personalizationText
+            String personalizationText,
+            BigDecimal giftCardAmount,
+            String giftCardRecipientEmail,
+            String giftCardMessage
     ) {}
 
     private record PreparedOrderItem(
             Product product,
             int quantity,
             String personalizationText,
+            BigDecimal giftCardAmount,
+            String giftCardRecipientEmail,
+            String giftCardMessage,
             BigDecimal unitPrice,
             BigDecimal lineTotal
     ) {}
@@ -1312,7 +1489,7 @@ public class OrderService {
     private record PreparedOrder(
             Order order,
             List<PreparedOrderItem> items,
-            Coupon coupon,
+            CheckoutDiscount checkoutDiscount,
             BigDecimal discountAmount,
             String discountType,
             String discountLabel,
@@ -1327,5 +1504,12 @@ public class OrderService {
             BigDecimal totalPrice,
             boolean approvalRequired,
             BigDecimal approvalBudgetLimit
+    ) {}
+
+    private record CheckoutDiscount(
+            Coupon coupon,
+            OrderItem giftCardItem,
+            String code,
+            String type
     ) {}
 }

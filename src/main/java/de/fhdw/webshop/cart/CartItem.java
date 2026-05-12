@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 @Entity
@@ -36,6 +37,15 @@ public class CartItem {
 
     @Column(name = "personalization_text", length = 1000)
     private String personalizationText;
+
+    @Column(name = "gift_card_amount", precision = 10, scale = 2)
+    private BigDecimal giftCardAmount;
+
+    @Column(name = "gift_card_recipient_email", length = 255)
+    private String giftCardRecipientEmail;
+
+    @Column(name = "gift_card_message", length = 1000)
+    private String giftCardMessage;
 
     @Column(name = "added_at", nullable = false, updatable = false)
     private Instant addedAt = Instant.now();

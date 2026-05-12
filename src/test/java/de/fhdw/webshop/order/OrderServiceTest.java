@@ -212,6 +212,7 @@ class OrderServiceTest {
 
     private static TestContext newContext(BigDecimal budgetLimit) {
         OrderRepository orderRepository = mock(OrderRepository.class);
+        OrderItemRepository orderItemRepository = mock(OrderItemRepository.class);
         CartRepository cartRepository = mock(CartRepository.class);
         CartService cartService = mock(CartService.class);
         CouponRepository couponRepository = mock(CouponRepository.class);
@@ -232,6 +233,7 @@ class OrderServiceTest {
 
         OrderService service = new OrderService(
                 orderRepository,
+                orderItemRepository,
                 cartRepository,
                 cartService,
                 couponRepository,
