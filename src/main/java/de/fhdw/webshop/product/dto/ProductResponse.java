@@ -1,6 +1,7 @@
 package de.fhdw.webshop.product.dto;
 
 import de.fhdw.webshop.product.ProductEcoScore;
+import de.fhdw.webshop.product.ProductType;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -16,6 +17,7 @@ public record ProductResponse(
         BigDecimal co2EmissionKg,
         ProductEcoScore ecoScore,
         String category,
+        ProductType productType,
         int stock,
         String sku,
         boolean purchasable,

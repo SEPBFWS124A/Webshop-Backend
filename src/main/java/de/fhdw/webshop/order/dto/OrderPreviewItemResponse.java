@@ -8,6 +8,9 @@ public record OrderPreviewItemResponse(
         String productName,
         Map<String, String> variantValues,
         String personalizationText,
+        BigDecimal giftCardAmount,
+        String giftCardRecipientEmail,
+        String giftCardMessage,
         int quantity,
         BigDecimal unitPrice,
         BigDecimal lineTotal

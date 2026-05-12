@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 
 @Entity
 @Table(name = "order_items")
@@ -36,4 +37,22 @@ public class OrderItem {
 
     @Column(name = "personalization_text", length = 1000)
     private String personalizationText;
+
+    @Column(name = "gift_card_code", length = 40)
+    private String giftCardCode;
+
+    @Column(name = "gift_card_amount", precision = 10, scale = 2)
+    private BigDecimal giftCardAmount;
+
+    @Column(name = "gift_card_recipient_email", length = 255)
+    private String giftCardRecipientEmail;
+
+    @Column(name = "gift_card_message", length = 1000)
+    private String giftCardMessage;
+
+    @Column(name = "gift_card_redeemed_at")
+    private Instant giftCardRedeemedAt;
+
+    @Column(name = "gift_card_redeemed_order_number", length = 30)
+    private String giftCardRedeemedOrderNumber;
 }

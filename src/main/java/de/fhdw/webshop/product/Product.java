@@ -43,6 +43,10 @@ public class Product {
     @Column(length = 100)
     private String category;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "product_type", nullable = false, length = 40)
+    private ProductType productType = ProductType.STANDARD;
+
     @Column(nullable = false)
     private int stock = 25;
 

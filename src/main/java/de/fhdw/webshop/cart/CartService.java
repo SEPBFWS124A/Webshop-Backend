@@ -9,8 +9,10 @@ import de.fhdw.webshop.discount.VolumeDiscountPolicy;
 import de.fhdw.webshop.discount.VolumeDiscountPolicy.VolumeDiscountResult;
 import de.fhdw.webshop.order.Order;
 import de.fhdw.webshop.order.OrderItem;
+import de.fhdw.webshop.order.OrderItemRepository;
 import de.fhdw.webshop.order.OrderRepository;
 import de.fhdw.webshop.product.Product;
+import de.fhdw.webshop.product.ProductType;
 import de.fhdw.webshop.product.ProductService;
 import de.fhdw.webshop.user.User;
 import jakarta.persistence.EntityNotFoundException;
@@ -22,6 +24,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Set;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,11 +37,18 @@ public class CartService {
     private final ProductService productService;
     private final ProductService.DiscountLookupPort discountLookupPort;
     private final OrderRepository orderRepository;
+    private final OrderItemRepository orderItemRepository;
     private final CouponRepository couponRepository;
 
     private static final BigDecimal TAX_RATE      = BigDecimal.valueOf(0.19);
     private static final BigDecimal SHIPPING_COST = new BigDecimal("4.99");
     private static final BigDecimal FREE_SHIPPING_THRESHOLD = new BigDecimal("50.00");
+    private static final Set<BigDecimal> GIFT_CARD_AMOUNTS = Set.of(
+            new BigDecimal("15.00"),
+            new BigDecimal("25.00"),
+            new BigDecimal("50.00"),
+            new BigDecimal("100.00")
+    );
 
     /** US #41/#43 — Returns the cart with a full price breakdown (subtotal, 19% VAT, shipping, total). */
     @Transactional
@@ -61,16 +71,20 @@ public class CartService {
                 .setScale(2, RoundingMode.HALF_UP);
 
         Coupon coupon = resolveCoupon(couponCode, userId);
+        GiftCardRedemption giftCardRedemption = resolveGiftCardRedemption(couponCode, coupon);
+        boolean manualDiscountApplied = coupon != null || giftCardRedemption != null;
         int totalItemCount = itemResponses.stream()
                 .mapToInt(CartItemResponse::quantity)
                 .sum();
-        VolumeDiscountResult volumeDiscount = VolumeDiscountPolicy.resolve(itemSubtotal, totalItemCount, coupon != null);
+        VolumeDiscountResult volumeDiscount = VolumeDiscountPolicy.resolve(itemSubtotal, totalItemCount, manualDiscountApplied);
         BigDecimal discountAmount = coupon != null
                 ? calculateDiscount(itemSubtotal, coupon)
+                : giftCardRedemption != null
+                    ? calculateGiftCardDiscount(itemSubtotal, giftCardRedemption)
                 : volumeDiscount.amount();
-        String discountType = resolveDiscountType(coupon, volumeDiscount);
-        String discountLabel = resolveDiscountLabel(coupon, volumeDiscount);
-        BigDecimal discountPercent = resolveDiscountPercent(coupon, volumeDiscount);
+        String discountType = resolveDiscountType(coupon, giftCardRedemption, volumeDiscount);
+        String discountLabel = resolveDiscountLabel(coupon, giftCardRedemption, volumeDiscount);
+        BigDecimal discountPercent = resolveDiscountPercent(coupon, giftCardRedemption, volumeDiscount);
         List<String> discountMessages = resolveDiscountMessages(volumeDiscount);
         BigDecimal subtotal = itemSubtotal.subtract(discountAmount)
                 .max(BigDecimal.ZERO)
@@ -107,7 +121,7 @@ public class CartService {
                 totalCo2EmissionKg,
                 co2EmissionCoveredItemCount,
                 co2EmissionTotalItemCount,
-                coupon != null ? coupon.getCode() : null,
+                manualDiscountApplied ? couponCode.trim() : null,
                 messages,
                 discountType,
                 discountLabel,
@@ -124,18 +138,27 @@ public class CartService {
             throw new IllegalArgumentException("Product is not available for purchase: " + product.getId());
         }
         String personalizationText = normalizePersonalizationText(product, addToCartRequest.personalizationText());
+        BigDecimal giftCardAmount = resolveGiftCardAmount(product, addToCartRequest.giftCardAmount());
+        String giftCardRecipientEmail = normalizeEmail(addToCartRequest.giftCardRecipientEmail());
+        String giftCardMessage = normalizeGiftCardMessage(addToCartRequest.giftCardMessage());
 
         CartItem cartItem = cartRepository
-                .findByUserIdAndProductIdAndPersonalizationText(
+                .findByUserIdAndProductIdAndPersonalizationTextAndGiftCardAmountAndGiftCardRecipientEmailAndGiftCardMessage(
                         user.getId(),
                         addToCartRequest.productId(),
-                        personalizationText)
+                        personalizationText,
+                        giftCardAmount,
+                        giftCardRecipientEmail,
+                        giftCardMessage)
                 .orElseGet(() -> {
                     CartItem newCartItem = new CartItem();
                     newCartItem.setUser(user);
                     newCartItem.setProduct(product);
                     newCartItem.setQuantity(0);
                     newCartItem.setPersonalizationText(personalizationText);
+                    newCartItem.setGiftCardAmount(giftCardAmount);
+                    newCartItem.setGiftCardRecipientEmail(giftCardRecipientEmail);
+                    newCartItem.setGiftCardMessage(giftCardMessage);
                     return newCartItem;
                 });
 
@@ -203,16 +226,22 @@ public class CartService {
                 continue;
             }
             CartItem cartItem = cartRepository
-                    .findByUserIdAndProductIdAndPersonalizationText(
+                    .findByUserIdAndProductIdAndPersonalizationTextAndGiftCardAmountAndGiftCardRecipientEmailAndGiftCardMessage(
                             user.getId(),
                             product.getId(),
-                            orderItem.getPersonalizationText())
+                            orderItem.getPersonalizationText(),
+                            orderItem.getGiftCardAmount(),
+                            orderItem.getGiftCardRecipientEmail(),
+                            orderItem.getGiftCardMessage())
                     .orElseGet(() -> {
                         CartItem newCartItem = new CartItem();
                         newCartItem.setUser(user);
                         newCartItem.setProduct(product);
                         newCartItem.setQuantity(0);
                         newCartItem.setPersonalizationText(orderItem.getPersonalizationText());
+                        newCartItem.setGiftCardAmount(orderItem.getGiftCardAmount());
+                        newCartItem.setGiftCardRecipientEmail(orderItem.getGiftCardRecipientEmail());
+                        newCartItem.setGiftCardMessage(orderItem.getGiftCardMessage());
                         return newCartItem;
                     });
             cartItem.setQuantity(cartItem.getQuantity() + orderItem.getQuantity());
@@ -235,7 +264,7 @@ public class CartService {
 
     private CartItemResponse toItemResponse(CartItem cartItem, Long userId) {
         BigDecimal discountPercent = discountLookupPort.findBestActiveDiscountPercent(userId, cartItem.getProduct().getId());
-        BigDecimal recommendedRetailPrice = cartItem.getProduct().getRecommendedRetailPrice();
+        BigDecimal recommendedRetailPrice = resolveUnitPrice(cartItem.getProduct(), cartItem.getGiftCardAmount());
         BigDecimal effectiveUnitPrice;
         if (discountPercent != null && discountPercent.compareTo(BigDecimal.ZERO) > 0) {
             BigDecimal multiplier = BigDecimal.ONE.subtract(discountPercent.divide(BigDecimal.valueOf(100)));
@@ -257,6 +286,9 @@ public class CartService {
                 cartItem.getProduct().getName(),
                 toVariantValues(cartItem.getProduct()),
                 cartItem.getPersonalizationText(),
+                cartItem.getGiftCardAmount(),
+                cartItem.getGiftCardRecipientEmail(),
+                cartItem.getGiftCardMessage(),
                 cartItem.getProduct().getImageUrl(),
                 effectiveUnitPrice,
                 co2EmissionKg,
@@ -294,6 +326,9 @@ public class CartService {
         if (couponCode == null || couponCode.isBlank()) {
             return null;
         }
+        if (isGiftCardCode(couponCode)) {
+            return null;
+        }
 
         Coupon coupon = couponRepository.findByCodeAndCustomerId(couponCode.trim(), userId)
                 .orElseThrow(() -> new IllegalArgumentException("Coupon code not found: " + couponCode));
@@ -307,6 +342,21 @@ public class CartService {
         return coupon;
     }
 
+    private GiftCardRedemption resolveGiftCardRedemption(String couponCode, Coupon coupon) {
+        if (couponCode == null || couponCode.isBlank() || coupon != null || !isGiftCardCode(couponCode)) {
+            return null;
+        }
+        OrderItem giftCardItem = orderItemRepository.findByGiftCardCodeIgnoreCase(couponCode.trim())
+                .orElseThrow(() -> new IllegalArgumentException("Gutscheincode nicht gefunden: " + couponCode));
+        if (giftCardItem.getGiftCardAmount() == null || giftCardItem.getGiftCardCode() == null) {
+            throw new IllegalArgumentException("Gutscheincode ist ungültig: " + couponCode);
+        }
+        if (giftCardItem.getGiftCardRedeemedAt() != null) {
+            throw new IllegalArgumentException("Gutscheincode wurde bereits eingelöst: " + couponCode);
+        }
+        return new GiftCardRedemption(giftCardItem, giftCardItem.getGiftCardAmount());
+    }
+
     private BigDecimal calculateDiscount(BigDecimal subtotal, Coupon coupon) {
         if (coupon == null || subtotal.compareTo(BigDecimal.ZERO) <= 0) {
             return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
@@ -316,25 +366,45 @@ public class CartService {
         return subtotal.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
     }
 
-    private String resolveDiscountType(Coupon coupon, VolumeDiscountResult volumeDiscount) {
+    private BigDecimal calculateGiftCardDiscount(BigDecimal subtotal, GiftCardRedemption giftCardRedemption) {
+        if (giftCardRedemption == null || subtotal.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+        return giftCardRedemption.amount().min(subtotal).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private String resolveDiscountType(Coupon coupon, GiftCardRedemption giftCardRedemption, VolumeDiscountResult volumeDiscount) {
         if (coupon != null) {
             return "COUPON";
+        }
+        if (giftCardRedemption != null) {
+            return "GIFT_CARD";
         }
         return volumeDiscount.applied() ? VolumeDiscountPolicy.DISCOUNT_TYPE : null;
     }
 
-    private String resolveDiscountLabel(Coupon coupon, VolumeDiscountResult volumeDiscount) {
+    private String resolveDiscountLabel(Coupon coupon, GiftCardRedemption giftCardRedemption, VolumeDiscountResult volumeDiscount) {
         if (coupon != null) {
             return "Gutschein " + coupon.getCode();
+        }
+        if (giftCardRedemption != null) {
+            return "Geschenkgutschein " + giftCardRedemption.item().getGiftCardCode();
         }
         return volumeDiscount.label();
     }
 
-    private BigDecimal resolveDiscountPercent(Coupon coupon, VolumeDiscountResult volumeDiscount) {
+    private BigDecimal resolveDiscountPercent(Coupon coupon, GiftCardRedemption giftCardRedemption, VolumeDiscountResult volumeDiscount) {
         if (coupon != null) {
             return coupon.getDiscountPercent();
         }
+        if (giftCardRedemption != null) {
+            return null;
+        }
         return volumeDiscount.percent();
+    }
+
+    private boolean isGiftCardCode(String couponCode) {
+        return couponCode != null && couponCode.trim().toUpperCase().startsWith("GUT-");
     }
 
     private List<String> resolveDiscountMessages(VolumeDiscountResult volumeDiscount) {
@@ -357,7 +427,56 @@ public class CartService {
     }
 
     private int getAvailableStock(Product product) {
-        return product.isPurchasable() ? Math.max(product.getStock(), 0) : 0;
+        if (!product.isPurchasable()) {
+            return 0;
+        }
+        if (product.getProductType() == ProductType.DIGITAL_GIFT_CARD) {
+            return 999999;
+        }
+        return Math.max(product.getStock(), 0);
+    }
+
+    private BigDecimal resolveUnitPrice(Product product, BigDecimal giftCardAmount) {
+        if (product.getProductType() == ProductType.DIGITAL_GIFT_CARD) {
+            return resolveGiftCardAmount(product, giftCardAmount);
+        }
+        return product.getRecommendedRetailPrice();
+    }
+
+    private BigDecimal resolveGiftCardAmount(Product product, BigDecimal requestedAmount) {
+        if (product.getProductType() != ProductType.DIGITAL_GIFT_CARD) {
+            return null;
+        }
+        if (requestedAmount == null) {
+            throw new IllegalArgumentException("Bitte wähle einen Gutscheinbetrag aus.");
+        }
+        BigDecimal normalizedAmount = requestedAmount.setScale(2, RoundingMode.HALF_UP);
+        if (!GIFT_CARD_AMOUNTS.contains(normalizedAmount)) {
+            throw new IllegalArgumentException("Der gewählte Gutscheinbetrag ist nicht verfügbar.");
+        }
+        return normalizedAmount;
+    }
+
+    private String normalizeEmail(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalizedValue = value.trim();
+        if (!normalizedValue.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
+            throw new IllegalArgumentException("Die Empfänger-E-Mail-Adresse ist ungültig.");
+        }
+        return normalizedValue;
+    }
+
+    private String normalizeGiftCardMessage(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalizedValue = value.trim();
+        if (normalizedValue.length() > 1000) {
+            throw new IllegalArgumentException("Die persönliche Nachricht darf maximal 1000 Zeichen lang sein.");
+        }
+        return normalizedValue;
     }
 
     private String normalizePersonalizationText(Product product, String personalizationText) {
@@ -392,4 +511,6 @@ public class CartService {
                 .forEach(option -> values.put(option.getAttributeName(), option.getAttributeValue()));
         return values;
     }
+
+    private record GiftCardRedemption(OrderItem item, BigDecimal amount) {}
 }
