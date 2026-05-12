@@ -71,4 +71,6 @@ public interface UserRepository extends JpaRepository<User, Long> {
                           AND u.active = true
                         """)
         long countActiveCustomers(@Param("role") UserRole role);
+
+        List<User> findByWishlistStateContaining(String shareToken);
 }

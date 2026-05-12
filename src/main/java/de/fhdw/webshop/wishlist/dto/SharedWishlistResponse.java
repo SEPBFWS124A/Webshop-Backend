@@ -1,11 +1,15 @@
 package de.fhdw.webshop.wishlist.dto;
 
-public record WishlistListDto(
+import java.util.List;
+
+public record SharedWishlistResponse(
         String id,
         String name,
         String createdAt,
         Boolean shared,
         String shareToken,
-        String sharedAt
+        String sharedAt,
+        String ownerName,
+        List<WishlistItemDto> items
 ) {
 }
