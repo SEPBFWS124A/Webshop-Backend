@@ -7,6 +7,10 @@ public record ProductAnswerResponse(
         Long authorId,
         String authorName,
         String text,
-        Instant createdAt
+        Instant createdAt,
+        long helpfulCount,
+        long notHelpfulCount,
+        long helpfulScore,
+        Boolean currentUserVote
 ) {
 }

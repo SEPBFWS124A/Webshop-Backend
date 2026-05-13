@@ -1,6 +1,9 @@
 package de.fhdw.webshop.productqa;
 
 import de.fhdw.webshop.notification.SystemNotificationService;
+import de.fhdw.webshop.helpfulvote.HelpfulVoteService;
+import de.fhdw.webshop.helpfulvote.HelpfulVoteTargetType;
+import de.fhdw.webshop.helpfulvote.dto.HelpfulVoteSummary;
 import de.fhdw.webshop.product.Product;
 import de.fhdw.webshop.product.ProductRepository;
 import de.fhdw.webshop.productqa.dto.CreateProductAnswerRequest;
@@ -24,12 +27,13 @@ public class ProductQaService {
     private final ProductRepository productRepository;
     private final ProfanityFilterService profanityFilterService;
     private final SystemNotificationService notificationService;
+    private final HelpfulVoteService helpfulVoteService;
 
     @Transactional(readOnly = true)
-    public List<ProductQuestionResponse> listQuestions(Long productId) {
+    public List<ProductQuestionResponse> listQuestions(Long productId, User currentUser) {
         return questionRepository.findByProductIdOrderByCreatedAtDesc(productId)
                 .stream()
-                .map(this::toResponse)
+                .map(question -> toResponse(question, currentUser))
                 .toList();
     }
 
@@ -49,7 +53,7 @@ public class ProductQaService {
         question.setAuthor(currentUser);
         question.setQuestionText(text);
 
-        return toResponse(questionRepository.save(question));
+        return toResponse(questionRepository.save(question), currentUser);
     }
 
     @Transactional
@@ -85,7 +89,31 @@ public class ProductQaService {
             );
         }
 
-        return toResponse(question);
+        return toResponse(question, currentUser);
+    }
+
+    @Transactional
+    public ProductAnswerResponse voteAnswer(
+            Long productId,
+            Long questionId,
+            Long answerId,
+            User currentUser,
+            boolean helpful
+    ) {
+        ProductQuestion question = questionRepository.findById(questionId)
+                .orElseThrow(() -> new EntityNotFoundException("Question not found: " + questionId));
+        if (!question.getProduct().getId().equals(productId)) {
+            throw new EntityNotFoundException("Question not found for product: " + questionId);
+        }
+
+        ProductAnswer answer = answerRepository.findById(answerId)
+                .orElseThrow(() -> new EntityNotFoundException("Answer not found: " + answerId));
+        if (!answer.getQuestion().getId().equals(questionId)) {
+            throw new EntityNotFoundException("Answer not found for question: " + answerId);
+        }
+
+        helpfulVoteService.toggleVote(HelpfulVoteTargetType.PRODUCT_QA_ANSWER, answerId, currentUser, helpful);
+        return toResponse(answer, currentUser);
     }
 
     private String normalizeText(String value) {
@@ -99,7 +127,7 @@ public class ProductQaService {
         return normalized;
     }
 
-    private ProductQuestionResponse toResponse(ProductQuestion question) {
+    private ProductQuestionResponse toResponse(ProductQuestion question, User currentUser) {
         return new ProductQuestionResponse(
                 question.getId(),
                 question.getProduct().getId(),
@@ -107,17 +135,35 @@ public class ProductQaService {
                 question.getAuthor().getUsername(),
                 question.getQuestionText(),
                 question.getCreatedAt(),
-                question.getAnswers().stream().map(this::toResponse).toList()
+                question.getAnswers().stream()
+                        .map(answer -> toResponse(answer, currentUser))
+                        .sorted((left, right) -> {
+                            int scoreCompare = Long.compare(right.helpfulScore(), left.helpfulScore());
+                            if (scoreCompare != 0) {
+                                return scoreCompare;
+                            }
+                            return left.createdAt().compareTo(right.createdAt());
+                        })
+                        .toList()
         );
     }
 
-    private ProductAnswerResponse toResponse(ProductAnswer answer) {
+    private ProductAnswerResponse toResponse(ProductAnswer answer, User currentUser) {
+        HelpfulVoteSummary votes = helpfulVoteService.summarize(
+                HelpfulVoteTargetType.PRODUCT_QA_ANSWER,
+                answer.getId(),
+                currentUser
+        );
         return new ProductAnswerResponse(
                 answer.getId(),
                 answer.getAuthor().getId(),
                 answer.getAuthor().getUsername(),
                 answer.getAnswerText(),
-                answer.getCreatedAt()
+                answer.getCreatedAt(),
+                votes.helpfulCount(),
+                votes.notHelpfulCount(),
+                votes.helpfulScore(),
+                votes.currentUserVote()
         );
     }
 }

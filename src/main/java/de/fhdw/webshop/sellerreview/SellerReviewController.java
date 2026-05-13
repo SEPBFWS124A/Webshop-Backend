@@ -1,6 +1,7 @@
 package de.fhdw.webshop.sellerreview;
 
 import de.fhdw.webshop.sellerreview.dto.CreateSellerReviewRequest;
+import de.fhdw.webshop.helpfulvote.dto.HelpfulVoteRequest;
 import de.fhdw.webshop.sellerreview.dto.SellerReviewResponse;
 import de.fhdw.webshop.user.User;
 import jakarta.validation.Valid;
@@ -41,5 +42,14 @@ public class SellerReviewController {
             @AuthenticationPrincipal User currentUser) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(sellerReviewService.createReview(orderId, currentUser, request));
+    }
+
+    @PostMapping("/api/seller-reviews/{reviewId}/vote")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<SellerReviewResponse> voteReview(
+            @PathVariable Long reviewId,
+            @Valid @RequestBody HelpfulVoteRequest request,
+            @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(sellerReviewService.voteReview(reviewId, currentUser, request.helpful()));
     }
 }
