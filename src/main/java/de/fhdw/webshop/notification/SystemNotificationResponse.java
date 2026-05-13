@@ -8,6 +8,7 @@ public record SystemNotificationResponse(
         SystemNotificationType type,
         Long productId,
         String productName,
+        Long recipientUserId,
         BigDecimal changePercent,
         long currentPeriodUnits,
         long previousPeriodUnits,
@@ -21,6 +22,7 @@ public record SystemNotificationResponse(
                 n.getType(),
                 n.getProductId(),
                 n.getProductName(),
+                n.getRecipientUser() != null ? n.getRecipientUser().getId() : null,
                 n.getChangePercent(),
                 n.getCurrentPeriodUnits(),
                 n.getPreviousPeriodUnits(),
@@ -31,6 +33,10 @@ public record SystemNotificationResponse(
     }
 
     private static String buildMessage(SystemNotification n) {
+        if (n.getCustomMessage() != null && !n.getCustomMessage().isBlank()) {
+            return n.getCustomMessage();
+        }
+
         return switch (n.getType()) {
             case SALES_DROP -> String.format(
                     "Verkaufsrückgang: \"%s\" — Vormonat: %d Stk., Aktueller Zeitraum: %d Stk. (%s%%)",
@@ -50,6 +56,10 @@ public record SystemNotificationResponse(
                     "Keine Verkäufe: \"%s\" hatte im Beobachtungszeitraum 0 Verkäufe (Vormonat: %d Stk.)",
                     n.getProductName(),
                     n.getPreviousPeriodUnits()
+            );
+            case PRODUCT_QA_ANSWER -> String.format(
+                    "Neue Antwort auf deine Frage zu \"%s\".",
+                    n.getProductName()
             );
         };
     }

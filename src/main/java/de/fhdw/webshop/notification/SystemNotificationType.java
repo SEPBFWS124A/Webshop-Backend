@@ -6,5 +6,7 @@ public enum SystemNotificationType {
     /** Verkaufsanstieg um mehr als den konfigurierten Schwellenwert. */
     SALES_INCREASE,
     /** Keine einzige Einheit verkauft im Beobachtungszeitraum. */
-    ZERO_SALES
+    ZERO_SALES,
+    /** Antwort auf eine Produktfrage eines Kunden. */
+    PRODUCT_QA_ANSWER
 }
