@@ -28,6 +28,9 @@ public class OrderItem {
     @JoinColumn(name = "product_id", nullable = false)
     private Product product;
 
+    @Column(name = "seller_name", nullable = false, length = 180)
+    private String sellerName = "Webshop";
+
     @Column(nullable = false)
     private int quantity;
 

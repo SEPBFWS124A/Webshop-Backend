@@ -43,6 +43,9 @@ public class Product {
     @Column(length = 100)
     private String category;
 
+    @Column(name = "seller_name", nullable = false, length = 180)
+    private String sellerName = "Webshop";
+
     @Enumerated(EnumType.STRING)
     @Column(name = "product_type", nullable = false, length = 40)
     private ProductType productType = ProductType.STANDARD;
