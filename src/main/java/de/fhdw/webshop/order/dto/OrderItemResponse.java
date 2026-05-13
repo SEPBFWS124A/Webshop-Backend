@@ -7,6 +7,7 @@ public record OrderItemResponse(
         Long orderItemId,
         Long productId,
         String productName,
+        String sellerName,
         Map<String, String> variantValues,
         String personalizationText,
         BigDecimal giftCardAmount,

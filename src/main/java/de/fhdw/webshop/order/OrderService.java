@@ -638,6 +638,7 @@ public class OrderService {
             OrderItem orderItem = new OrderItem();
             orderItem.setOrder(order);
             orderItem.setProduct(product);
+            orderItem.setSellerName(resolveSellerName(product));
             orderItem.setQuantity(preparedItem.quantity());
             orderItem.setPersonalizationText(preparedItem.personalizationText());
             applyGiftCardDetails(orderItem, preparedItem, true);
@@ -673,6 +674,7 @@ public class OrderService {
             OrderItem orderItem = new OrderItem();
             orderItem.setOrder(order);
             orderItem.setProduct(product);
+            orderItem.setSellerName(resolveSellerName(product));
             orderItem.setQuantity(preparedItem.quantity());
             orderItem.setPersonalizationText(preparedItem.personalizationText());
             applyGiftCardDetails(orderItem, preparedItem, false);
@@ -1311,6 +1313,7 @@ public class OrderService {
                 orderItem.getId(),
                 orderItem.getProduct().getId(),
                 orderItem.getProduct().getName(),
+                resolveSellerName(orderItem),
                 toVariantValues(orderItem.getProduct()),
                 orderItem.getPersonalizationText(),
                 orderItem.getGiftCardAmount(),
@@ -1322,6 +1325,16 @@ public class OrderService {
                 orderItem.getPriceAtOrderTime(),
                 orderItem.getPriceAtOrderTime()
                         .multiply(BigDecimal.valueOf(orderItem.getQuantity())));
+    }
+
+    private String resolveSellerName(OrderItem orderItem) {
+        String sellerName = trimToNull(orderItem.getSellerName());
+        return sellerName != null ? sellerName : resolveSellerName(orderItem.getProduct());
+    }
+
+    private String resolveSellerName(Product product) {
+        String sellerName = product == null ? null : trimToNull(product.getSellerName());
+        return sellerName != null ? sellerName : "Webshop";
     }
 
     private String normalizePersonalizationText(Product product, String personalizationText) {

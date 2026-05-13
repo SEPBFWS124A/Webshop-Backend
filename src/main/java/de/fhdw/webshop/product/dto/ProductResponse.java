@@ -17,6 +17,7 @@ public record ProductResponse(
         BigDecimal co2EmissionKg,
         ProductEcoScore ecoScore,
         String category,
+        String sellerName,
         ProductType productType,
         int stock,
         String sku,

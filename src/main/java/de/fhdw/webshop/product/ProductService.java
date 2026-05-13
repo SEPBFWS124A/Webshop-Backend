@@ -204,6 +204,7 @@ public class ProductService {
                 product.getCo2EmissionKg(),
                 product.getEcoScore(),
                 product.getCategory(),
+                product.getSellerName(),
                 product.getProductType(),
                 product.getStock(),
                 product.getSku(),
