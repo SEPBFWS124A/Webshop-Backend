@@ -1,5 +1,6 @@
 package de.fhdw.webshop.notification;
 
+import de.fhdw.webshop.user.User;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -37,6 +38,13 @@ public class SystemNotification {
 
     @Column(name = "previous_period_units", nullable = false)
     private long previousPeriodUnits;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "recipient_user_id")
+    private User recipientUser;
+
+    @Column(name = "custom_message", columnDefinition = "TEXT")
+    private String customMessage;
 
     @Column(name = "is_read", nullable = false)
     private boolean read = false;

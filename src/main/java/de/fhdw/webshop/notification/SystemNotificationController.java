@@ -1,8 +1,10 @@
 package de.fhdw.webshop.notification;
 
+import de.fhdw.webshop.user.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -21,30 +23,31 @@ public class SystemNotificationController {
 
     /** Alle Benachrichtigungen (neueste zuerst). */
     @GetMapping
-    @PreAuthorize("hasAnyRole('SALES_EMPLOYEE', 'ADMIN')")
-    public ResponseEntity<List<SystemNotificationResponse>> getAll() {
-        return ResponseEntity.ok(service.getAll());
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'SALES_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<List<SystemNotificationResponse>> getAll(@AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(service.getAll(currentUser));
     }
 
     /** Anzahl ungelesener Benachrichtigungen (für Glocken-Badge). */
     @GetMapping("/unread-count")
-    @PreAuthorize("hasAnyRole('SALES_EMPLOYEE', 'ADMIN')")
-    public ResponseEntity<Map<String, Long>> getUnreadCount() {
-        return ResponseEntity.ok(Map.of("count", service.getUnreadCount()));
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'SALES_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<Map<String, Long>> getUnreadCount(@AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(Map.of("count", service.getUnreadCount(currentUser)));
     }
 
     /** Einzelne Benachrichtigung als gelesen markieren. */
     @PutMapping("/{id}/read")
-    @PreAuthorize("hasAnyRole('SALES_EMPLOYEE', 'ADMIN')")
-    public ResponseEntity<SystemNotificationResponse> markAsRead(@PathVariable Long id) {
-        return ResponseEntity.ok(service.markAsRead(id));
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'SALES_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<SystemNotificationResponse> markAsRead(@PathVariable Long id,
+                                                                 @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(service.markAsRead(id, currentUser));
     }
 
     /** Alle Benachrichtigungen als gelesen markieren. */
     @PutMapping("/read-all")
-    @PreAuthorize("hasAnyRole('SALES_EMPLOYEE', 'ADMIN')")
-    public ResponseEntity<Void> markAllAsRead() {
-        service.markAllAsRead();
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'SALES_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<Void> markAllAsRead(@AuthenticationPrincipal User currentUser) {
+        service.markAllAsRead(currentUser);
         return ResponseEntity.noContent().build();
     }
 }
