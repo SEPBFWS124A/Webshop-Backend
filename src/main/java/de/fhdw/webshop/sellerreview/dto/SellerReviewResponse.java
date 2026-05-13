@@ -9,6 +9,10 @@ public record SellerReviewResponse(
         String sellerName,
         int rating,
         String comment,
-        Instant createdAt
+        Instant createdAt,
+        long helpfulCount,
+        long notHelpfulCount,
+        long helpfulScore,
+        Boolean currentUserVote
 ) {
 }

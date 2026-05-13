@@ -2,6 +2,8 @@ package de.fhdw.webshop.productqa;
 
 import de.fhdw.webshop.productqa.dto.CreateProductAnswerRequest;
 import de.fhdw.webshop.productqa.dto.CreateProductQuestionRequest;
+import de.fhdw.webshop.helpfulvote.dto.HelpfulVoteRequest;
+import de.fhdw.webshop.productqa.dto.ProductAnswerResponse;
 import de.fhdw.webshop.productqa.dto.ProductQuestionResponse;
 import de.fhdw.webshop.user.User;
 import jakarta.validation.Valid;
@@ -22,8 +24,9 @@ public class ProductQaController {
     private final ProductQaService productQaService;
 
     @GetMapping
-    public ResponseEntity<List<ProductQuestionResponse>> listQuestions(@PathVariable Long productId) {
-        return ResponseEntity.ok(productQaService.listQuestions(productId));
+    public ResponseEntity<List<ProductQuestionResponse>> listQuestions(@PathVariable Long productId,
+                                                                       @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(productQaService.listQuestions(productId, currentUser));
     }
 
     @PostMapping
@@ -47,5 +50,23 @@ public class ProductQaController {
     ) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(productQaService.createAnswer(productId, questionId, currentUser, request));
+    }
+
+    @PostMapping("/{questionId}/answers/{answerId}/vote")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ProductAnswerResponse> voteAnswer(
+            @PathVariable Long productId,
+            @PathVariable Long questionId,
+            @PathVariable Long answerId,
+            @Valid @RequestBody HelpfulVoteRequest request,
+            @AuthenticationPrincipal User currentUser
+    ) {
+        return ResponseEntity.ok(productQaService.voteAnswer(
+                productId,
+                questionId,
+                answerId,
+                currentUser,
+                request.helpful()
+        ));
     }
 }

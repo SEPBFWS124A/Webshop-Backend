@@ -2,6 +2,9 @@ package de.fhdw.webshop.sellerreview;
 
 import de.fhdw.webshop.admin.AuditInitiator;
 import de.fhdw.webshop.admin.AuditLogService;
+import de.fhdw.webshop.helpfulvote.HelpfulVoteService;
+import de.fhdw.webshop.helpfulvote.HelpfulVoteTargetType;
+import de.fhdw.webshop.helpfulvote.dto.HelpfulVoteSummary;
 import de.fhdw.webshop.order.Order;
 import de.fhdw.webshop.order.OrderItem;
 import de.fhdw.webshop.order.OrderRepository;
@@ -27,12 +30,20 @@ public class SellerReviewService {
     private final SellerReviewRepository sellerReviewRepository;
     private final OrderRepository orderRepository;
     private final AuditLogService auditLogService;
+    private final HelpfulVoteService helpfulVoteService;
 
     @Transactional(readOnly = true)
     public List<SellerReviewResponse> listMyReviews(User currentUser) {
         return sellerReviewRepository.findByCustomerIdOrderByCreatedAtDesc(currentUser.getId())
                 .stream()
-                .map(this::toResponse)
+                .map(review -> toResponse(review, currentUser))
+                .sorted((left, right) -> {
+                    int scoreCompare = Long.compare(right.helpfulScore(), left.helpfulScore());
+                    if (scoreCompare != 0) {
+                        return scoreCompare;
+                    }
+                    return right.createdAt().compareTo(left.createdAt());
+                })
                 .toList();
     }
 
@@ -40,7 +51,14 @@ public class SellerReviewService {
     public List<SellerReviewResponse> listMyReviewsForOrder(Long orderId, User currentUser) {
         return sellerReviewRepository.findByOrderIdAndCustomerIdOrderByCreatedAtDesc(orderId, currentUser.getId())
                 .stream()
-                .map(this::toResponse)
+                .map(review -> toResponse(review, currentUser))
+                .sorted((left, right) -> {
+                    int scoreCompare = Long.compare(right.helpfulScore(), left.helpfulScore());
+                    if (scoreCompare != 0) {
+                        return scoreCompare;
+                    }
+                    return right.createdAt().compareTo(left.createdAt());
+                })
                 .toList();
     }
 
@@ -76,7 +94,15 @@ public class SellerReviewService {
                 AuditInitiator.USER,
                 "Seller review created for " + canonicalSeller + " in order " + order.getOrderNumber());
 
-        return toResponse(savedReview);
+        return toResponse(savedReview, currentUser);
+    }
+
+    @Transactional
+    public SellerReviewResponse voteReview(Long reviewId, User currentUser, boolean helpful) {
+        SellerReview review = sellerReviewRepository.findById(reviewId)
+                .orElseThrow(() -> new EntityNotFoundException("Review not found: " + reviewId));
+        helpfulVoteService.toggleVote(HelpfulVoteTargetType.SELLER_REVIEW, reviewId, currentUser, helpful);
+        return toResponse(review, currentUser);
     }
 
     private Map<String, String> resolvePurchasedSellers(Order order) {
@@ -115,7 +141,12 @@ public class SellerReviewService {
         return normalized.isEmpty() ? null : normalized;
     }
 
-    private SellerReviewResponse toResponse(SellerReview review) {
+    private SellerReviewResponse toResponse(SellerReview review, User currentUser) {
+        HelpfulVoteSummary votes = helpfulVoteService.summarize(
+                HelpfulVoteTargetType.SELLER_REVIEW,
+                review.getId(),
+                currentUser
+        );
         return new SellerReviewResponse(
                 review.getId(),
                 review.getOrder().getId(),
@@ -123,7 +154,11 @@ public class SellerReviewService {
                 review.getSellerName(),
                 review.getRating(),
                 review.getComment(),
-                review.getCreatedAt()
+                review.getCreatedAt(),
+                votes.helpfulCount(),
+                votes.notHelpfulCount(),
+                votes.helpfulScore(),
+                votes.currentUserVote()
         );
     }
 }
