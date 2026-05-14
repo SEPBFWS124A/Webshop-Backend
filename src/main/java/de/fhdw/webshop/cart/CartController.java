@@ -2,6 +2,9 @@ package de.fhdw.webshop.cart;
 
 import de.fhdw.webshop.cart.dto.AddToCartRequest;
 import de.fhdw.webshop.cart.dto.CartResponse;
+import de.fhdw.webshop.cart.dto.QuickOrderConfirmRequest;
+import de.fhdw.webshop.cart.dto.QuickOrderConfirmResponse;
+import de.fhdw.webshop.cart.dto.QuickOrderPreviewResponse;
 import de.fhdw.webshop.cart.dto.UpdateCartItemQuantityRequest;
 import de.fhdw.webshop.user.User;
 import jakarta.validation.Valid;
@@ -10,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/cart")
@@ -81,5 +85,23 @@ public class CartController {
     public ResponseEntity<CartResponse> reorder(@AuthenticationPrincipal User currentUser,
                                                 @PathVariable Long orderId) {
         return ResponseEntity.ok(cartService.reorder(currentUser, orderId));
+    }
+
+    /** US #235 — B2B customers validate CSV quick orders before adding valid items to the cart. */
+    @PostMapping("/quick-order/preview")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<QuickOrderPreviewResponse> previewQuickOrder(
+            @AuthenticationPrincipal User currentUser,
+            @RequestParam("file") MultipartFile file) {
+        return ResponseEntity.ok(cartService.previewQuickOrderCsv(currentUser, file));
+    }
+
+    /** US #235 — B2B customers confirm valid CSV rows and add them to the current cart. */
+    @PostMapping("/quick-order/confirm")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<QuickOrderConfirmResponse> confirmQuickOrder(
+            @AuthenticationPrincipal User currentUser,
+            @RequestBody QuickOrderConfirmRequest request) {
+        return ResponseEntity.ok(cartService.confirmQuickOrder(currentUser, request));
     }
 }
