@@ -6,8 +6,11 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 public interface ProductRepository extends JpaRepository<Product, Long> {
+
+    Optional<Product> findFirstBySkuIgnoreCase(String sku);
 
     default List<Product> searchProducts(Boolean purchasableOnly, String category, String searchTerm) {
         return searchProducts(

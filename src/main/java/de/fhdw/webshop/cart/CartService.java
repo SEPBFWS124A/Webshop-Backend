@@ -3,6 +3,11 @@ package de.fhdw.webshop.cart;
 import de.fhdw.webshop.cart.dto.AddToCartRequest;
 import de.fhdw.webshop.cart.dto.CartItemResponse;
 import de.fhdw.webshop.cart.dto.CartResponse;
+import de.fhdw.webshop.cart.dto.QuickOrderConfirmItem;
+import de.fhdw.webshop.cart.dto.QuickOrderConfirmRequest;
+import de.fhdw.webshop.cart.dto.QuickOrderConfirmResponse;
+import de.fhdw.webshop.cart.dto.QuickOrderPreviewResponse;
+import de.fhdw.webshop.cart.dto.QuickOrderPreviewRow;
 import de.fhdw.webshop.discount.Coupon;
 import de.fhdw.webshop.discount.CouponRepository;
 import de.fhdw.webshop.discount.VolumeDiscountPolicy;
@@ -12,18 +17,24 @@ import de.fhdw.webshop.order.OrderItem;
 import de.fhdw.webshop.order.OrderItemRepository;
 import de.fhdw.webshop.order.OrderRepository;
 import de.fhdw.webshop.product.Product;
+import de.fhdw.webshop.product.ProductRepository;
 import de.fhdw.webshop.product.ProductType;
 import de.fhdw.webshop.product.ProductService;
 import de.fhdw.webshop.user.User;
+import de.fhdw.webshop.user.UserType;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Set;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -35,6 +46,7 @@ public class CartService {
 
     private final CartRepository cartRepository;
     private final ProductService productService;
+    private final ProductRepository productRepository;
     private final ProductService.DiscountLookupPort discountLookupPort;
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
@@ -43,6 +55,7 @@ public class CartService {
     private static final BigDecimal TAX_RATE      = BigDecimal.valueOf(0.19);
     private static final BigDecimal SHIPPING_COST = new BigDecimal("4.99");
     private static final BigDecimal FREE_SHIPPING_THRESHOLD = new BigDecimal("50.00");
+    private static final long QUICK_ORDER_MAX_FILE_SIZE_BYTES = 1024 * 1024;
     private static final Set<BigDecimal> GIFT_CARD_AMOUNTS = Set.of(
             new BigDecimal("15.00"),
             new BigDecimal("25.00"),
@@ -250,6 +263,65 @@ public class CartService {
         return getCart(user.getId());
     }
 
+    @Transactional(readOnly = true)
+    public QuickOrderPreviewResponse previewQuickOrderCsv(User user, MultipartFile file) {
+        requireBusinessCustomer(user);
+        validateQuickOrderFile(file);
+
+        try {
+            return previewQuickOrderItems(user, parseQuickOrderCsv(file));
+        } catch (IOException exception) {
+            throw new IllegalArgumentException("Die CSV-Datei konnte nicht gelesen werden.");
+        }
+    }
+
+    @Transactional
+    public QuickOrderConfirmResponse confirmQuickOrder(User user, QuickOrderConfirmRequest request) {
+        requireBusinessCustomer(user);
+        List<QuickOrderConfirmItem> requestedItems = request == null || request.items() == null
+                ? List.of()
+                : request.items();
+        if (requestedItems.isEmpty()) {
+            throw new IllegalArgumentException("Bitte wähle mindestens eine gültige CSV-Zeile aus.");
+        }
+
+        QuickOrderPreviewResponse preview = previewQuickOrderItems(user, requestedItems);
+        List<QuickOrderPreviewRow> skippedRows = preview.rows().stream()
+                .filter(row -> !row.valid())
+                .toList();
+
+        int addedLines = 0;
+        int addedQuantity = 0;
+        for (QuickOrderPreviewRow row : preview.rows()) {
+            if (!row.valid() || row.productId() == null || row.requestedQuantity() == null) {
+                continue;
+            }
+
+            Product product = productService.loadProduct(row.productId());
+            CartItem cartItem = cartRepository
+                    .findByUserIdAndProductIdAndPersonalizationTextAndGiftCardAmountAndGiftCardRecipientEmailAndGiftCardMessage(
+                            user.getId(),
+                            product.getId(),
+                            null,
+                            null,
+                            null,
+                            null)
+                    .orElseGet(() -> {
+                        CartItem newCartItem = new CartItem();
+                        newCartItem.setUser(user);
+                        newCartItem.setProduct(product);
+                        newCartItem.setQuantity(0);
+                        return newCartItem;
+                    });
+            cartItem.setQuantity(cartItem.getQuantity() + row.requestedQuantity());
+            cartRepository.save(cartItem);
+            addedLines++;
+            addedQuantity += row.requestedQuantity();
+        }
+
+        return new QuickOrderConfirmResponse(getCart(user.getId()), addedLines, addedQuantity, skippedRows);
+    }
+
     /** Called by OrderService after checkout to clear the cart. */
     @Transactional
     public void clearCartSilently(Long userId) {
@@ -434,6 +506,191 @@ public class CartService {
             return 999999;
         }
         return Math.max(product.getStock(), 0);
+    }
+
+    private void requireBusinessCustomer(User user) {
+        if (user == null || user.getUserType() != UserType.BUSINESS) {
+            throw new IllegalArgumentException("Die Schnellbestellung ist nur für B2B-Kunden verfügbar.");
+        }
+    }
+
+    private void validateQuickOrderFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("Bitte lade eine CSV-Datei hoch.");
+        }
+        if (file.getSize() > QUICK_ORDER_MAX_FILE_SIZE_BYTES) {
+            throw new IllegalArgumentException("Die CSV-Datei darf maximal 1 MB groß sein.");
+        }
+
+        String filename = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().toLowerCase();
+        if (!filename.endsWith(".csv")) {
+            throw new IllegalArgumentException("Bitte lade eine Datei im CSV-Format hoch.");
+        }
+    }
+
+    private List<QuickOrderConfirmItem> parseQuickOrderCsv(MultipartFile file) throws IOException {
+        String content = new String(file.getBytes(), StandardCharsets.UTF_8);
+        String[] lines = content.replace("\r\n", "\n").replace('\r', '\n').split("\n");
+        if (lines.length == 0 || lines[0].isBlank()) {
+            throw new IllegalArgumentException("Die CSV-Datei enthält keine Kopfzeile.");
+        }
+
+        String header = stripBom(lines[0]);
+        String delimiter = header.chars().filter(character -> character == ';').count()
+                >= header.chars().filter(character -> character == ',').count()
+                ? ";"
+                : ",";
+        String[] columns = splitCsvLine(header, delimiter);
+        int articleIndex = findColumnIndex(columns, "artikelnummer", "sku");
+        int quantityIndex = findColumnIndex(columns, "menge", "quantity");
+        if (articleIndex < 0 || quantityIndex < 0) {
+            throw new IllegalArgumentException("Die CSV-Datei braucht die Spalten Artikelnummer und Menge.");
+        }
+
+        List<QuickOrderConfirmItem> items = new ArrayList<>();
+        for (int index = 1; index < lines.length; index++) {
+            String line = lines[index];
+            if (line == null || line.isBlank()) {
+                continue;
+            }
+            String[] values = splitCsvLine(line, delimiter);
+            String articleNumber = articleIndex < values.length ? cleanCsvValue(values[articleIndex]) : "";
+            String quantity = quantityIndex < values.length ? cleanCsvValue(values[quantityIndex]) : "";
+            items.add(new QuickOrderConfirmItem(index + 1, articleNumber, parseIntegerOrNull(quantity)));
+        }
+        return items;
+    }
+
+    private QuickOrderPreviewResponse previewQuickOrderItems(User user, List<QuickOrderConfirmItem> requestedItems) {
+        Map<Long, Integer> quantityByProductId = new HashMap<>();
+        cartRepository.findByUserId(user.getId()).forEach(item ->
+                quantityByProductId.merge(item.getProduct().getId(), item.getQuantity(), Integer::sum));
+
+        List<QuickOrderPreviewRow> rows = new ArrayList<>();
+        int totalRequestedQuantity = 0;
+        for (QuickOrderConfirmItem item : requestedItems) {
+            String articleNumber = item.articleNumber() == null ? "" : item.articleNumber().trim();
+            Integer requestedQuantity = item.quantity();
+            List<String> errors = new ArrayList<>();
+            Product product = null;
+            Integer availableStock = null;
+
+            if (articleNumber.isBlank()) {
+                errors.add("Artikelnummer fehlt.");
+            } else {
+                product = productRepository.findFirstBySkuIgnoreCase(articleNumber)
+                        .orElse(null);
+                if (product == null) {
+                    errors.add("Artikelnummer wurde nicht gefunden.");
+                }
+            }
+
+            if (requestedQuantity == null || requestedQuantity <= 0) {
+                errors.add("Menge muss größer als 0 sein.");
+            } else {
+                totalRequestedQuantity += requestedQuantity;
+            }
+
+            if (product != null) {
+                availableStock = getAvailableStock(product);
+                int quantityAlreadyPlanned = quantityByProductId.getOrDefault(product.getId(), 0);
+                int totalQuantityAfterImport = quantityAlreadyPlanned + Math.max(requestedQuantity == null ? 0 : requestedQuantity, 0);
+
+                if (!product.isPurchasable() || availableStock <= 0) {
+                    errors.add("Artikel ist aktuell nicht bestellbar.");
+                } else if (product.getProductType() == ProductType.DIGITAL_GIFT_CARD) {
+                    errors.add("Digitale Gutscheine können nicht per CSV-Schnellbestellung importiert werden.");
+                } else if (requestedQuantity != null && requestedQuantity > 0 && totalQuantityAfterImport > availableStock) {
+                    errors.add("Bestand reicht nicht aus. Verfügbar: " + availableStock
+                            + ", bereits im Warenkorb/Import: " + quantityAlreadyPlanned + ".");
+                }
+
+                if (requestedQuantity != null && requestedQuantity > 0 && errors.isEmpty()) {
+                    quantityByProductId.put(product.getId(), totalQuantityAfterImport);
+                }
+            }
+
+            rows.add(new QuickOrderPreviewRow(
+                    item.lineNumber() == null ? 0 : item.lineNumber(),
+                    articleNumber,
+                    requestedQuantity,
+                    product == null ? null : product.getId(),
+                    product == null ? null : product.getName(),
+                    availableStock,
+                    errors.isEmpty(),
+                    errors
+            ));
+        }
+
+        int validRows = (int) rows.stream().filter(QuickOrderPreviewRow::valid).count();
+        return new QuickOrderPreviewResponse(rows, validRows, rows.size() - validRows, totalRequestedQuantity);
+    }
+
+    private int findColumnIndex(String[] columns, String... acceptedNames) {
+        for (int index = 0; index < columns.length; index++) {
+            String normalizedColumn = normalizeColumnName(columns[index]);
+            for (String acceptedName : acceptedNames) {
+                if (normalizedColumn.equals(acceptedName)) {
+                    return index;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private String normalizeColumnName(String value) {
+        return cleanCsvValue(value)
+                .toLowerCase()
+                .replace("ä", "ae")
+                .replace("ö", "oe")
+                .replace("ü", "ue")
+                .replaceAll("[^a-z0-9]", "");
+    }
+
+    private String[] splitCsvLine(String line, String delimiter) {
+        String normalizedLine = cleanOuterQuotes(stripBom(line == null ? "" : line.trim()));
+        return normalizedLine.split(java.util.regex.Pattern.quote(delimiter), -1);
+    }
+
+    private String stripBom(String value) {
+        return value != null && value.startsWith("\uFEFF") ? value.substring(1) : value;
+    }
+
+    private String cleanCsvValue(String value) {
+        if (value == null) {
+            return "";
+        }
+        String trimmedValue = stripBom(value).trim();
+        trimmedValue = cleanOuterQuotes(trimmedValue);
+        if (trimmedValue.startsWith("\"")) {
+            trimmedValue = trimmedValue.substring(1).trim();
+        }
+        if (trimmedValue.endsWith("\"")) {
+            trimmedValue = trimmedValue.substring(0, trimmedValue.length() - 1).trim();
+        }
+        return trimmedValue.replace("\"\"", "\"").trim();
+    }
+
+    private String cleanOuterQuotes(String value) {
+        if (value == null) {
+            return "";
+        }
+        String trimmedValue = value.trim();
+        if (trimmedValue.length() >= 2 && trimmedValue.startsWith("\"") && trimmedValue.endsWith("\"")) {
+            return trimmedValue.substring(1, trimmedValue.length() - 1).replace("\"\"", "\"").trim();
+        }
+        return trimmedValue;
+    }
+
+    private Integer parseIntegerOrNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException exception) {
+            return null;
+        }
     }
 
     private BigDecimal resolveUnitPrice(Product product, BigDecimal giftCardAmount) {
