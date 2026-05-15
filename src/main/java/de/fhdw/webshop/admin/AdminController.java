@@ -23,7 +23,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
-
+import java.util.EnumSet;
 import java.util.Set;
 
 import java.util.List;
@@ -47,7 +47,8 @@ public class AdminController {
     @GetMapping("/users")
     public ResponseEntity<List<UserProfileResponse>> listAllUsers(
             @RequestParam(required = false) String search,
-            @RequestParam(defaultValue = "false") boolean activeOnly) {
+            @RequestParam(required = false) AdminUserFilterType userType,
+            @RequestParam(defaultValue = "true") boolean activeOnly) {
         String searchTerm = search == null ? "" : search.trim();
         Long searchId = parseIdSearch(searchTerm);
         List<User> matchingUsers = searchId == null
@@ -58,12 +59,30 @@ public class AdminController {
                         .toList();
 
         List<UserProfileResponse> users = matchingUsers.stream()
-                .map(user -> new UserProfileResponse(
-                        user.getId(), user.getUsername(), user.getEmail(),
-                        user.getRoles(), user.getUserType(), user.getCustomerNumber(),
-                        user.isActive(), user.getAgbAcceptedAt()))
+                .filter(user -> matchesRequestedUserType(user, userType))
+                .map(this::toProfileResponse)
                 .toList();
         return ResponseEntity.ok(users);
+    }
+
+    private boolean matchesRequestedUserType(User user, AdminUserFilterType userType) {
+        if (userType == null) {
+            return true;
+        }
+
+        return switch (userType) {
+            case INTERNAL -> user.getRoles().stream().anyMatch(this::isInternalRole);
+            case CUSTOMER -> user.hasRole(UserRole.CUSTOMER);
+        };
+    }
+
+    private boolean isInternalRole(UserRole role) {
+        return EnumSet.of(
+                UserRole.EMPLOYEE,
+                UserRole.SALES_EMPLOYEE,
+                UserRole.WAREHOUSE_EMPLOYEE,
+                UserRole.ADMIN
+        ).contains(role);
     }
 
     private Long parseIdSearch(String searchTerm) {
@@ -98,11 +117,7 @@ public class AdminController {
         newUser.setUserType(request.userType());
         newUser.getRoles().add(effectiveRole);
 
-        if (effectiveRole == UserRole.CUSTOMER) {
-            Long nextSequenceValue = jdbcTemplate.queryForObject(
-                    "SELECT nextval('customer_number_sequence')", Long.class);
-            newUser.setCustomerNumber(String.valueOf(nextSequenceValue));
-        }
+        synchronizeUserBusinessIdentifiers(newUser, effectiveRole);
 
         User savedUser = userRepository.save(newUser);
         auditLogService.record(adminUser, "CREATE_USER", "User", savedUser.getId(),
@@ -156,13 +171,7 @@ public class AdminController {
         targetUser.getRoles().clear();
         targetUser.getRoles().addAll(newRoles);
 
-        if (effectiveRole == UserRole.CUSTOMER && targetUser.getCustomerNumber() == null) {
-            Long nextSequenceValue = jdbcTemplate.queryForObject(
-                    "SELECT nextval('customer_number_sequence')", Long.class);
-            targetUser.setCustomerNumber(String.valueOf(nextSequenceValue));
-        } else if (effectiveRole != UserRole.CUSTOMER) {
-            targetUser.setCustomerNumber(null);
-        }
+        synchronizeUserBusinessIdentifiers(targetUser, effectiveRole);
 
         userRepository.save(targetUser);
 
@@ -188,10 +197,42 @@ public class AdminController {
                 user.getUsername(),
                 user.getEmail(),
                 user.getRoles(),
+                user.isActive(),
+                user.getEmployeeNumber(),
                 user.getUserType(),
                 user.getCustomerNumber(),
-                user.isActive(),
                 user.getAgbAcceptedAt());
+    }
+
+    private void synchronizeUserBusinessIdentifiers(User user, UserRole effectiveRole) {
+        if (effectiveRole == UserRole.CUSTOMER) {
+            if (user.getCustomerNumber() == null) {
+                user.setCustomerNumber(nextCustomerNumber());
+            }
+            user.setEmployeeNumber(null);
+            return;
+        }
+
+        user.setCustomerNumber(null);
+        if (user.getEmployeeNumber() == null) {
+            user.setEmployeeNumber(nextEmployeeNumber());
+        }
+    }
+
+    private String nextCustomerNumber() {
+        Long nextSequenceValue = jdbcTemplate.queryForObject(
+                "SELECT nextval('customer_number_sequence')", Long.class);
+        return String.valueOf(nextSequenceValue);
+    }
+
+    private String nextEmployeeNumber() {
+        Long nextSequenceValue = jdbcTemplate.queryForObject(
+                "SELECT nextval('employee_number_sequence')", Long.class);
+        return formatEmployeeNumber(nextSequenceValue);
+    }
+
+    private String formatEmployeeNumber(long sequenceValue) {
+        return "MA-" + String.format("%05d", sequenceValue);
     }
 
     @PatchMapping("/users/{id}/deactivate")

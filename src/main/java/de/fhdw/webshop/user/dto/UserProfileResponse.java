@@ -11,8 +11,9 @@ public record UserProfileResponse(
         String username,
         String email,
         Set<UserRole> roles,
+        boolean active,
+        String employeeNumber,
         UserType userType,
         String customerNumber,
-        boolean active,
         Instant agbAcceptedAt
 ) {}
