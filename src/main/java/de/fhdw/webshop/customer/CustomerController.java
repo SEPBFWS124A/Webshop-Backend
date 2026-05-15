@@ -1,8 +1,11 @@
 package de.fhdw.webshop.customer;
 
 import de.fhdw.webshop.cart.CartService;
+import de.fhdw.webshop.cart.audit.CartChangeLogService;
+import de.fhdw.webshop.cart.audit.dto.CartChangeLogResponse;
 import de.fhdw.webshop.cart.dto.AddToCartRequest;
 import de.fhdw.webshop.cart.dto.CartResponse;
+import de.fhdw.webshop.cart.dto.UpdateCartItemQuantityRequest;
 import de.fhdw.webshop.discount.DiscountService;
 import de.fhdw.webshop.discount.dto.CouponResponse;
 import de.fhdw.webshop.discount.dto.CreateCouponRequest;
@@ -38,6 +41,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -51,6 +55,7 @@ public class CustomerController {
     private final UserRepository userRepository;
     private final UserService userService;
     private final CartService cartService;
+    private final CartChangeLogService cartChangeLogService;
     private final OrderService orderService;
     private final DiscountService discountService;
     private final BusinessInfoRepository businessInfoRepository;
@@ -125,9 +130,26 @@ public class CustomerController {
     @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
     public ResponseEntity<CartResponse> addItemToCustomerCart(
             @PathVariable Long id,
-            @Valid @RequestBody AddToCartRequest addToCartRequest) {
+            @Valid @RequestBody AddToCartRequest addToCartRequest,
+            @AuthenticationPrincipal User currentUser) {
         User customer = userService.loadById(id);
-        return ResponseEntity.ok(cartService.addItem(customer, addToCartRequest));
+        return ResponseEntity.ok(cartService.addItemForCustomerByEmployee(customer, addToCartRequest, currentUser));
+    }
+
+    /** US #253 - Update a customer's cart quantity on their behalf and log the employee action. */
+    @PutMapping("/{id}/cart/items/{productId}")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<CartResponse> updateItemQuantityInCustomerCart(
+            @PathVariable Long id,
+            @PathVariable Long productId,
+            @Valid @RequestBody UpdateCartItemQuantityRequest request,
+            @AuthenticationPrincipal User currentUser) {
+        User customer = userService.loadById(id);
+        return ResponseEntity.ok(cartService.updateItemQuantityForCustomerByEmployee(
+                customer,
+                productId,
+                request.quantity(),
+                currentUser));
     }
 
     /** US #22 - Remove an item from a customer's cart on their behalf. */
@@ -135,9 +157,17 @@ public class CustomerController {
     @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
     public ResponseEntity<CartResponse> removeItemFromCustomerCart(
             @PathVariable Long id,
-            @PathVariable Long productId) {
+            @PathVariable Long productId,
+            @AuthenticationPrincipal User currentUser) {
         User customer = userService.loadById(id);
-        return ResponseEntity.ok(cartService.removeItem(customer, productId));
+        return ResponseEntity.ok(cartService.removeItemForCustomerByEmployee(customer, productId, currentUser));
+    }
+
+    /** US #253 - Chronological cart-change timeline for customer cockpit and audit follow-up. */
+    @GetMapping("/{id}/cart-audit")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<List<CartChangeLogResponse>> getCustomerCartAudit(@PathVariable Long id) {
+        return ResponseEntity.ok(cartChangeLogService.listForCustomer(id));
     }
 
     /** US #27 - View a customer's order history. */
@@ -279,6 +309,7 @@ public class CustomerController {
 
         List<DiscountResponse> discounts = canViewSalesData ? allDiscounts : List.of();
         List<CouponResponse> coupons = canViewSalesData ? allCoupons : List.of();
+        List<CartChangeLogResponse> cartChangeTimeline = cartChangeLogService.listForCustomer(id);
 
         Map<String, Object> businessInfo = canViewSalesData
                 ? businessInfoRepository.findByUserId(id).map(this::toBusinessInfoMap).orElse(null)
@@ -309,7 +340,8 @@ public class CustomerController {
                 canViewSalesData,
                 canManageSalesActions,
                 alerts,
-                behaviorSummary));
+                behaviorSummary,
+                cartChangeTimeline));
     }
 
     private Map<String, Object> toBusinessInfoMap(BusinessInfo businessInfo) {

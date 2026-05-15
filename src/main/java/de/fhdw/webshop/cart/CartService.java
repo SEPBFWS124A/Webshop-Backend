@@ -8,6 +8,8 @@ import de.fhdw.webshop.cart.dto.QuickOrderConfirmRequest;
 import de.fhdw.webshop.cart.dto.QuickOrderConfirmResponse;
 import de.fhdw.webshop.cart.dto.QuickOrderPreviewResponse;
 import de.fhdw.webshop.cart.dto.QuickOrderPreviewRow;
+import de.fhdw.webshop.cart.audit.CartChangeAction;
+import de.fhdw.webshop.cart.audit.CartChangeLogService;
 import de.fhdw.webshop.discount.Coupon;
 import de.fhdw.webshop.discount.CouponRepository;
 import de.fhdw.webshop.discount.VolumeDiscountService;
@@ -54,6 +56,7 @@ public class CartService {
     private final CouponRepository couponRepository;
     private final VolumeDiscountService volumeDiscountService;
     private final WishlistService wishlistService;
+    private final CartChangeLogService cartChangeLogService;
 
     private static final BigDecimal TAX_RATE      = BigDecimal.valueOf(0.19);
     private static final BigDecimal SHIPPING_COST = new BigDecimal("4.99");
@@ -198,6 +201,31 @@ public class CartService {
         return getCart(user.getId());
     }
 
+    /** US #253 - Employee changes to customer carts are recorded in an immutable audit trail. */
+    @Transactional
+    public CartResponse addItemForCustomerByEmployee(User customer, AddToCartRequest addToCartRequest, User employee) {
+        Product product = productService.loadProduct(addToCartRequest.productId());
+        int previousQuantity = cartRepository.findByUserIdAndProductId(customer.getId(), product.getId())
+                .map(CartItem::getQuantity)
+                .orElse(0);
+
+        CartResponse response = addItem(customer, addToCartRequest);
+        int resultingQuantity = previousQuantity + addToCartRequest.quantity();
+        Long cartItemId = cartRepository.findByUserIdAndProductId(customer.getId(), product.getId())
+                .map(CartItem::getId)
+                .orElse(null);
+
+        cartChangeLogService.recordEmployeeCartChange(
+                employee,
+                customer,
+                product,
+                cartItemId,
+                previousQuantity == 0 ? CartChangeAction.ADD : CartChangeAction.INCREASE,
+                addToCartRequest.quantity(),
+                resultingQuantity);
+        return response;
+    }
+
     /** US #40 — Remove a specific product from the cart. */
     @Transactional
     public CartResponse removeItem(User user, Long productId) {
@@ -205,6 +233,27 @@ public class CartService {
                 .orElseThrow(() -> new EntityNotFoundException("Item not in cart: productId=" + productId));
         cartRepository.deleteByUserIdAndProductId(user.getId(), productId);
         return getCart(user.getId());
+    }
+
+    /** US #253 - Removing an item from a customer cart by an employee is recorded as well. */
+    @Transactional
+    public CartResponse removeItemForCustomerByEmployee(User customer, Long productId, User employee) {
+        CartItem cartItem = cartRepository.findByUserIdAndProductId(customer.getId(), productId)
+                .orElseThrow(() -> new EntityNotFoundException("Item not in cart: productId=" + productId));
+        Product product = cartItem.getProduct();
+        int previousQuantity = cartItem.getQuantity();
+        Long cartItemId = cartItem.getId();
+
+        CartResponse response = removeItem(customer, productId);
+        cartChangeLogService.recordEmployeeCartChange(
+                employee,
+                customer,
+                product,
+                cartItemId,
+                CartChangeAction.REMOVE,
+                -previousQuantity,
+                0);
+        return response;
     }
 
     @Transactional
@@ -227,6 +276,32 @@ public class CartService {
         cartItem.setQuantity(quantity);
         cartRepository.save(cartItem);
         return getCart(user.getId());
+    }
+
+    /** US #253 - Quantity changes by employees are recorded with exact delta and resulting quantity. */
+    @Transactional
+    public CartResponse updateItemQuantityForCustomerByEmployee(User customer, Long productId, int quantity, User employee) {
+        if (quantity <= 0) {
+            return removeItemForCustomerByEmployee(customer, productId, employee);
+        }
+
+        CartItem cartItem = cartRepository.findByUserIdAndProductId(customer.getId(), productId)
+                .orElseThrow(() -> new EntityNotFoundException("Item not in cart: productId=" + productId));
+        int previousQuantity = cartItem.getQuantity();
+
+        CartResponse response = updateItemQuantity(customer, productId, quantity);
+        int quantityDelta = quantity - previousQuantity;
+        if (quantityDelta != 0) {
+            cartChangeLogService.recordEmployeeCartChange(
+                    employee,
+                    customer,
+                    cartItem.getProduct(),
+                    cartItem.getId(),
+                    quantityDelta > 0 ? CartChangeAction.INCREASE : CartChangeAction.DECREASE,
+                    quantityDelta,
+                    quantity);
+        }
+        return response;
     }
 
     @Transactional
