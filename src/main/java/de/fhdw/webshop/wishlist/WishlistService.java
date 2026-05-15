@@ -2,6 +2,7 @@ package de.fhdw.webshop.wishlist;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import de.fhdw.webshop.order.OrderItem;
 import de.fhdw.webshop.user.User;
 import de.fhdw.webshop.user.UserRepository;
 import de.fhdw.webshop.wishlist.dto.SharedWishlistResponse;
@@ -127,6 +128,49 @@ public class WishlistService {
                 ));
     }
 
+    public void validateGiftPurchase(String shareToken, String listId, Long productId, int quantity) {
+        if (!hasGiftReference(shareToken, listId)) {
+            return;
+        }
+        if (productId == null || quantity <= 0) {
+            throw new IllegalArgumentException("Der Geschenkartikel ist ungueltig.");
+        }
+
+        SharedGiftTarget target = findSharedGiftTarget(shareToken, listId, productId);
+        int remainingQuantity = remainingGiftQuantity(target.item());
+        if (quantity > remainingQuantity) {
+            throw new IllegalArgumentException(
+                    target.item().name() + " wurde bereits ausreichend aus dieser geteilten Liste gekauft."
+            );
+        }
+    }
+
+    @Transactional
+    public void recordGiftPurchases(List<OrderItem> orderItems) {
+        if (orderItems == null || orderItems.isEmpty()) {
+            return;
+        }
+
+        Map<GiftPurchaseKey, Integer> purchasedQuantities = new LinkedHashMap<>();
+        for (OrderItem orderItem : orderItems) {
+            if (orderItem == null || orderItem.getProduct() == null) {
+                continue;
+            }
+            if (!hasGiftReference(orderItem.getSharedWishlistToken(), orderItem.getSharedWishlistListId())) {
+                continue;
+            }
+
+            GiftPurchaseKey key = new GiftPurchaseKey(
+                    orderItem.getSharedWishlistToken().trim(),
+                    orderItem.getSharedWishlistListId().trim(),
+                    orderItem.getProduct().getId()
+            );
+            purchasedQuantities.merge(key, Math.max(0, orderItem.getQuantity()), Integer::sum);
+        }
+
+        purchasedQuantities.forEach(this::recordGiftPurchase);
+    }
+
     private WishlistStateDto createDefaultWishlistState() {
         return new WishlistStateDto(
                 List.of(new WishlistListDto(DEFAULT_WISHLIST_ID, DEFAULT_WISHLIST_NAME, Instant.now().toString(), false, null, null)),
@@ -185,7 +229,9 @@ public class WishlistService {
                     item.stock(),
                     item.inventory(),
                     normalizeText(item.savedAt(), Instant.now().toString()),
-                    normalizeText(item.note(), "")
+                    normalizeText(item.note(), ""),
+                    normalizeDesiredQuantity(item.desiredQuantity()),
+                    normalizePurchasedQuantity(item.purchasedQuantity(), normalizeDesiredQuantity(item.desiredQuantity()))
             ));
         }
 
@@ -198,6 +244,100 @@ public class WishlistService {
             return fallback;
         }
         return value.trim();
+    }
+
+    private Integer normalizeDesiredQuantity(Integer value) {
+        if (value == null || value < 1) {
+            return 1;
+        }
+        return value;
+    }
+
+    private Integer normalizePurchasedQuantity(Integer value, Integer desiredQuantity) {
+        int normalizedValue = value == null ? 0 : Math.max(0, value);
+        return Math.min(normalizedValue, normalizeDesiredQuantity(desiredQuantity));
+    }
+
+    private int remainingGiftQuantity(WishlistItemDto item) {
+        int desiredQuantity = normalizeDesiredQuantity(item.desiredQuantity());
+        int purchasedQuantity = normalizePurchasedQuantity(item.purchasedQuantity(), desiredQuantity);
+        return Math.max(0, desiredQuantity - purchasedQuantity);
+    }
+
+    private boolean hasGiftReference(String shareToken, String listId) {
+        return shareToken != null && !shareToken.isBlank()
+                && listId != null && !listId.isBlank();
+    }
+
+    private SharedGiftTarget findSharedGiftTarget(String shareToken, String listId, Long productId) {
+        String normalizedToken = normalizeNullableText(shareToken);
+        String normalizedListId = normalizeNullableText(listId);
+        if (normalizedToken == null || normalizedListId == null) {
+            throw new IllegalArgumentException("Die geteilte Liste konnte nicht zugeordnet werden.");
+        }
+
+        return userRepository.findByWishlistStateContaining(normalizedToken).stream()
+                .map(owner -> {
+                    WishlistStateDto state = getWishlistState(owner);
+                    boolean listShared = state.lists().stream()
+                            .anyMatch(list -> normalizedListId.equals(list.id())
+                                    && Boolean.TRUE.equals(list.shared())
+                                    && normalizedToken.equals(list.shareToken()));
+                    if (!listShared) {
+                        return null;
+                    }
+
+                    return state.items().stream()
+                            .filter(item -> normalizedListId.equals(item.listId()))
+                            .filter(item -> productId.equals(item.productId()))
+                            .findFirst()
+                            .map(item -> new SharedGiftTarget(owner, state, item))
+                            .orElse(null);
+                })
+                .filter(target -> target != null)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Der Geschenkartikel ist auf der geteilten Liste nicht mehr verfuegbar."
+                ));
+    }
+
+    private void recordGiftPurchase(GiftPurchaseKey key, Integer purchasedQuantity) {
+        if (purchasedQuantity == null || purchasedQuantity <= 0) {
+            return;
+        }
+
+        SharedGiftTarget target = findSharedGiftTarget(key.shareToken(), key.listId(), key.productId());
+        WishlistStateDto state = target.state();
+        List<WishlistItemDto> updatedItems = state.items().stream()
+                .map(item -> {
+                    if (!key.listId().equals(item.listId()) || !key.productId().equals(item.productId())) {
+                        return item;
+                    }
+
+                    int desiredQuantity = normalizeDesiredQuantity(item.desiredQuantity());
+                    int currentPurchasedQuantity = normalizePurchasedQuantity(item.purchasedQuantity(), desiredQuantity);
+                    int nextPurchasedQuantity = Math.min(desiredQuantity, currentPurchasedQuantity + purchasedQuantity);
+                    return new WishlistItemDto(
+                            item.listId(),
+                            item.productId(),
+                            item.name(),
+                            item.description(),
+                            item.category(),
+                            item.imageUrl(),
+                            item.recommendedRetailPrice(),
+                            item.purchasable(),
+                            item.promoted(),
+                            item.stock(),
+                            item.inventory(),
+                            item.savedAt(),
+                            item.note(),
+                            desiredQuantity,
+                            nextPurchasedQuantity
+                    );
+                })
+                .toList();
+
+        saveWishlistState(target.owner(), new WishlistStateDto(state.lists(), state.activeListId(), updatedItems));
     }
 
     private String normalizeNullableText(String value) {
@@ -253,5 +393,17 @@ public class WishlistService {
                 sharedItems
         );
     }
+
+    private record SharedGiftTarget(
+            User owner,
+            WishlistStateDto state,
+            WishlistItemDto item
+    ) {}
+
+    private record GiftPurchaseKey(
+            String shareToken,
+            String listId,
+            Long productId
+    ) {}
 
 }

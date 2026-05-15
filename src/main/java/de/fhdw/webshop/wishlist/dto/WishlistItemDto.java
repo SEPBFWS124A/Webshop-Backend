@@ -15,6 +15,8 @@ public record WishlistItemDto(
         Integer stock,
         Integer inventory,
         String savedAt,
-        String note
+        String note,
+        Integer desiredQuantity,
+        Integer purchasedQuantity
 ) {
 }

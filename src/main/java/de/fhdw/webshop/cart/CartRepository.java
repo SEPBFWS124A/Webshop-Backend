@@ -24,6 +24,17 @@ public interface CartRepository extends JpaRepository<CartItem, Long> {
             String giftCardMessage
     );
 
+    Optional<CartItem> findByUserIdAndProductIdAndPersonalizationTextAndGiftCardAmountAndGiftCardRecipientEmailAndGiftCardMessageAndSharedWishlistTokenAndSharedWishlistListId(
+            Long userId,
+            Long productId,
+            String personalizationText,
+            java.math.BigDecimal giftCardAmount,
+            String giftCardRecipientEmail,
+            String giftCardMessage,
+            String sharedWishlistToken,
+            String sharedWishlistListId
+    );
+
     void deleteByUserId(Long userId);
 
     void deleteByUserIdAndProductId(Long userId, Long productId);

@@ -11,10 +11,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 @Entity
-@Table(
-    name = "cart_items",
-    uniqueConstraints = @UniqueConstraint(columnNames = {"user_id", "product_id"})
-)
+@Table(name = "cart_items")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -46,6 +43,12 @@ public class CartItem {
 
     @Column(name = "gift_card_message", length = 1000)
     private String giftCardMessage;
+
+    @Column(name = "shared_wishlist_token", length = 80)
+    private String sharedWishlistToken;
+
+    @Column(name = "shared_wishlist_list_id", length = 140)
+    private String sharedWishlistListId;
 
     @Column(name = "added_at", nullable = false, updatable = false)
     private Instant addedAt = Instant.now();

@@ -14,6 +14,8 @@ public record OrderItemResponse(
         String giftCardRecipientEmail,
         String giftCardMessage,
         String giftCardCode,
+        String sharedWishlistToken,
+        String sharedWishlistListId,
         boolean productPurchasable,
         int quantity,
         BigDecimal priceAtOrderTime,
