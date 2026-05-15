@@ -69,4 +69,20 @@ public class ProductQaController {
                 request.helpful()
         ));
     }
+
+    @PatchMapping("/{questionId}/answers/{answerId}/official")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<ProductAnswerResponse> markOfficialAnswer(
+            @PathVariable Long productId,
+            @PathVariable Long questionId,
+            @PathVariable Long answerId,
+            @AuthenticationPrincipal User currentUser
+    ) {
+        return ResponseEntity.ok(productQaService.markOfficialAnswer(
+                productId,
+                questionId,
+                answerId,
+                currentUser
+        ));
+    }
 }
