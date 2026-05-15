@@ -1,6 +1,7 @@
 package de.fhdw.webshop.customer;
 
 import de.fhdw.webshop.cart.dto.CartResponse;
+import de.fhdw.webshop.cart.audit.dto.CartChangeLogResponse;
 import de.fhdw.webshop.discount.dto.CouponResponse;
 import de.fhdw.webshop.discount.dto.DiscountResponse;
 import de.fhdw.webshop.order.dto.OrderResponse;
@@ -27,5 +28,6 @@ public record CustomerDashboardResponse(
         boolean canViewSalesData,
         boolean canManageSalesActions,
         List<String> alerts,
-        String behaviorSummary
+        String behaviorSummary,
+        List<CartChangeLogResponse> cartChangeTimeline
 ) {}
