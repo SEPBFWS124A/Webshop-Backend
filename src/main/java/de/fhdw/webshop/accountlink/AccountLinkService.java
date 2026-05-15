@@ -215,9 +215,10 @@ public class AccountLinkService {
                 user.getUsername(),
                 user.getEmail(),
                 user.getRoles(),
+                user.isActive(),
+                user.getEmployeeNumber(),
                 user.getUserType(),
                 user.getCustomerNumber(),
-                user.isActive(),
                 user.getAgbAcceptedAt());
     }
 }

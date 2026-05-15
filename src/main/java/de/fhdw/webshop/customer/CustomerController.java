@@ -39,6 +39,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -66,26 +67,20 @@ public class CustomerController {
     @GetMapping
     @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
     public ResponseEntity<List<UserProfileResponse>> listCustomers(
-            @RequestParam(required = false) String search) {
+            @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "false") boolean includeInactive) {
         String searchTerm = search == null ? "" : search.trim();
         Long searchId = parseIdSearch(searchTerm);
         List<User> matchingCustomers = searchId == null
-                ? userRepository.findActiveCustomers(searchTerm, UserRole.CUSTOMER)
+                ? userRepository.findCustomers(searchTerm, includeInactive, UserRole.CUSTOMER)
                 : userRepository.findById(searchId)
-                        .filter(user -> user.isActive() && user.getRoles().contains(UserRole.CUSTOMER))
+                        .filter(this::isCustomer)
+                        .filter(user -> includeInactive || user.isActive())
                         .stream()
                         .toList();
 
         List<UserProfileResponse> customers = matchingCustomers.stream()
-                .map(user -> new UserProfileResponse(
-                        user.getId(),
-                        user.getUsername(),
-                        user.getEmail(),
-                        user.getRoles(),
-                        user.getUserType(),
-                        user.getCustomerNumber(),
-                        user.isActive(),
-                        user.getAgbAcceptedAt()))
+                .map(this::toProfileResponse)
                 .toList();
         return ResponseEntity.ok(customers);
     }
@@ -106,16 +101,26 @@ public class CustomerController {
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
     public ResponseEntity<UserProfileResponse> getCustomer(@PathVariable Long id) {
-        User customer = userService.loadById(id);
-        return ResponseEntity.ok(new UserProfileResponse(
-                customer.getId(),
-                customer.getUsername(),
-                customer.getEmail(),
-                customer.getRoles(),
-                customer.getUserType(),
-                customer.getCustomerNumber(),
-                customer.isActive(),
-                customer.getAgbAcceptedAt()));
+        User customer = loadCustomerById(id);
+        return ResponseEntity.ok(toProfileResponse(customer));
+    }
+
+    @PatchMapping("/{id}/deactivate")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<UserProfileResponse> deactivateCustomer(@PathVariable Long id) {
+        User customer = loadCustomerById(id);
+        customer.setActive(false);
+        userRepository.save(customer);
+        return ResponseEntity.ok(toProfileResponse(customer));
+    }
+
+    @PatchMapping("/{id}/activate")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<UserProfileResponse> activateCustomer(@PathVariable Long id) {
+        User customer = loadCustomerById(id);
+        customer.setActive(true);
+        userRepository.save(customer);
+        return ResponseEntity.ok(toProfileResponse(customer));
     }
 
     /** US #11 - View a customer's cart on their behalf. */
@@ -286,9 +291,10 @@ public class CustomerController {
                 customer.getUsername(),
                 customer.getEmail(),
                 customer.getRoles(),
+                customer.isActive(),
+                customer.getEmployeeNumber(),
                 customer.getUserType(),
                 customer.getCustomerNumber(),
-                customer.isActive(),
                 customer.getAgbAcceptedAt());
 
         CartResponse cart = cartService.getCart(id);
@@ -353,6 +359,31 @@ public class CustomerController {
 
     private String defaultString(String value) {
         return value != null ? value : "";
+    }
+
+    private User loadCustomerById(Long id) {
+        User customer = userService.loadById(id);
+        if (!isCustomer(customer)) {
+            throw new IllegalArgumentException("Dieser Endpunkt gilt nur fuer Kundenkonten.");
+        }
+        return customer;
+    }
+
+    private boolean isCustomer(User user) {
+        return user.getRoles() != null && user.getRoles().contains(UserRole.CUSTOMER);
+    }
+
+    private UserProfileResponse toProfileResponse(User user) {
+        return new UserProfileResponse(
+                user.getId(),
+                user.getUsername(),
+                user.getEmail(),
+                user.getRoles(),
+                user.isActive(),
+                user.getEmployeeNumber(),
+                user.getUserType(),
+                user.getCustomerNumber(),
+                user.getAgbAcceptedAt());
     }
 
     private List<String> buildAlerts(

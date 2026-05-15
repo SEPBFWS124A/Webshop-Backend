@@ -55,6 +55,9 @@ public class User implements UserDetails {
     @Column(name = "customer_number", unique = true, length = 20)
     private String customerNumber;
 
+    @Column(name = "employee_number", unique = true, length = 20)
+    private String employeeNumber;
+
     @Column(nullable = false)
     private boolean active = true;
 

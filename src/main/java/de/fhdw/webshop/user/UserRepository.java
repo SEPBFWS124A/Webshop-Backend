@@ -30,14 +30,15 @@ public interface UserRepository extends JpaRepository<User, Long> {
         @Query("""
                         SELECT u FROM User u
                         WHERE :customerRole MEMBER OF u.roles
-                          AND u.active = true
+                          AND (:includeInactive = true OR u.active = true)
                           AND (:searchTerm = ''
                                OR LOWER(u.username) LIKE LOWER(CONCAT('%', :searchTerm, '%'))
                                OR LOWER(u.email)    LIKE LOWER(CONCAT('%', :searchTerm, '%'))
                                OR LOWER(COALESCE(u.customerNumber, '')) LIKE LOWER(CONCAT('%', :searchTerm, '%')))
                         """)
-        List<User> findActiveCustomers(@Param("searchTerm") String searchTerm,
-                                       @Param("customerRole") UserRole customerRole);
+        List<User> findCustomers(@Param("searchTerm") String searchTerm,
+                                 @Param("includeInactive") boolean includeInactive,
+                                 @Param("customerRole") UserRole customerRole);
 
         /**
          * Returns all users, optionally filtered by text fields (admin view).
@@ -49,7 +50,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
                           AND (:searchTerm = ''
                                OR LOWER(u.username) LIKE LOWER(CONCAT('%', :searchTerm, '%'))
                                OR LOWER(u.email)    LIKE LOWER(CONCAT('%', :searchTerm, '%'))
-                               OR LOWER(COALESCE(u.customerNumber, '')) LIKE LOWER(CONCAT('%', :searchTerm, '%')))
+                               OR LOWER(COALESCE(u.customerNumber, '')) LIKE LOWER(CONCAT('%', :searchTerm, '%'))
+                               OR LOWER(COALESCE(u.employeeNumber, '')) LIKE LOWER(CONCAT('%', :searchTerm, '%')))
                         """)
         List<User> findAllUsers(@Param("searchTerm") String searchTerm, @Param("activeOnly") boolean activeOnly);
 
