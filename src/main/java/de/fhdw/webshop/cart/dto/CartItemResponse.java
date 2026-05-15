@@ -13,6 +13,8 @@ public record CartItemResponse(
         BigDecimal giftCardAmount,
         String giftCardRecipientEmail,
         String giftCardMessage,
+        String sharedWishlistToken,
+        String sharedWishlistListId,
         String imageUrl,
         BigDecimal unitPrice,
         BigDecimal co2EmissionKg,

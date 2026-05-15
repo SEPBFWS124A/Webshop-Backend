@@ -58,4 +58,10 @@ public class OrderItem {
 
     @Column(name = "gift_card_redeemed_order_number", length = 30)
     private String giftCardRedeemedOrderNumber;
+
+    @Column(name = "shared_wishlist_token", length = 80)
+    private String sharedWishlistToken;
+
+    @Column(name = "shared_wishlist_list_id", length = 140)
+    private String sharedWishlistListId;
 }

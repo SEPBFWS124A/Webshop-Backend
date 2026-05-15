@@ -41,6 +41,7 @@ import de.fhdw.webshop.user.UserRole;
 import de.fhdw.webshop.user.UserType;
 import de.fhdw.webshop.user.dto.DeliveryAddressRequest;
 import de.fhdw.webshop.user.dto.PaymentMethodRequest;
+import de.fhdw.webshop.wishlist.WishlistService;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
@@ -107,6 +108,7 @@ public class OrderService {
     private final AccountLinkRepository accountLinkRepository;
     private final PickupStoreRepository pickupStoreRepository;
     private final PickupStoreService pickupStoreService;
+    private final WishlistService wishlistService;
 
     @Value("${app.frontend.base-url:http://localhost:5173}")
     private String frontendBaseUrl;
@@ -179,6 +181,12 @@ public class OrderService {
             if (!giftCard && orderItem.getQuantity() > product.getStock()) {
                 throw new IllegalArgumentException("Only " + product.getStock() + " units of " + product.getName() + " are available");
             }
+            wishlistService.validateGiftPurchase(
+                    orderItem.getSharedWishlistToken(),
+                    orderItem.getSharedWishlistListId(),
+                    product.getId(),
+                    orderItem.getQuantity()
+            );
             if (giftCard) {
                 ensureGiftCardCode(orderItem);
             } else {
@@ -193,6 +201,7 @@ public class OrderService {
         order.setApprovalRejectionReason(null);
         Order savedOrder = orderRepository.save(order);
         productRepository.saveAll(updatedProducts);
+        wishlistService.recordGiftPurchases(savedOrder.getItems());
         markCheckoutCodeAsUsedByCode(savedOrder, manager);
         auditLogService.record(manager, "APPROVE_ORDER_REQUEST", "Order", savedOrder.getId(),
                 AuditInitiator.USER,
@@ -322,7 +331,9 @@ public class OrderService {
                                 cartItem.getPersonalizationText(),
                                 cartItem.getGiftCardAmount(),
                                 cartItem.getGiftCardRecipientEmail(),
-                                cartItem.getGiftCardMessage()))
+                                cartItem.getGiftCardMessage(),
+                                cartItem.getSharedWishlistToken(),
+                                cartItem.getSharedWishlistListId()))
                         .toList(),
                 deliveryAddress,
                 shippingMethod,
@@ -364,7 +375,9 @@ public class OrderService {
                         item.personalizationText(),
                         item.giftCardAmount(),
                         item.giftCardRecipientEmail(),
-                        item.giftCardMessage()))
+                        item.giftCardMessage(),
+                        item.sharedWishlistToken(),
+                        item.sharedWishlistListId()))
                 .toList();
 
         return prepareOrder(
@@ -444,6 +457,17 @@ public class OrderService {
             BigDecimal giftCardAmount = resolveGiftCardAmount(product, requestedItem.giftCardAmount());
             String giftCardRecipientEmail = normalizeEmail(requestedItem.giftCardRecipientEmail());
             String giftCardMessage = normalizeGiftCardMessage(requestedItem.giftCardMessage());
+            String sharedWishlistToken = trimToNull(requestedItem.sharedWishlistToken());
+            String sharedWishlistListId = trimToNull(requestedItem.sharedWishlistListId());
+            if ((sharedWishlistToken == null) != (sharedWishlistListId == null)) {
+                throw new IllegalArgumentException("Die geteilte Liste konnte nicht eindeutig zugeordnet werden.");
+            }
+            wishlistService.validateGiftPurchase(
+                    sharedWishlistToken,
+                    sharedWishlistListId,
+                    product.getId(),
+                    requestedItem.quantity()
+            );
 
             BigDecimal discountPercent = discountCustomerId != null
                     ? discountLookupPort.findBestActiveDiscountPercent(discountCustomerId, product.getId())
@@ -462,6 +486,8 @@ public class OrderService {
                     giftCardAmount,
                     giftCardRecipientEmail,
                     giftCardMessage,
+                    sharedWishlistToken,
+                    sharedWishlistListId,
                     unitPrice,
                     lineTotal));
         }
@@ -643,12 +669,15 @@ public class OrderService {
             orderItem.setQuantity(preparedItem.quantity());
             orderItem.setPersonalizationText(preparedItem.personalizationText());
             applyGiftCardDetails(orderItem, preparedItem, true);
+            orderItem.setSharedWishlistToken(preparedItem.sharedWishlistToken());
+            orderItem.setSharedWishlistListId(preparedItem.sharedWishlistListId());
             orderItem.setPriceAtOrderTime(preparedItem.unitPrice());
             order.getItems().add(orderItem);
         }
 
         Order savedOrder = orderRepository.save(order);
         productRepository.saveAll(updatedProducts);
+        wishlistService.recordGiftPurchases(savedOrder.getItems());
         return savedOrder;
     }
 
@@ -679,6 +708,8 @@ public class OrderService {
             orderItem.setQuantity(preparedItem.quantity());
             orderItem.setPersonalizationText(preparedItem.personalizationText());
             applyGiftCardDetails(orderItem, preparedItem, false);
+            orderItem.setSharedWishlistToken(preparedItem.sharedWishlistToken());
+            orderItem.setSharedWishlistListId(preparedItem.sharedWishlistListId());
             orderItem.setPriceAtOrderTime(preparedItem.unitPrice());
             order.getItems().add(orderItem);
         }
@@ -1321,6 +1352,8 @@ public class OrderService {
                 orderItem.getGiftCardRecipientEmail(),
                 orderItem.getGiftCardMessage(),
                 orderItem.getGiftCardCode(),
+                orderItem.getSharedWishlistToken(),
+                orderItem.getSharedWishlistListId(),
                 orderItem.getProduct().isPurchasable(),
                 orderItem.getQuantity(),
                 orderItem.getPriceAtOrderTime(),
@@ -1486,7 +1519,9 @@ public class OrderService {
             String personalizationText,
             BigDecimal giftCardAmount,
             String giftCardRecipientEmail,
-            String giftCardMessage
+            String giftCardMessage,
+            String sharedWishlistToken,
+            String sharedWishlistListId
     ) {}
 
     private record PreparedOrderItem(
@@ -1496,6 +1531,8 @@ public class OrderService {
             BigDecimal giftCardAmount,
             String giftCardRecipientEmail,
             String giftCardMessage,
+            String sharedWishlistToken,
+            String sharedWishlistListId,
             BigDecimal unitPrice,
             BigDecimal lineTotal
     ) {}

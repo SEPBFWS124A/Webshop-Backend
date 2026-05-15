@@ -31,6 +31,7 @@ import de.fhdw.webshop.user.UserType;
 import de.fhdw.webshop.user.dto.DeliveryAddressRequest;
 import de.fhdw.webshop.user.dto.PaymentMethodRequest;
 import de.fhdw.webshop.notification.EmailService;
+import de.fhdw.webshop.wishlist.WishlistService;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -234,6 +235,7 @@ class OrderServiceTest {
         AccountLinkRepository accountLinkRepository = mock(AccountLinkRepository.class);
         PickupStoreRepository pickupStoreRepository = mock(PickupStoreRepository.class);
         PickupStoreService pickupStoreService = mock(PickupStoreService.class);
+        WishlistService wishlistService = mock(WishlistService.class);
 
         OrderService service = new OrderService(
                 orderRepository,
@@ -255,7 +257,8 @@ class OrderServiceTest {
                 addressLookupService,
                 accountLinkRepository,
                 pickupStoreRepository,
-                pickupStoreService);
+                pickupStoreService,
+                wishlistService);
 
         User customer = businessCustomer(10L, "employee");
         User manager = businessCustomer(11L, "manager");

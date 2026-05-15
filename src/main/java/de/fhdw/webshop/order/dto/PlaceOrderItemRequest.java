@@ -10,5 +10,7 @@ public record PlaceOrderItemRequest(
         String personalizationText,
         BigDecimal giftCardAmount,
         String giftCardRecipientEmail,
-        String giftCardMessage
+        String giftCardMessage,
+        String sharedWishlistToken,
+        String sharedWishlistListId
 ) {}

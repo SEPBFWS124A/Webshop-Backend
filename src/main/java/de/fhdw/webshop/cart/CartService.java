@@ -22,6 +22,7 @@ import de.fhdw.webshop.product.ProductType;
 import de.fhdw.webshop.product.ProductService;
 import de.fhdw.webshop.user.User;
 import de.fhdw.webshop.user.UserType;
+import de.fhdw.webshop.wishlist.WishlistService;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -52,6 +53,7 @@ public class CartService {
     private final OrderItemRepository orderItemRepository;
     private final CouponRepository couponRepository;
     private final VolumeDiscountService volumeDiscountService;
+    private final WishlistService wishlistService;
 
     private static final BigDecimal TAX_RATE      = BigDecimal.valueOf(0.19);
     private static final BigDecimal SHIPPING_COST = new BigDecimal("4.99");
@@ -155,15 +157,22 @@ public class CartService {
         BigDecimal giftCardAmount = resolveGiftCardAmount(product, addToCartRequest.giftCardAmount());
         String giftCardRecipientEmail = normalizeEmail(addToCartRequest.giftCardRecipientEmail());
         String giftCardMessage = normalizeGiftCardMessage(addToCartRequest.giftCardMessage());
+        String sharedWishlistToken = trimToNull(addToCartRequest.sharedWishlistToken());
+        String sharedWishlistListId = trimToNull(addToCartRequest.sharedWishlistListId());
+        if ((sharedWishlistToken == null) != (sharedWishlistListId == null)) {
+            throw new IllegalArgumentException("Die geteilte Liste konnte nicht eindeutig zugeordnet werden.");
+        }
 
         CartItem cartItem = cartRepository
-                .findByUserIdAndProductIdAndPersonalizationTextAndGiftCardAmountAndGiftCardRecipientEmailAndGiftCardMessage(
+                .findByUserIdAndProductIdAndPersonalizationTextAndGiftCardAmountAndGiftCardRecipientEmailAndGiftCardMessageAndSharedWishlistTokenAndSharedWishlistListId(
                         user.getId(),
                         addToCartRequest.productId(),
                         personalizationText,
                         giftCardAmount,
                         giftCardRecipientEmail,
-                        giftCardMessage)
+                        giftCardMessage,
+                        sharedWishlistToken,
+                        sharedWishlistListId)
                 .orElseGet(() -> {
                     CartItem newCartItem = new CartItem();
                     newCartItem.setUser(user);
@@ -173,9 +182,17 @@ public class CartService {
                     newCartItem.setGiftCardAmount(giftCardAmount);
                     newCartItem.setGiftCardRecipientEmail(giftCardRecipientEmail);
                     newCartItem.setGiftCardMessage(giftCardMessage);
+                    newCartItem.setSharedWishlistToken(sharedWishlistToken);
+                    newCartItem.setSharedWishlistListId(sharedWishlistListId);
                     return newCartItem;
                 });
 
+        wishlistService.validateGiftPurchase(
+                sharedWishlistToken,
+                sharedWishlistListId,
+                product.getId(),
+                cartItem.getQuantity() + addToCartRequest.quantity()
+        );
         cartItem.setQuantity(cartItem.getQuantity() + addToCartRequest.quantity());
         cartRepository.save(cartItem);
         return getCart(user.getId());
@@ -240,13 +257,15 @@ public class CartService {
                 continue;
             }
             CartItem cartItem = cartRepository
-                    .findByUserIdAndProductIdAndPersonalizationTextAndGiftCardAmountAndGiftCardRecipientEmailAndGiftCardMessage(
+                    .findByUserIdAndProductIdAndPersonalizationTextAndGiftCardAmountAndGiftCardRecipientEmailAndGiftCardMessageAndSharedWishlistTokenAndSharedWishlistListId(
                             user.getId(),
                             product.getId(),
                             orderItem.getPersonalizationText(),
                             orderItem.getGiftCardAmount(),
                             orderItem.getGiftCardRecipientEmail(),
-                            orderItem.getGiftCardMessage())
+                            orderItem.getGiftCardMessage(),
+                            null,
+                            null)
                     .orElseGet(() -> {
                         CartItem newCartItem = new CartItem();
                         newCartItem.setUser(user);
@@ -300,9 +319,11 @@ public class CartService {
 
             Product product = productService.loadProduct(row.productId());
             CartItem cartItem = cartRepository
-                    .findByUserIdAndProductIdAndPersonalizationTextAndGiftCardAmountAndGiftCardRecipientEmailAndGiftCardMessage(
+                    .findByUserIdAndProductIdAndPersonalizationTextAndGiftCardAmountAndGiftCardRecipientEmailAndGiftCardMessageAndSharedWishlistTokenAndSharedWishlistListId(
                             user.getId(),
                             product.getId(),
+                            null,
+                            null,
                             null,
                             null,
                             null,
@@ -362,6 +383,8 @@ public class CartService {
                 cartItem.getGiftCardAmount(),
                 cartItem.getGiftCardRecipientEmail(),
                 cartItem.getGiftCardMessage(),
+                cartItem.getSharedWishlistToken(),
+                cartItem.getSharedWishlistListId(),
                 cartItem.getProduct().getImageUrl(),
                 effectiveUnitPrice,
                 co2EmissionKg,
