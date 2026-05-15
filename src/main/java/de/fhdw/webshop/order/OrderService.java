@@ -12,8 +12,8 @@ import de.fhdw.webshop.cart.CartService;
 import de.fhdw.webshop.cart.CartRepository;
 import de.fhdw.webshop.discount.Coupon;
 import de.fhdw.webshop.discount.CouponRepository;
-import de.fhdw.webshop.discount.VolumeDiscountPolicy;
-import de.fhdw.webshop.discount.VolumeDiscountPolicy.VolumeDiscountResult;
+import de.fhdw.webshop.discount.VolumeDiscountService;
+import de.fhdw.webshop.discount.VolumeDiscountService.VolumeDiscountResult;
 import de.fhdw.webshop.notification.EmailService;
 import de.fhdw.webshop.order.dto.OrderItemResponse;
 import de.fhdw.webshop.order.dto.OrderApprovalResponse;
@@ -92,6 +92,7 @@ public class OrderService {
     private final CartRepository cartRepository;
     private final CartService cartService;
     private final CouponRepository couponRepository;
+    private final VolumeDiscountService volumeDiscountService;
     private final ProductService.DiscountLookupPort discountLookupPort;
     private final ProductService productService;
     private final ProductRepository productRepository;
@@ -469,7 +470,7 @@ public class OrderService {
         int totalItemCount = preparedItems.stream()
                 .mapToInt(PreparedOrderItem::quantity)
                 .sum();
-        VolumeDiscountResult volumeDiscount = VolumeDiscountPolicy.resolve(itemSubtotal, totalItemCount, checkoutDiscount != null);
+        VolumeDiscountResult volumeDiscount = volumeDiscountService.resolve(itemSubtotal, totalItemCount, checkoutDiscount != null);
         BigDecimal discountAmount = checkoutDiscount != null
                 ? calculateCheckoutDiscount(itemSubtotal, checkoutDiscount)
                 : volumeDiscount.amount();
@@ -813,7 +814,7 @@ public class OrderService {
         if (checkoutDiscount != null) {
             return checkoutDiscount.type();
         }
-        return volumeDiscount.applied() ? VolumeDiscountPolicy.DISCOUNT_TYPE : null;
+        return volumeDiscount.applied() ? VolumeDiscountService.DISCOUNT_TYPE : null;
     }
 
     private String resolveDiscountLabel(CheckoutDiscount checkoutDiscount, VolumeDiscountResult volumeDiscount) {
@@ -854,7 +855,7 @@ public class OrderService {
         if (order.getCouponCode() != null && !order.getCouponCode().isBlank()) {
             return isGiftCardCode(order.getCouponCode()) ? "GIFT_CARD" : "COUPON";
         }
-        return VolumeDiscountPolicy.DISCOUNT_TYPE;
+        return VolumeDiscountService.DISCOUNT_TYPE;
     }
 
     private String resolvePersistedDiscountLabel(Order order) {

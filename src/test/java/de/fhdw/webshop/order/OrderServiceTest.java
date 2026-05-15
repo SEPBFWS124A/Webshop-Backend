@@ -11,6 +11,7 @@ import de.fhdw.webshop.cart.CartItem;
 import de.fhdw.webshop.cart.CartRepository;
 import de.fhdw.webshop.cart.CartService;
 import de.fhdw.webshop.discount.CouponRepository;
+import de.fhdw.webshop.discount.VolumeDiscountService;
 import de.fhdw.webshop.order.dto.OrderPreviewResponse;
 import de.fhdw.webshop.order.dto.OrderResponse;
 import de.fhdw.webshop.order.dto.PlaceOrderRequest;
@@ -39,6 +40,8 @@ import org.mockito.ArgumentCaptor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -216,6 +219,7 @@ class OrderServiceTest {
         CartRepository cartRepository = mock(CartRepository.class);
         CartService cartService = mock(CartService.class);
         CouponRepository couponRepository = mock(CouponRepository.class);
+        VolumeDiscountService volumeDiscountService = mock(VolumeDiscountService.class);
         ProductService.DiscountLookupPort discountLookupPort = mock(ProductService.DiscountLookupPort.class);
         ProductService productService = mock(ProductService.class);
         ProductRepository productRepository = mock(ProductRepository.class);
@@ -237,6 +241,7 @@ class OrderServiceTest {
                 cartRepository,
                 cartService,
                 couponRepository,
+                volumeDiscountService,
                 discountLookupPort,
                 productService,
                 productRepository,
@@ -265,6 +270,8 @@ class OrderServiceTest {
         link.setMaxOrderValueLimit(budgetLimit);
 
         when(cartRepository.findByUserId(customer.getId())).thenReturn(List.of(cartItem));
+        when(volumeDiscountService.resolve(any(BigDecimal.class), anyInt(), anyBoolean()))
+                .thenReturn(VolumeDiscountService.VolumeDiscountResult.none());
         when(accountLinkRepository.findAllForUserId(customer.getId())).thenReturn(List.of(link));
         when(addressLookupService.validateAddress(any())).thenReturn(new AddressValidationResponse(
                 true,

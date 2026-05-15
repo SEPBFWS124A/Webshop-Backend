@@ -10,8 +10,8 @@ import de.fhdw.webshop.cart.dto.QuickOrderPreviewResponse;
 import de.fhdw.webshop.cart.dto.QuickOrderPreviewRow;
 import de.fhdw.webshop.discount.Coupon;
 import de.fhdw.webshop.discount.CouponRepository;
-import de.fhdw.webshop.discount.VolumeDiscountPolicy;
-import de.fhdw.webshop.discount.VolumeDiscountPolicy.VolumeDiscountResult;
+import de.fhdw.webshop.discount.VolumeDiscountService;
+import de.fhdw.webshop.discount.VolumeDiscountService.VolumeDiscountResult;
 import de.fhdw.webshop.order.Order;
 import de.fhdw.webshop.order.OrderItem;
 import de.fhdw.webshop.order.OrderItemRepository;
@@ -51,6 +51,7 @@ public class CartService {
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final CouponRepository couponRepository;
+    private final VolumeDiscountService volumeDiscountService;
 
     private static final BigDecimal TAX_RATE      = BigDecimal.valueOf(0.19);
     private static final BigDecimal SHIPPING_COST = new BigDecimal("4.99");
@@ -89,7 +90,7 @@ public class CartService {
         int totalItemCount = itemResponses.stream()
                 .mapToInt(CartItemResponse::quantity)
                 .sum();
-        VolumeDiscountResult volumeDiscount = VolumeDiscountPolicy.resolve(itemSubtotal, totalItemCount, manualDiscountApplied);
+        VolumeDiscountResult volumeDiscount = volumeDiscountService.resolve(itemSubtotal, totalItemCount, manualDiscountApplied);
         BigDecimal discountAmount = coupon != null
                 ? calculateDiscount(itemSubtotal, coupon)
                 : giftCardRedemption != null
@@ -452,7 +453,7 @@ public class CartService {
         if (giftCardRedemption != null) {
             return "GIFT_CARD";
         }
-        return volumeDiscount.applied() ? VolumeDiscountPolicy.DISCOUNT_TYPE : null;
+        return volumeDiscount.applied() ? VolumeDiscountService.DISCOUNT_TYPE : null;
     }
 
     private String resolveDiscountLabel(Coupon coupon, GiftCardRedemption giftCardRedemption, VolumeDiscountResult volumeDiscount) {
