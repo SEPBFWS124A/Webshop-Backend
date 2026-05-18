@@ -1,6 +1,7 @@
 package de.fhdw.webshop.sellerreview.dto;
 
 import java.time.Instant;
+import java.util.List;
 
 public record SellerReviewResponse(
         Long id,
@@ -13,6 +14,7 @@ public record SellerReviewResponse(
         long helpfulCount,
         long notHelpfulCount,
         long helpfulScore,
-        Boolean currentUserVote
+        Boolean currentUserVote,
+        List<SellerReviewImageResponse> images
 ) {
 }
