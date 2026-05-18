@@ -70,6 +70,36 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
                         @Param("from") Instant from,
                         @Param("to") Instant to);
 
+        @Query("""
+                        SELECT DISTINCT o FROM Order o
+                        JOIN FETCH o.customer customer
+                        LEFT JOIN FETCH o.items item
+                        LEFT JOIN FETCH item.product
+                        WHERE customer.id IN :customerIds
+                          AND (:requesterId IS NULL OR customer.id = :requesterId)
+                          AND (:from IS NULL OR o.createdAt >= :from)
+                          AND (:to IS NULL OR o.createdAt <= :to)
+                        ORDER BY o.createdAt DESC
+                        """)
+        List<Order> findInvoiceArchiveOrders(
+                        @Param("customerIds") Collection<Long> customerIds,
+                        @Param("requesterId") Long requesterId,
+                        @Param("from") Instant from,
+                        @Param("to") Instant to);
+
+        @Query("""
+                        SELECT DISTINCT o FROM Order o
+                        JOIN FETCH o.customer customer
+                        LEFT JOIN FETCH o.items item
+                        LEFT JOIN FETCH item.product
+                        WHERE customer.id IN :customerIds
+                          AND o.id IN :orderIds
+                        ORDER BY o.createdAt DESC
+                        """)
+        List<Order> findInvoiceArchiveOrdersByIds(
+                        @Param("customerIds") Collection<Long> customerIds,
+                        @Param("orderIds") Collection<Long> orderIds);
+
         /**
          * US #34, #36 — Order items for a product within a date range (for sales
          * statistics).
