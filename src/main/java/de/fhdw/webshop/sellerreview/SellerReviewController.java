@@ -2,15 +2,18 @@ package de.fhdw.webshop.sellerreview;
 
 import de.fhdw.webshop.sellerreview.dto.CreateSellerReviewRequest;
 import de.fhdw.webshop.helpfulvote.dto.HelpfulVoteRequest;
+import de.fhdw.webshop.sellerreview.dto.SellerReviewImageResponse;
 import de.fhdw.webshop.sellerreview.dto.SellerReviewResponse;
 import de.fhdw.webshop.user.User;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -34,7 +37,7 @@ public class SellerReviewController {
         return ResponseEntity.ok(sellerReviewService.listMyReviewsForOrder(orderId, currentUser));
     }
 
-    @PostMapping("/api/orders/{orderId}/seller-reviews")
+    @PostMapping(value = "/api/orders/{orderId}/seller-reviews", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<SellerReviewResponse> createReview(
             @PathVariable Long orderId,
@@ -44,6 +47,20 @@ public class SellerReviewController {
                 .body(sellerReviewService.createReview(orderId, currentUser, request));
     }
 
+    @PostMapping(value = "/api/orders/{orderId}/seller-reviews", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<SellerReviewResponse> createReviewWithImages(
+            @PathVariable Long orderId,
+            @RequestParam String sellerName,
+            @RequestParam Integer rating,
+            @RequestParam(required = false) String comment,
+            @RequestPart(required = false) List<MultipartFile> images,
+            @AuthenticationPrincipal User currentUser) {
+        CreateSellerReviewRequest request = new CreateSellerReviewRequest(sellerName, rating, comment);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(sellerReviewService.createReview(orderId, currentUser, request, images));
+    }
+
     @PostMapping("/api/seller-reviews/{reviewId}/vote")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<SellerReviewResponse> voteReview(
@@ -51,5 +68,20 @@ public class SellerReviewController {
             @Valid @RequestBody HelpfulVoteRequest request,
             @AuthenticationPrincipal User currentUser) {
         return ResponseEntity.ok(sellerReviewService.voteReview(reviewId, currentUser, request.helpful()));
+    }
+
+    @GetMapping("/api/admin/seller-review-images")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<List<SellerReviewImageResponse>> listReviewImagesForModeration() {
+        return ResponseEntity.ok(sellerReviewService.listImagesForModeration());
+    }
+
+    @DeleteMapping("/api/admin/seller-review-images/{imageId}")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<Void> deleteReviewImage(
+            @PathVariable Long imageId,
+            @AuthenticationPrincipal User currentUser) {
+        sellerReviewService.deleteImage(imageId, currentUser);
+        return ResponseEntity.noContent().build();
     }
 }
