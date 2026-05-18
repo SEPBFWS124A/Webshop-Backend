@@ -46,6 +46,9 @@ public class SystemNotification {
     @Column(name = "custom_message", columnDefinition = "TEXT")
     private String customMessage;
 
+    @Column(name = "target_url", length = 500)
+    private String targetUrl;
+
     @Column(name = "is_read", nullable = false)
     private boolean read = false;
 

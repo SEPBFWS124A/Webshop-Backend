@@ -92,6 +92,59 @@ public class SystemNotificationService {
         return repository.save(notification);
     }
 
+    @Transactional
+    public SystemNotification createSupportTicketReplyNotification(
+            User recipient,
+            Long ticketId,
+            String ticketNumber,
+            String subject,
+            String authorName
+    ) {
+        SystemNotification notification = supportTicketNotification(
+                recipient,
+                SystemNotificationType.SUPPORT_TICKET_REPLY,
+                ticketId,
+                ticketNumber,
+                String.format("%s hat auf dein Support-Ticket %s \"%s\" geantwortet.", authorName, ticketNumber, subject)
+        );
+        return repository.save(notification);
+    }
+
+    @Transactional
+    public SystemNotification createSupportTicketClosedNotification(
+            User recipient,
+            Long ticketId,
+            String ticketNumber,
+            String subject
+    ) {
+        SystemNotification notification = supportTicketNotification(
+                recipient,
+                SystemNotificationType.SUPPORT_TICKET_CLOSED,
+                ticketId,
+                ticketNumber,
+                String.format("Dein Support-Ticket %s \"%s\" wurde geschlossen.", ticketNumber, subject)
+        );
+        return repository.save(notification);
+    }
+
+    private SystemNotification supportTicketNotification(
+            User recipient,
+            SystemNotificationType type,
+            Long ticketId,
+            String ticketNumber,
+            String message
+    ) {
+        SystemNotification notification = new SystemNotification();
+        notification.setType(type);
+        notification.setRecipientUser(recipient);
+        notification.setProductName(ticketNumber);
+        notification.setCurrentPeriodUnits(0);
+        notification.setPreviousPeriodUnits(0);
+        notification.setCustomMessage(message);
+        notification.setTargetUrl("/support/tickets/" + ticketId);
+        return notification;
+    }
+
     private List<SystemNotification> repositoryFor(User currentUser) {
         if (isCustomerOnly(currentUser)) {
             return repository.findByRecipientUserIdOrderByCreatedAtDesc(currentUser.getId());
