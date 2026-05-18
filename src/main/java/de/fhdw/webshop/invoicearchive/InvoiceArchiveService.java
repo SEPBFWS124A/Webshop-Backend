@@ -43,6 +43,8 @@ public class InvoiceArchiveService {
             .withZone(ZoneId.systemDefault());
     private static final DateTimeFormatter DISPLAY_DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
             .withZone(ZoneId.systemDefault());
+    private static final Instant ARCHIVE_START = Instant.parse("2000-01-01T00:00:00Z");
+    private static final Instant ARCHIVE_END = Instant.parse("9999-12-31T23:59:59Z");
 
     private final OrderRepository orderRepository;
     private final AccountLinkRepository accountLinkRepository;
@@ -64,7 +66,10 @@ public class InvoiceArchiveService {
         if (requesterId != null && !accessibleIds.contains(requesterId)) {
             throw new IllegalArgumentException("Für diesen Besteller liegt keine Berechtigung vor.");
         }
-        return orderRepository.findInvoiceArchiveOrders(accessibleIds, requesterId, from, to).stream()
+        List<Long> filteredUserIds = requesterId == null ? accessibleIds : List.of(requesterId);
+        Instant effectiveFrom = from == null ? ARCHIVE_START : from;
+        Instant effectiveTo = to == null ? ARCHIVE_END : to;
+        return orderRepository.findInvoiceArchiveOrders(filteredUserIds, effectiveFrom, effectiveTo).stream()
                 .map(this::toOrderResponse)
                 .toList();
     }

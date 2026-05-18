@@ -76,14 +76,11 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
                         LEFT JOIN FETCH o.items item
                         LEFT JOIN FETCH item.product
                         WHERE customer.id IN :customerIds
-                          AND (:requesterId IS NULL OR customer.id = :requesterId)
-                          AND (:from IS NULL OR o.createdAt >= :from)
-                          AND (:to IS NULL OR o.createdAt <= :to)
+                          AND o.createdAt BETWEEN :from AND :to
                         ORDER BY o.createdAt DESC
                         """)
         List<Order> findInvoiceArchiveOrders(
                         @Param("customerIds") Collection<Long> customerIds,
-                        @Param("requesterId") Long requesterId,
                         @Param("from") Instant from,
                         @Param("to") Instant to);
 
