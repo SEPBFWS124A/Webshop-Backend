@@ -30,6 +30,16 @@ public class ProductAnswer {
     @Column(name = "answer_text", nullable = false, length = 500)
     private String answerText;
 
+    @Column(name = "official_answer", nullable = false)
+    private boolean officialAnswer = false;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "official_marked_by_user_id")
+    private User officialMarkedByUser;
+
+    @Column(name = "official_marked_at")
+    private Instant officialMarkedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 }

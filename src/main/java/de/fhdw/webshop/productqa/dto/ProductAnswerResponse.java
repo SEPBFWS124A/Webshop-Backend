@@ -11,6 +11,10 @@ public record ProductAnswerResponse(
         long helpfulCount,
         long notHelpfulCount,
         long helpfulScore,
-        Boolean currentUserVote
+        Boolean currentUserVote,
+        boolean officialAnswer,
+        Long officialMarkedByUserId,
+        String officialMarkedByUserName,
+        Instant officialMarkedAt
 ) {
 }

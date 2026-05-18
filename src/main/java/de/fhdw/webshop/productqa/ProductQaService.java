@@ -11,16 +11,22 @@ import de.fhdw.webshop.productqa.dto.CreateProductQuestionRequest;
 import de.fhdw.webshop.productqa.dto.ProductAnswerResponse;
 import de.fhdw.webshop.productqa.dto.ProductQuestionResponse;
 import de.fhdw.webshop.user.User;
+import de.fhdw.webshop.user.UserRole;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
 public class ProductQaService {
+
+    private static final Set<UserRole> OFFICIAL_ANSWER_ROLES =
+            Set.of(UserRole.EMPLOYEE, UserRole.SALES_EMPLOYEE, UserRole.ADMIN);
 
     private final ProductQuestionRepository questionRepository;
     private final ProductAnswerRepository answerRepository;
@@ -76,6 +82,9 @@ public class ProductQaService {
         answer.setQuestion(question);
         answer.setAuthor(currentUser);
         answer.setAnswerText(text);
+        if (Boolean.TRUE.equals(request.officialAnswer())) {
+            markOfficial(answer, currentUser);
+        }
         answerRepository.save(answer);
         question.getAnswers().add(answer);
 
@@ -93,6 +102,24 @@ public class ProductQaService {
     }
 
     @Transactional
+    public ProductAnswerResponse markOfficialAnswer(
+            Long productId,
+            Long questionId,
+            Long answerId,
+            User currentUser
+    ) {
+        ProductQuestion question = loadQuestionForProduct(productId, questionId);
+        ProductAnswer answer = answerRepository.findById(answerId)
+                .orElseThrow(() -> new EntityNotFoundException("Answer not found: " + answerId));
+        if (!answer.getQuestion().getId().equals(question.getId())) {
+            throw new EntityNotFoundException("Answer not found for question: " + answerId);
+        }
+
+        markOfficial(answer, currentUser);
+        return toResponse(answerRepository.save(answer), currentUser);
+    }
+
+    @Transactional
     public ProductAnswerResponse voteAnswer(
             Long productId,
             Long questionId,
@@ -100,11 +127,7 @@ public class ProductQaService {
             User currentUser,
             boolean helpful
     ) {
-        ProductQuestion question = questionRepository.findById(questionId)
-                .orElseThrow(() -> new EntityNotFoundException("Question not found: " + questionId));
-        if (!question.getProduct().getId().equals(productId)) {
-            throw new EntityNotFoundException("Question not found for product: " + questionId);
-        }
+        ProductQuestion question = loadQuestionForProduct(productId, questionId);
 
         ProductAnswer answer = answerRepository.findById(answerId)
                 .orElseThrow(() -> new EntityNotFoundException("Answer not found: " + answerId));
@@ -127,6 +150,30 @@ public class ProductQaService {
         return normalized;
     }
 
+    private ProductQuestion loadQuestionForProduct(Long productId, Long questionId) {
+        ProductQuestion question = questionRepository.findById(questionId)
+                .orElseThrow(() -> new EntityNotFoundException("Question not found: " + questionId));
+        if (!question.getProduct().getId().equals(productId)) {
+            throw new EntityNotFoundException("Question not found for product: " + questionId);
+        }
+        return question;
+    }
+
+    private void markOfficial(ProductAnswer answer, User currentUser) {
+        if (!canMarkOfficial(currentUser)) {
+            throw new IllegalArgumentException("Nur berechtigte Mitarbeiter können offizielle Antworten markieren.");
+        }
+        answer.setOfficialAnswer(true);
+        answer.setOfficialMarkedByUser(currentUser);
+        answer.setOfficialMarkedAt(Instant.now());
+    }
+
+    private boolean canMarkOfficial(User user) {
+        return user != null
+                && user.getRoles() != null
+                && user.getRoles().stream().anyMatch(OFFICIAL_ANSWER_ROLES::contains);
+    }
+
     private ProductQuestionResponse toResponse(ProductQuestion question, User currentUser) {
         return new ProductQuestionResponse(
                 question.getId(),
@@ -138,6 +185,10 @@ public class ProductQaService {
                 question.getAnswers().stream()
                         .map(answer -> toResponse(answer, currentUser))
                         .sorted((left, right) -> {
+                            int officialCompare = Boolean.compare(right.officialAnswer(), left.officialAnswer());
+                            if (officialCompare != 0) {
+                                return officialCompare;
+                            }
                             int scoreCompare = Long.compare(right.helpfulScore(), left.helpfulScore());
                             if (scoreCompare != 0) {
                                 return scoreCompare;
@@ -163,7 +214,11 @@ public class ProductQaService {
                 votes.helpfulCount(),
                 votes.notHelpfulCount(),
                 votes.helpfulScore(),
-                votes.currentUserVote()
+                votes.currentUserVote(),
+                answer.isOfficialAnswer(),
+                answer.getOfficialMarkedByUser() == null ? null : answer.getOfficialMarkedByUser().getId(),
+                answer.getOfficialMarkedByUser() == null ? null : answer.getOfficialMarkedByUser().getUsername(),
+                answer.getOfficialMarkedAt()
         );
     }
 }
