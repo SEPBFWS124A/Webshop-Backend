@@ -8,5 +8,9 @@ public enum SystemNotificationType {
     /** Keine einzige Einheit verkauft im Beobachtungszeitraum. */
     ZERO_SALES,
     /** Antwort auf eine Produktfrage eines Kunden. */
-    PRODUCT_QA_ANSWER
+    PRODUCT_QA_ANSWER,
+    /** Öffentliche Antwort auf ein Support-Ticket. */
+    SUPPORT_TICKET_REPLY,
+    /** Support-Ticket wurde geschlossen. */
+    SUPPORT_TICKET_CLOSED
 }

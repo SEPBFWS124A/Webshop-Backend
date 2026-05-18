@@ -50,6 +50,7 @@ public class AdminNavigationService {
                     "pi pi-address-book",
                     List.of(
                             item("customers", "Kunden & CRM", "/admin/customers", "pi pi-users", CUSTOMER_MANAGEMENT_ROLES),
+                            item("support-tickets", "Support-Tickets", "/admin/customers/support-tickets", "pi pi-ticket", CUSTOMER_MANAGEMENT_ROLES),
                             item("customer-preview", "Kundenvorschau", "/admin/customers/preview", "pi pi-eye", CUSTOMER_MANAGEMENT_ROLES)
                     )
             ),

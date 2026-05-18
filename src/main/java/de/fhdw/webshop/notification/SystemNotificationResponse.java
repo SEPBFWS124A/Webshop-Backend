@@ -14,7 +14,8 @@ public record SystemNotificationResponse(
         long previousPeriodUnits,
         boolean read,
         Instant createdAt,
-        String message
+        String message,
+        String targetUrl
 ) {
     public static SystemNotificationResponse from(SystemNotification n) {
         return new SystemNotificationResponse(
@@ -28,7 +29,8 @@ public record SystemNotificationResponse(
                 n.getPreviousPeriodUnits(),
                 n.isRead(),
                 n.getCreatedAt(),
-                buildMessage(n)
+                buildMessage(n),
+                n.getTargetUrl()
         );
     }
 
@@ -59,6 +61,14 @@ public record SystemNotificationResponse(
             );
             case PRODUCT_QA_ANSWER -> String.format(
                     "Neue Antwort auf deine Frage zu \"%s\".",
+                    n.getProductName()
+            );
+            case SUPPORT_TICKET_REPLY -> String.format(
+                    "Neue Antwort auf dein Support-Ticket \"%s\".",
+                    n.getProductName()
+            );
+            case SUPPORT_TICKET_CLOSED -> String.format(
+                    "Dein Support-Ticket \"%s\" wurde geschlossen.",
                     n.getProductName()
             );
         };
