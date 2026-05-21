@@ -2,6 +2,7 @@ package de.fhdw.webshop.invoicearchive;
 
 import de.fhdw.webshop.invoicearchive.dto.InvoiceArchiveExportRequest;
 import de.fhdw.webshop.invoicearchive.dto.InvoiceArchiveExportResponse;
+import de.fhdw.webshop.invoicearchive.dto.InvoiceArchiveOrderDetailResponse;
 import de.fhdw.webshop.invoicearchive.dto.InvoiceArchiveOrderResponse;
 import de.fhdw.webshop.invoicearchive.dto.InvoiceArchiveRequesterResponse;
 import de.fhdw.webshop.user.User;
@@ -44,6 +45,26 @@ public class InvoiceArchiveController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
             @RequestParam(required = false) Long requesterId) {
         return ResponseEntity.ok(invoiceArchiveService.listInvoices(currentUser, from, to, requesterId));
+    }
+
+    @GetMapping("/orders/{orderId}")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<InvoiceArchiveOrderDetailResponse> getInvoiceDetail(
+            @AuthenticationPrincipal User currentUser,
+            @PathVariable Long orderId) {
+        return ResponseEntity.ok(invoiceArchiveService.getInvoiceDetail(currentUser, orderId));
+    }
+
+    @GetMapping(value = "/orders/{orderId}/download", produces = "application/pdf")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<byte[]> downloadInvoice(
+            @AuthenticationPrincipal User currentUser,
+            @PathVariable Long orderId) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"" + invoiceArchiveService.getInvoicePdfFileName(currentUser, orderId) + "\"")
+                .body(invoiceArchiveService.getInvoicePdf(currentUser, orderId));
     }
 
     @PostMapping("/exports")

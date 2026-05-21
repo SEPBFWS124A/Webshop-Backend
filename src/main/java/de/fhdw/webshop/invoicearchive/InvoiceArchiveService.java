@@ -2,6 +2,8 @@ package de.fhdw.webshop.invoicearchive;
 
 import de.fhdw.webshop.accountlink.AccountLinkRepository;
 import de.fhdw.webshop.invoicearchive.dto.InvoiceArchiveExportResponse;
+import de.fhdw.webshop.invoicearchive.dto.InvoiceArchiveOrderDetailResponse;
+import de.fhdw.webshop.invoicearchive.dto.InvoiceArchiveOrderItemResponse;
 import de.fhdw.webshop.invoicearchive.dto.InvoiceArchiveOrderResponse;
 import de.fhdw.webshop.invoicearchive.dto.InvoiceArchiveRequesterResponse;
 import de.fhdw.webshop.order.Order;
@@ -112,6 +114,24 @@ public class InvoiceArchiveService {
         return job.toResponse();
     }
 
+    @Transactional(readOnly = true)
+    public InvoiceArchiveOrderDetailResponse getInvoiceDetail(User currentUser, Long orderId) {
+        requireBusinessCustomer(currentUser);
+        return toOrderDetailResponse(loadAccessibleOrder(currentUser, orderId));
+    }
+
+    @Transactional(readOnly = true)
+    public byte[] getInvoicePdf(User currentUser, Long orderId) {
+        requireBusinessCustomer(currentUser);
+        return buildInvoicePdf(loadAccessibleOrder(currentUser, orderId));
+    }
+
+    @Transactional(readOnly = true)
+    public String getInvoicePdfFileName(User currentUser, Long orderId) {
+        requireBusinessCustomer(currentUser);
+        return sanitizeFileName("rechnung-" + loadAccessibleOrder(currentUser, orderId).getOrderNumber() + ".pdf");
+    }
+
     public InvoiceArchiveExportResponse getExport(String exportId) {
         return loadJob(exportId).toResponse();
     }
@@ -157,6 +177,15 @@ public class InvoiceArchiveService {
                 .map(byId::get)
                 .filter(order -> order != null)
                 .toList();
+    }
+
+    private Order loadAccessibleOrder(User currentUser, Long orderId) {
+        if (orderId == null || orderId <= 0) {
+            throw new IllegalArgumentException("Bitte eine gültige Rechnung auswählen.");
+        }
+        return loadAccessibleOrders(currentUser, List.of(orderId)).stream()
+                .findFirst()
+                .orElseThrow(() -> new EntityNotFoundException("Rechnung nicht gefunden oder nicht freigegeben: " + orderId));
     }
 
     private void requireBusinessCustomer(User currentUser) {
@@ -220,6 +249,61 @@ public class InvoiceArchiveService {
                 order.getTaxAmount(),
                 itemCount,
                 buildInvoiceNumber(order));
+    }
+
+    private InvoiceArchiveOrderDetailResponse toOrderDetailResponse(Order order) {
+        User requester = order.getCustomer();
+        List<InvoiceArchiveOrderItemResponse> items = order.getItems().stream()
+                .map(this::toOrderItemResponse)
+                .toList();
+        int itemCount = items.stream()
+                .mapToInt(InvoiceArchiveOrderItemResponse::quantity)
+                .sum();
+        BigDecimal subtotal = items.stream()
+                .map(InvoiceArchiveOrderItemResponse::lineTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal discount = amount(order.getDiscountAmount());
+        BigDecimal shipping = amount(order.getShippingCost());
+        BigDecimal netAmount = subtotal.subtract(discount).add(shipping).setScale(2, RoundingMode.HALF_UP);
+
+        return new InvoiceArchiveOrderDetailResponse(
+                order.getId(),
+                order.getOrderNumber(),
+                buildInvoiceNumber(order),
+                requester != null ? requester.getId() : null,
+                requester != null ? requester.getUsername() : order.getCustomerName(),
+                requester != null ? requester.getEmail() : order.getCustomerEmail(),
+                requester != null ? requester.getCustomerNumber() : null,
+                order.getCreatedAt(),
+                order.getStatus(),
+                formatPaymentMethod(order),
+                order.getDeliveryStreet(),
+                order.getDeliveryPostalCode(),
+                order.getDeliveryCity(),
+                order.getDeliveryCountry(),
+                subtotal,
+                discount,
+                shipping,
+                netAmount,
+                amount(order.getTaxAmount()),
+                amount(order.getTotalPrice()),
+                itemCount,
+                items);
+    }
+
+    private InvoiceArchiveOrderItemResponse toOrderItemResponse(OrderItem item) {
+        BigDecimal unitPrice = amount(item.getPriceAtOrderTime());
+        BigDecimal lineTotal = unitPrice.multiply(BigDecimal.valueOf(item.getQuantity()))
+                .setScale(2, RoundingMode.HALF_UP);
+        return new InvoiceArchiveOrderItemResponse(
+                item.getProduct() != null ? item.getProduct().getId() : null,
+                item.getProduct() != null ? item.getProduct().getName() : "Produkt nicht verfügbar",
+                item.getSellerName(),
+                item.getQuantity(),
+                unitPrice,
+                BigDecimal.valueOf(19).setScale(2, RoundingMode.HALF_UP),
+                lineTotal);
     }
 
     private byte[] buildZip(List<Order> orders) throws IOException {
