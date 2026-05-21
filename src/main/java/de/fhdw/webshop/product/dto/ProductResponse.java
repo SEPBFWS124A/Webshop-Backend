@@ -20,6 +20,8 @@ public record ProductResponse(
         String sellerName,
         ProductType productType,
         int stock,
+        int reservedStock,
+        int availableStock,
         String sku,
         boolean purchasable,
         boolean promoted,

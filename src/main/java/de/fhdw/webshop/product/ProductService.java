@@ -3,6 +3,7 @@ package de.fhdw.webshop.product;
 import de.fhdw.webshop.admin.AuditInitiator;
 import de.fhdw.webshop.admin.AuditLogService;
 import de.fhdw.webshop.product.dto.*;
+import de.fhdw.webshop.reservation.StockReservationService;
 import de.fhdw.webshop.user.User;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +27,7 @@ public class ProductService {
 
     private final ProductRepository productRepository;
     private final AuditLogService auditLogService;
+    private final StockReservationService stockReservationService;
 
     @Transactional(readOnly = true)
     public List<ProductResponse> listProducts(Boolean purchasableOnly, String category, String searchTerm) {
@@ -195,6 +197,8 @@ public class ProductService {
     }
 
     private ProductResponse toResponse(Product product) {
+        int reservedStock = stockReservationService.getReservedQuantity(product);
+        int availableStock = stockReservationService.getAvailableQuantity(product);
         return new ProductResponse(
                 product.getId(),
                 product.getName(),
@@ -207,6 +211,8 @@ public class ProductService {
                 product.getSellerName(),
                 product.getProductType(),
                 product.getStock(),
+                reservedStock,
+                availableStock,
                 product.getSku(),
                 product.isPurchasable(),
                 product.isPromoted(),
