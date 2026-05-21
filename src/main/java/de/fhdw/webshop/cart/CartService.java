@@ -22,6 +22,8 @@ import de.fhdw.webshop.product.Product;
 import de.fhdw.webshop.product.ProductRepository;
 import de.fhdw.webshop.product.ProductType;
 import de.fhdw.webshop.product.ProductService;
+import de.fhdw.webshop.reservation.StockReservationService;
+import de.fhdw.webshop.reservation.dto.CartReservationInfo;
 import de.fhdw.webshop.user.User;
 import de.fhdw.webshop.user.UserType;
 import de.fhdw.webshop.wishlist.WishlistService;
@@ -57,6 +59,7 @@ public class CartService {
     private final VolumeDiscountService volumeDiscountService;
     private final WishlistService wishlistService;
     private final CartChangeLogService cartChangeLogService;
+    private final StockReservationService stockReservationService;
 
     private static final BigDecimal TAX_RATE      = BigDecimal.valueOf(0.19);
     private static final BigDecimal SHIPPING_COST = new BigDecimal("4.99");
@@ -190,14 +193,22 @@ public class CartService {
                     return newCartItem;
                 });
 
+        int requestedQuantity = cartItem.getQuantity() + addToCartRequest.quantity();
+        int availableStock = getAvailableStock(cartItem);
+        if (requestedQuantity > availableStock) {
+            throw new IllegalArgumentException("Nur " + availableStock + " Stueck von "
+                    + product.getName() + " sind aktuell reservierbar.");
+        }
+
         wishlistService.validateGiftPurchase(
                 sharedWishlistToken,
                 sharedWishlistListId,
                 product.getId(),
-                cartItem.getQuantity() + addToCartRequest.quantity()
+                requestedQuantity
         );
-        cartItem.setQuantity(cartItem.getQuantity() + addToCartRequest.quantity());
-        cartRepository.save(cartItem);
+        cartItem.setQuantity(requestedQuantity);
+        CartItem savedItem = cartRepository.save(cartItem);
+        stockReservationService.refreshReservation(savedItem);
         return getCart(user.getId());
     }
 
@@ -229,8 +240,9 @@ public class CartService {
     /** US #40 — Remove a specific product from the cart. */
     @Transactional
     public CartResponse removeItem(User user, Long productId) {
-        cartRepository.findByUserIdAndProductId(user.getId(), productId)
+        CartItem cartItem = cartRepository.findByUserIdAndProductId(user.getId(), productId)
                 .orElseThrow(() -> new EntityNotFoundException("Item not in cart: productId=" + productId));
+        stockReservationService.releaseCartItemReservation(cartItem.getId());
         cartRepository.deleteByUserIdAndProductId(user.getId(), productId);
         return getCart(user.getId());
     }
@@ -260,6 +272,7 @@ public class CartService {
     public CartResponse removeItemByCartItemId(User user, Long cartItemId) {
         CartItem cartItem = cartRepository.findByIdAndUserId(cartItemId, user.getId())
                 .orElseThrow(() -> new EntityNotFoundException("Item not in cart: cartItemId=" + cartItemId));
+        stockReservationService.releaseCartItemReservation(cartItem.getId());
         cartRepository.delete(cartItem);
         return getCart(user.getId());
     }
@@ -273,8 +286,10 @@ public class CartService {
 
         CartItem cartItem = cartRepository.findByUserIdAndProductId(user.getId(), productId)
                 .orElseThrow(() -> new EntityNotFoundException("Item not in cart: productId=" + productId));
+        validateReservableQuantity(cartItem, quantity);
         cartItem.setQuantity(quantity);
-        cartRepository.save(cartItem);
+        CartItem savedItem = cartRepository.save(cartItem);
+        stockReservationService.refreshReservation(savedItem);
         return getCart(user.getId());
     }
 
@@ -312,8 +327,10 @@ public class CartService {
 
         CartItem cartItem = cartRepository.findByIdAndUserId(cartItemId, user.getId())
                 .orElseThrow(() -> new EntityNotFoundException("Item not in cart: cartItemId=" + cartItemId));
+        validateReservableQuantity(cartItem, quantity);
         cartItem.setQuantity(quantity);
-        cartRepository.save(cartItem);
+        CartItem savedItem = cartRepository.save(cartItem);
+        stockReservationService.refreshReservation(savedItem);
         return getCart(user.getId());
     }
 
@@ -352,8 +369,11 @@ public class CartService {
                         newCartItem.setGiftCardMessage(orderItem.getGiftCardMessage());
                         return newCartItem;
                     });
-            cartItem.setQuantity(cartItem.getQuantity() + orderItem.getQuantity());
-            cartRepository.save(cartItem);
+            int nextQuantity = cartItem.getQuantity() + orderItem.getQuantity();
+            validateReservableQuantity(cartItem, nextQuantity);
+            cartItem.setQuantity(nextQuantity);
+            CartItem savedItem = cartRepository.save(cartItem);
+            stockReservationService.refreshReservation(savedItem);
         }
         return getCart(user.getId());
     }
@@ -410,8 +430,11 @@ public class CartService {
                         newCartItem.setQuantity(0);
                         return newCartItem;
                     });
-            cartItem.setQuantity(cartItem.getQuantity() + row.requestedQuantity());
-            cartRepository.save(cartItem);
+            int nextQuantity = cartItem.getQuantity() + row.requestedQuantity();
+            validateReservableQuantity(cartItem, nextQuantity);
+            cartItem.setQuantity(nextQuantity);
+            CartItem savedItem = cartRepository.save(cartItem);
+            stockReservationService.refreshReservation(savedItem);
             addedLines++;
             addedQuantity += row.requestedQuantity();
         }
@@ -422,6 +445,7 @@ public class CartService {
     /** Called by OrderService after checkout to clear the cart. */
     @Transactional
     public void clearCartSilently(Long userId) {
+        stockReservationService.releaseUserReservations(userId);
         cartRepository.deleteByUserId(userId);
     }
 
@@ -449,6 +473,8 @@ public class CartService {
                 : co2EmissionKg.multiply(BigDecimal.valueOf(cartItem.getQuantity()))
                         .setScale(3, RoundingMode.HALF_UP);
 
+        CartReservationInfo reservationInfo = stockReservationService.getCartReservationInfo(cartItem);
+
         return new CartItemResponse(
                 cartItem.getId(),
                 cartItem.getProduct().getId(),
@@ -463,7 +489,11 @@ public class CartService {
                 cartItem.getProduct().getImageUrl(),
                 effectiveUnitPrice,
                 co2EmissionKg,
-                getAvailableStock(cartItem.getProduct()),
+                getAvailableStock(cartItem),
+                reservationInfo.reservedQuantity(),
+                reservationInfo.reservationExpiresAt(),
+                reservationInfo.reservationSecondsRemaining(),
+                reservationInfo.reservationStatus(),
                 cartItem.getQuantity(),
                 lineTotal,
                 lineCo2EmissionKg,
@@ -473,11 +503,13 @@ public class CartService {
 
     private List<String> normalizeCartQuantities(Long userId) {
         List<String> messages = new ArrayList<>();
+        stockReservationService.expireOverdueReservations();
         List<CartItem> cartItems = cartRepository.findByUserId(userId);
 
         for (CartItem cartItem : cartItems) {
-            int availableStock = getAvailableStock(cartItem.getProduct());
+            int availableStock = getAvailableStock(cartItem);
             if (availableStock <= 0) {
+                stockReservationService.releaseCartItemReservation(cartItem.getId());
                 cartRepository.delete(cartItem);
                 messages.add(cartItem.getProduct().getName() + " wurde entfernt, weil der Artikel nicht mehr verfügbar ist.");
                 continue;
@@ -488,6 +520,8 @@ public class CartService {
                 cartRepository.save(cartItem);
                 messages.add(cartItem.getProduct().getName() + " wurde auf " + availableStock + " Stück angepasst.");
             }
+
+            stockReservationService.refreshReservation(cartItem);
         }
 
         return messages;
@@ -604,7 +638,26 @@ public class CartService {
         if (product.getProductType() == ProductType.DIGITAL_GIFT_CARD) {
             return 999999;
         }
-        return Math.max(product.getStock(), 0);
+        return stockReservationService.getAvailableQuantity(product);
+    }
+
+    private int getAvailableStock(CartItem cartItem) {
+        Product product = cartItem.getProduct();
+        if (!product.isPurchasable()) {
+            return 0;
+        }
+        if (product.getProductType() == ProductType.DIGITAL_GIFT_CARD) {
+            return 999999;
+        }
+        return stockReservationService.getReservableQuantity(product, cartItem.getId());
+    }
+
+    private void validateReservableQuantity(CartItem cartItem, int quantity) {
+        int availableStock = getAvailableStock(cartItem);
+        if (quantity > availableStock) {
+            throw new IllegalArgumentException("Nur " + availableStock + " Stueck von "
+                    + cartItem.getProduct().getName() + " sind aktuell reservierbar.");
+        }
     }
 
     private void requireBusinessCustomer(User user) {

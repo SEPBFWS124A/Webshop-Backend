@@ -28,6 +28,7 @@ import de.fhdw.webshop.product.Product;
 import de.fhdw.webshop.product.ProductRepository;
 import de.fhdw.webshop.product.ProductService;
 import de.fhdw.webshop.product.ProductType;
+import de.fhdw.webshop.reservation.StockReservationService;
 import de.fhdw.webshop.user.DeliveryAddress;
 import de.fhdw.webshop.user.DeliveryAddressRepository;
 import de.fhdw.webshop.user.PaymentMethod;
@@ -109,6 +110,7 @@ public class OrderService {
     private final PickupStoreRepository pickupStoreRepository;
     private final PickupStoreService pickupStoreService;
     private final WishlistService wishlistService;
+    private final StockReservationService stockReservationService;
 
     @Value("${app.frontend.base-url:http://localhost:5173}")
     private String frontendBaseUrl;
@@ -233,8 +235,9 @@ public class OrderService {
     }
 
     /** US #42 - Convert the current cart into a confirmed order. Coupon reduces the order subtotal. */
-    @Transactional(readOnly = true)
+    @Transactional
     public OrderPreviewResponse previewOrder(User customer, PlaceOrderRequest placeOrderRequest) {
+        cartService.getCart(customer.getId());
         PreparedOrder preparedOrder = prepareCustomerOrder(customer, placeOrderRequest);
         return toPreviewResponse(preparedOrder);
     }
@@ -253,6 +256,7 @@ public class OrderService {
         if (placeOrderRequest == null || !Boolean.TRUE.equals(placeOrderRequest.acceptedPrivacyPolicy())) {
             throw new IllegalArgumentException("Bitte akzeptiere AGB, Widerrufsbelehrung und Datenschutzhinweise vor der Bestellung");
         }
+        cartService.getCart(customer.getId());
         PreparedOrder preparedOrder = prepareCustomerOrder(customer, placeOrderRequest);
         DeliveryAddressRequest deliveryAddressRequest = placeOrderRequest != null ? placeOrderRequest.deliveryAddress() : null;
         PaymentMethodRequest paymentMethodRequest = placeOrderRequest != null ? placeOrderRequest.paymentMethod() : null;
@@ -326,6 +330,7 @@ public class OrderService {
                 displayName,
                 cartItems.stream()
                         .map(cartItem -> new RequestedOrderItem(
+                                cartItem.getId(),
                                 cartItem.getProduct(),
                                 cartItem.getQuantity(),
                                 cartItem.getPersonalizationText(),
@@ -370,6 +375,7 @@ public class OrderService {
 
         List<RequestedOrderItem> requestedItems = placeOrderRequest.items().stream()
                 .map(item -> new RequestedOrderItem(
+                        null,
                         productService.loadProduct(item.productId()),
                         item.quantity(),
                         item.personalizationText(),
@@ -447,11 +453,25 @@ public class OrderService {
         for (RequestedOrderItem requestedItem : requestedItems) {
             Product product = requestedItem.product();
             boolean giftCard = product.getProductType() == ProductType.DIGITAL_GIFT_CARD;
-            if (!product.isPurchasable() || (!giftCard && product.getStock() <= 0)) {
+            int availableStock = giftCard
+                    ? 999999
+                    : (requestedItem.cartItemId() == null
+                            ? stockReservationService.getAvailableQuantity(product)
+                            : stockReservationService.getReservableQuantity(product, requestedItem.cartItemId()));
+            if (!product.isPurchasable() || (!giftCard && availableStock <= 0)) {
                 throw new IllegalArgumentException(product.getName() + " is no longer available");
             }
-            if (!giftCard && requestedItem.quantity() > product.getStock()) {
-                throw new IllegalArgumentException("Only " + product.getStock() + " units of " + product.getName() + " are available");
+            if (!giftCard && requestedItem.quantity() > availableStock) {
+                throw new IllegalArgumentException("Only " + availableStock + " units of " + product.getName() + " are available");
+            }
+            if (!giftCard
+                    && requestedItem.cartItemId() != null
+                    && !stockReservationService.hasValidReservation(
+                    requestedItem.cartItemId(),
+                    product.getId(),
+                    requestedItem.quantity())) {
+                throw new IllegalArgumentException("Die Reservierung fuer " + product.getName()
+                        + " ist abgelaufen. Bitte aktualisiere deinen Warenkorb.");
             }
             String personalizationText = normalizePersonalizationText(product, requestedItem.personalizationText());
             BigDecimal giftCardAmount = resolveGiftCardAmount(product, requestedItem.giftCardAmount());
@@ -678,6 +698,9 @@ public class OrderService {
         Order savedOrder = orderRepository.save(order);
         productRepository.saveAll(updatedProducts);
         wishlistService.recordGiftPurchases(savedOrder.getItems());
+        if (savedOrder.getCustomer() != null) {
+            stockReservationService.consumeUserReservations(savedOrder.getCustomer().getId());
+        }
         return savedOrder;
     }
 
@@ -1514,6 +1537,7 @@ public class OrderService {
     ) {}
 
     private record RequestedOrderItem(
+            Long cartItemId,
             Product product,
             int quantity,
             String personalizationText,

@@ -21,6 +21,7 @@ import de.fhdw.webshop.pickup.PickupStoreService;
 import de.fhdw.webshop.product.Product;
 import de.fhdw.webshop.product.ProductRepository;
 import de.fhdw.webshop.product.ProductService;
+import de.fhdw.webshop.reservation.StockReservationService;
 import de.fhdw.webshop.user.DeliveryAddressRepository;
 import de.fhdw.webshop.user.PaymentMethodRepository;
 import de.fhdw.webshop.user.PaymentMethodType;
@@ -236,6 +237,7 @@ class OrderServiceTest {
         PickupStoreRepository pickupStoreRepository = mock(PickupStoreRepository.class);
         PickupStoreService pickupStoreService = mock(PickupStoreService.class);
         WishlistService wishlistService = mock(WishlistService.class);
+        StockReservationService stockReservationService = mock(StockReservationService.class);
 
         OrderService service = new OrderService(
                 orderRepository,
@@ -258,7 +260,8 @@ class OrderServiceTest {
                 accountLinkRepository,
                 pickupStoreRepository,
                 pickupStoreService,
-                wishlistService);
+                wishlistService,
+                stockReservationService);
 
         User customer = businessCustomer(10L, "employee");
         User manager = businessCustomer(11L, "manager");
@@ -276,6 +279,11 @@ class OrderServiceTest {
         when(volumeDiscountService.resolve(any(BigDecimal.class), anyInt(), anyBoolean()))
                 .thenReturn(VolumeDiscountService.VolumeDiscountResult.none());
         when(accountLinkRepository.findAllForUserId(customer.getId())).thenReturn(List.of(link));
+        when(stockReservationService.getAvailableQuantity(any(Product.class)))
+                .thenAnswer(invocation -> invocation.<Product>getArgument(0).getStock());
+        when(stockReservationService.getReservableQuantity(any(Product.class), any()))
+                .thenAnswer(invocation -> invocation.<Product>getArgument(0).getStock());
+        when(stockReservationService.hasValidReservation(any(), any(), anyInt())).thenReturn(true);
         when(addressLookupService.validateAddress(any())).thenReturn(new AddressValidationResponse(
                 true,
                 "Hauptstrasse 1, 33602 Bielefeld, Germany",
