@@ -3,6 +3,8 @@ package de.fhdw.webshop.returnrequest;
 import de.fhdw.webshop.order.OrderItem;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -35,6 +37,13 @@ public class ReturnRequestItem {
 
     @Column(name = "product_name", nullable = false, length = 255)
     private String productName;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 40)
+    private ReturnReason reason = ReturnReason.OTHER;
+
+    @Column(name = "customer_comment", length = 500)
+    private String customerComment;
 
     @Column(nullable = false)
     private int quantity;

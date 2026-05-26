@@ -60,6 +60,25 @@ public class ReturnRequest {
     @Column(name = "inspected_at")
     private Instant inspectedAt;
 
+    @Column(name = "approved_at")
+    private Instant approvedAt;
+
+    @Column(name = "rejected_at")
+    private Instant rejectedAt;
+
+    @Column(name = "goods_received_at")
+    private Instant goodsReceivedAt;
+
+    @Column(name = "refunded_at")
+    private Instant refundedAt;
+
+    @Column(name = "decision_reason", length = 500)
+    private String decisionReason;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "decided_by_id")
+    private User decidedBy;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "inspection_condition", length = 30)
     private ReturnInspectionCondition inspectionCondition;
