@@ -1,5 +1,7 @@
 package de.fhdw.webshop.chat;
 
+import de.fhdw.webshop.agb.AgbService;
+import de.fhdw.webshop.agb.dto.AgbVersionResponse;
 import de.fhdw.webshop.cart.CartService;
 import de.fhdw.webshop.cart.dto.CartResponse;
 import de.fhdw.webshop.chat.dto.ChatMessageRequest;
@@ -31,6 +33,43 @@ public class ChatService {
     private static final int MAX_RECENT_NOTIFICATIONS = 5;
     private static final int MAX_ITEMS_PER_ORDER = 10;
 
+    /**
+     * Static legal and shop facts mirrored from the frontend legal pages
+     * (src/content/legalData.js and src/utils/checkout.js). Keep in sync when those change.
+     * The full terms of service text is loaded live via AgbService and appended separately.
+     */
+    private static final String STATIC_LEGAL_INFO = """
+            [RECHTLICHE INFORMATIONEN] (öffentlich, für alle Nutzer):
+
+            Hinweis: Dies ist ein studentisches Demonstrationsprojekt der FHDW. Die rechtlichen
+            Angaben dienen nur zu Demonstrationszwecken und sind keine echten Vertragsdaten.
+
+            Impressum (Anbieter) — Seite: /impressum
+            - Anbieter: Fachhochschule der Wirtschaft (FHDW) gGmbH, vertreten durch den Geschäftsführer Thomas Ströder
+            - Anschrift: Hauptstraße 2, 51465 Bergisch Gladbach, Deutschland
+            - Kontakt: Telefon +49 (0)2202 9527-0, E-Mail info@fhdw.de
+            - Handelsregister: Amtsgericht Paderborn, HRB 6857
+            - Umsatzsteuer-ID (§ 27a UStG): DE813485271
+
+            Versand & Zahlung — Seite: /versand-zahlung
+            - Liefergebiet: primär Deutschland.
+            - Versandarten: DHL Standard (in der Regel 2–4 Werktage), DHL Express (in der Regel 1–2 Werktage).
+            - Versandkosten: Standard 4,99 EUR, kostenlos ab 50,00 EUR Warenwert; Express 9,99 EUR.
+            - Zahlungsarten: Kreditkarte, SEPA-Lastschrift, Banküberweisung.
+            - Maßgeblich sind stets die im Warenkorb und Checkout angezeigten Beträge und Optionen.
+
+            Widerruf — Seite: /widerruf
+            - Verbraucher haben grundsätzlich ein 14-tägiges Widerrufsrecht ab Erhalt der Ware.
+            - Details und das Muster-Widerrufsformular stehen auf der Widerrufsseite.
+
+            Datenschutz — Seite: /datenschutz
+            - Personenbezogene Daten werden gemäß DSGVO verarbeitet. Details auf der Datenschutzseite.
+            - Für den KI-Assistenten Shoppi gibt es zusätzliche Hinweise unter /datenschutz-chatbot.
+
+            AGB — Seite: /agb (Volltext der aktuellen Fassung siehe unten unter [AGB - aktuelle Fassung]).
+
+            """;
+
     private final OllamaClient ollamaClient;
     private final ProductService productService;
     private final CartService cartService;
@@ -38,6 +77,7 @@ public class ChatService {
     private final StandingOrderService standingOrderService;
     private final FollowUpOrderService followUpOrderService;
     private final SystemNotificationService systemNotificationService;
+    private final AgbService agbService;
 
     public ChatMessageResponse processMessage(User currentUser, ChatMessageRequest request) {
         String systemPrompt = buildSystemPrompt(currentUser);
@@ -59,6 +99,8 @@ public class ChatService {
                 - Du hilfst Kunden bei Produktfragen, Preisinfos und der Suche nach Artikeln.
                 - Du erklärst Warenkorb, Bestellungen (inkl. Liefer- und Bestellstatus),
                   Daueraufträge, Folgebestellungen und Benachrichtigungen (nur für eingeloggte Nutzer).
+                - Du beantwortest Fragen zu rechtlichen und allgemeinen Shop-Themen wie Impressum,
+                  AGB, Datenschutz, Widerruf sowie Versand & Zahlung anhand der unten bereitgestellten Infos.
                 - Du gibst allgemeine Infos zum Shop.
 
                 Was du NICHT tust:
@@ -76,6 +118,7 @@ public class ChatService {
                 """);
 
         appendProductCatalogContext(systemPromptBuilder);
+        appendLegalContext(systemPromptBuilder);
 
         if (currentUser != null) {
             appendUserContext(systemPromptBuilder, currentUser);
@@ -110,6 +153,29 @@ public class ChatService {
             builder.append("\n");
         } catch (Exception exception) {
             builder.append("[PRODUKTKATALOG]: Konnte nicht geladen werden.\n\n");
+        }
+    }
+
+    /**
+     * Appends public legal and shop information so Shoppi can answer questions about
+     * Impressum, shipping, payment, cancellation and privacy. The terms of service (AGB)
+     * are loaded live from the database; the remaining facts mirror the static legal pages
+     * of the frontend (legalData.js / checkout.js) and must be kept in sync with them.
+     */
+    private void appendLegalContext(StringBuilder builder) {
+        builder.append(STATIC_LEGAL_INFO);
+        appendTermsOfServiceContext(builder);
+    }
+
+    private void appendTermsOfServiceContext(StringBuilder builder) {
+        try {
+            AgbVersionResponse latestTerms = agbService.getLatestVersion();
+            builder.append("[AGB - aktuelle Fassung]:\n")
+                    .append(latestTerms.agbText())
+                    .append("\n\n");
+        } catch (Exception exception) {
+            builder.append("[AGB]: Volltext aktuell nicht abrufbar. " +
+                    "Verweise den Nutzer auf die Seite /agb.\n\n");
         }
     }
 
