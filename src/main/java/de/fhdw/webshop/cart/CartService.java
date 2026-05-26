@@ -22,6 +22,9 @@ import de.fhdw.webshop.product.Product;
 import de.fhdw.webshop.product.ProductRepository;
 import de.fhdw.webshop.product.ProductType;
 import de.fhdw.webshop.product.ProductService;
+import de.fhdw.webshop.productbundle.ProductBundle;
+import de.fhdw.webshop.productbundle.ProductBundleItem;
+import de.fhdw.webshop.productbundle.ProductBundleService;
 import de.fhdw.webshop.reservation.StockReservationService;
 import de.fhdw.webshop.reservation.dto.CartReservationInfo;
 import de.fhdw.webshop.user.User;
@@ -40,10 +43,11 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Set;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -60,6 +64,7 @@ public class CartService {
     private final WishlistService wishlistService;
     private final CartChangeLogService cartChangeLogService;
     private final StockReservationService stockReservationService;
+    private final ProductBundleService productBundleService;
 
     private static final BigDecimal TAX_RATE      = BigDecimal.valueOf(0.19);
     private static final BigDecimal SHIPPING_COST = new BigDecimal("4.99");
@@ -212,6 +217,30 @@ public class CartService {
         return getCart(user.getId());
     }
 
+    @Transactional
+    public CartResponse addBundle(User user, Long bundleId, int quantity) {
+        ProductBundle bundle = productBundleService.loadBundleForPurchase(bundleId);
+        String bundleGroupKey = "bundle-" + UUID.randomUUID();
+
+        for (ProductBundleItem bundleItem : bundle.getItems()) {
+            Product product = bundleItem.getProduct();
+            CartItem cartItem = new CartItem();
+            cartItem.setUser(user);
+            cartItem.setProduct(product);
+            cartItem.setQuantity(bundleItem.getQuantity() * quantity);
+            cartItem.setBundle(bundle);
+            cartItem.setBundleTitle(bundle.getTitle());
+            cartItem.setBundleGroupKey(bundleGroupKey);
+            cartItem.setBundleDiscountPercent(bundle.getDiscountPercent());
+            cartItem.setPriceOverride(productBundleService.calculateDiscountedUnitPrice(product, bundle.getDiscountPercent()));
+            validateReservableQuantity(cartItem, cartItem.getQuantity());
+            CartItem savedItem = cartRepository.save(cartItem);
+            stockReservationService.refreshReservation(savedItem);
+        }
+
+        return getCart(user.getId());
+    }
+
     /** US #253 - Employee changes to customer carts are recorded in an immutable audit trail. */
     @Transactional
     public CartResponse addItemForCustomerByEmployee(User customer, AddToCartRequest addToCartRequest, User employee) {
@@ -274,6 +303,25 @@ public class CartService {
                 .orElseThrow(() -> new EntityNotFoundException("Item not in cart: cartItemId=" + cartItemId));
         stockReservationService.releaseCartItemReservation(cartItem.getId());
         cartRepository.delete(cartItem);
+        return getCart(user.getId());
+    }
+
+    @Transactional
+    public CartResponse removeBundleGroup(User user, String bundleGroupKey) {
+        String normalizedGroupKey = trimToNull(bundleGroupKey);
+        if (normalizedGroupKey == null) {
+            throw new IllegalArgumentException("Die Bundle-Gruppe konnte nicht zugeordnet werden.");
+        }
+
+        List<CartItem> bundleItems = cartRepository.findByUserIdAndBundleGroupKey(user.getId(), normalizedGroupKey);
+        if (bundleItems.isEmpty()) {
+            throw new EntityNotFoundException("Bundle group not found: " + normalizedGroupKey);
+        }
+
+        for (CartItem bundleItem : bundleItems) {
+            stockReservationService.releaseCartItemReservation(bundleItem.getId());
+        }
+        cartRepository.deleteAll(bundleItems);
         return getCart(user.getId());
     }
 
@@ -367,6 +415,11 @@ public class CartService {
                         newCartItem.setGiftCardAmount(orderItem.getGiftCardAmount());
                         newCartItem.setGiftCardRecipientEmail(orderItem.getGiftCardRecipientEmail());
                         newCartItem.setGiftCardMessage(orderItem.getGiftCardMessage());
+                        newCartItem.setBundle(orderItem.getBundle());
+                        newCartItem.setBundleTitle(orderItem.getBundleTitle());
+                        newCartItem.setBundleGroupKey(orderItem.getBundleGroupKey());
+                        newCartItem.setBundleDiscountPercent(orderItem.getBundleDiscountPercent());
+                        newCartItem.setPriceOverride(orderItem.getBundle() == null ? null : orderItem.getPriceAtOrderTime());
                         return newCartItem;
                     });
             int nextQuantity = cartItem.getQuantity() + orderItem.getQuantity();
@@ -459,7 +512,9 @@ public class CartService {
         BigDecimal discountPercent = discountLookupPort.findBestActiveDiscountPercent(userId, cartItem.getProduct().getId());
         BigDecimal recommendedRetailPrice = resolveUnitPrice(cartItem.getProduct(), cartItem.getGiftCardAmount());
         BigDecimal effectiveUnitPrice;
-        if (discountPercent != null && discountPercent.compareTo(BigDecimal.ZERO) > 0) {
+        if (cartItem.getPriceOverride() != null) {
+            effectiveUnitPrice = cartItem.getPriceOverride().setScale(2, RoundingMode.HALF_UP);
+        } else if (discountPercent != null && discountPercent.compareTo(BigDecimal.ZERO) > 0) {
             BigDecimal multiplier = BigDecimal.ONE.subtract(discountPercent.divide(BigDecimal.valueOf(100)));
             effectiveUnitPrice = recommendedRetailPrice.multiply(multiplier)
                     .setScale(2, RoundingMode.HALF_UP);
@@ -486,8 +541,13 @@ public class CartService {
                 cartItem.getGiftCardMessage(),
                 cartItem.getSharedWishlistToken(),
                 cartItem.getSharedWishlistListId(),
+                cartItem.getBundle() == null ? null : cartItem.getBundle().getId(),
+                cartItem.getBundleTitle(),
+                cartItem.getBundleGroupKey(),
+                cartItem.getBundleDiscountPercent(),
                 cartItem.getProduct().getImageUrl(),
                 effectiveUnitPrice,
+                recommendedRetailPrice,
                 co2EmissionKg,
                 getAvailableStock(cartItem),
                 reservationInfo.reservedQuantity(),
