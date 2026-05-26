@@ -19,7 +19,8 @@
 
 param(
     [string]$Command = "",
-    [switch]$KeepDb
+    [switch]$KeepDb,
+    [string]$TestFilter = ""
 )
 
 $Root = $PSScriptRoot
@@ -91,6 +92,9 @@ function Show-Usage {
     Write-Host "  restart  Stop backend, then start backend"
     Write-Host "  rebuild  Force full rebuild - also deletes the PostgreSQL volume (fresh DB)"
     Write-Host "           Use --keep-db to skip the volume deletion and keep existing data"
+    Write-Host "  test     Run the backend test suite in a Maven container (no local Maven needed)"
+    Write-Host "           Integration tests spin up PostgreSQL via Testcontainers (Docker required)"
+    Write-Host "           Optional filter: ./dev.bat test CartFlowIntegrationTest"
     Write-Host ""
     Write-Host "Options:"
     Write-Host "  --keep-db   Keep PostgreSQL data (combine with stop/restart/rebuild)"
@@ -99,9 +103,9 @@ function Show-Usage {
 
 function Read-CommandInteractive {
     Show-Usage
-    $inputCommand = (Read-Host "Enter command (start/stop/restart/rebuild)").Trim().ToLower()
+    $inputCommand = (Read-Host "Enter command (start/stop/restart/rebuild/test)").Trim().ToLower()
 
-    if ($inputCommand -notin @("start", "stop", "restart", "rebuild")) {
+    if ($inputCommand -notin @("start", "stop", "restart", "rebuild", "test")) {
         Write-Host "ERROR: Unknown command '$inputCommand'."
         exit 1
     }
@@ -289,13 +293,54 @@ function Rebuild-Backend {
     }
 }
 
+# --- test --------------------------------------------------------------------
+
+function Invoke-Tests {
+    if (-not (Test-DockerRunning)) { return }
+
+    Write-Host "Running backend tests in a Maven container (no local Java/Maven needed)..."
+    Write-Host "Integration tests start a PostgreSQL container via Testcontainers using the host Docker daemon."
+    if ($TestFilter) {
+        Write-Host "Filter: -Dtest=$TestFilter"
+    }
+    Write-Host "(First run downloads dependencies into the cached volume and pulls the postgres image.)"
+    Write-Host "-------------------------------------------------------------------------------"
+
+    # Built as an argument array and splatted, so the '!' in the project path is passed
+    # literally to docker.exe (no shell re-parsing). The mounted Docker socket lets
+    # Testcontainers start sibling containers; TESTCONTAINERS_HOST_OVERRIDE makes the
+    # Maven container reach the mapped database port on the host.
+    $dockerArguments = @(
+        "run", "--rm",
+        "-v", "${Root}:/app",
+        "-v", "webshop-mvn-repo:/root/.m2",
+        "-v", "//var/run/docker.sock:/var/run/docker.sock",
+        "-e", "TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal",
+        "-w", "/app",
+        "maven:3.9-eclipse-temurin-21-alpine",
+        "mvn", "-B", "test"
+    )
+    if ($TestFilter) {
+        $dockerArguments += "-Dtest=$TestFilter"
+    }
+
+    & docker @dockerArguments
+
+    Write-Host "-------------------------------------------------------------------------------"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "ERROR: Tests failed (exit code $LASTEXITCODE)."
+        return
+    }
+    Write-Host "All tests passed."
+}
+
 # --- dispatch ----------------------------------------------------------------
 
 if (-not $Command) {
     $Command = Read-CommandInteractive
 }
 
-if ($Command -notin @("start", "stop", "restart", "rebuild")) {
+if ($Command -notin @("start", "stop", "restart", "rebuild", "test")) {
     Write-Host "ERROR: Unknown command '$Command'. Run './dev.bat' without arguments for help."
     exit 1
 }
@@ -305,4 +350,5 @@ switch ($Command) {
     "stop"    { Stop-Backend }
     "restart" { Stop-Backend; Start-Sleep -Seconds 1; Start-Backend }
     "rebuild" { Rebuild-Backend }
+    "test"    { Invoke-Tests }
 }
