@@ -1,13 +1,24 @@
 package de.fhdw.webshop.chat;
 
+import de.fhdw.webshop.agb.AgbService;
+import de.fhdw.webshop.agb.dto.AgbVersionResponse;
 import de.fhdw.webshop.cart.CartService;
 import de.fhdw.webshop.cart.dto.CartResponse;
 import de.fhdw.webshop.chat.dto.ChatMessageRequest;
 import de.fhdw.webshop.chat.dto.ChatMessageResponse;
+import de.fhdw.webshop.followuporder.FollowUpOrderService;
+import de.fhdw.webshop.followuporder.dto.FollowUpOrderItemResponse;
+import de.fhdw.webshop.followuporder.dto.FollowUpOrderResponse;
+import de.fhdw.webshop.notification.SystemNotificationResponse;
+import de.fhdw.webshop.notification.SystemNotificationService;
 import de.fhdw.webshop.order.OrderService;
+import de.fhdw.webshop.order.dto.OrderItemResponse;
 import de.fhdw.webshop.order.dto.OrderResponse;
 import de.fhdw.webshop.product.ProductService;
 import de.fhdw.webshop.product.dto.ProductResponse;
+import de.fhdw.webshop.standingorder.dto.StandingOrderItemResponse;
+import de.fhdw.webshop.standingorder.dto.StandingOrderResponse;
+import de.fhdw.webshop.standingorder.StandingOrderService;
 import de.fhdw.webshop.user.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -18,10 +29,55 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ChatService {
 
+    private static final int MAX_RECENT_ORDERS = 5;
+    private static final int MAX_RECENT_NOTIFICATIONS = 5;
+    private static final int MAX_ITEMS_PER_ORDER = 10;
+
+    /**
+     * Static legal and shop facts mirrored from the frontend legal pages
+     * (src/content/legalData.js and src/utils/checkout.js). Keep in sync when those change.
+     * The full terms of service text is loaded live via AgbService and appended separately.
+     */
+    private static final String STATIC_LEGAL_INFO = """
+            [RECHTLICHE INFORMATIONEN] (öffentlich, für alle Nutzer):
+
+            Hinweis: Dies ist ein studentisches Demonstrationsprojekt der FHDW. Die rechtlichen
+            Angaben dienen nur zu Demonstrationszwecken und sind keine echten Vertragsdaten.
+
+            Impressum (Anbieter) — Seite: /impressum
+            - Anbieter: Fachhochschule der Wirtschaft (FHDW) gGmbH, vertreten durch den Geschäftsführer Thomas Ströder
+            - Anschrift: Hauptstraße 2, 51465 Bergisch Gladbach, Deutschland
+            - Kontakt: Telefon +49 (0)2202 9527-0, E-Mail info@fhdw.de
+            - Handelsregister: Amtsgericht Paderborn, HRB 6857
+            - Umsatzsteuer-ID (§ 27a UStG): DE813485271
+
+            Versand & Zahlung — Seite: /versand-zahlung
+            - Liefergebiet: primär Deutschland.
+            - Versandarten: DHL Standard (in der Regel 2–4 Werktage), DHL Express (in der Regel 1–2 Werktage).
+            - Versandkosten: Standard 4,99 EUR, kostenlos ab 50,00 EUR Warenwert; Express 9,99 EUR.
+            - Zahlungsarten: Kreditkarte, SEPA-Lastschrift, Banküberweisung.
+            - Maßgeblich sind stets die im Warenkorb und Checkout angezeigten Beträge und Optionen.
+
+            Widerruf — Seite: /widerruf
+            - Verbraucher haben grundsätzlich ein 14-tägiges Widerrufsrecht ab Erhalt der Ware.
+            - Details und das Muster-Widerrufsformular stehen auf der Widerrufsseite.
+
+            Datenschutz — Seite: /datenschutz
+            - Personenbezogene Daten werden gemäß DSGVO verarbeitet. Details auf der Datenschutzseite.
+            - Für den KI-Assistenten Shoppi gibt es zusätzliche Hinweise unter /datenschutz-chatbot.
+
+            AGB — Seite: /agb (Volltext der aktuellen Fassung siehe unten unter [AGB - aktuelle Fassung]).
+
+            """;
+
     private final OllamaClient ollamaClient;
     private final ProductService productService;
     private final CartService cartService;
     private final OrderService orderService;
+    private final StandingOrderService standingOrderService;
+    private final FollowUpOrderService followUpOrderService;
+    private final SystemNotificationService systemNotificationService;
+    private final AgbService agbService;
 
     public ChatMessageResponse processMessage(User currentUser, ChatMessageRequest request) {
         String systemPrompt = buildSystemPrompt(currentUser);
@@ -41,7 +97,10 @@ public class ChatService {
 
                 Was du tust:
                 - Du hilfst Kunden bei Produktfragen, Preisinfos und der Suche nach Artikeln.
-                - Du erklärst Bestellhistorie, Warenkorb und Daueraufträge (nur für eingeloggte Nutzer).
+                - Du erklärst Warenkorb, Bestellungen (inkl. Liefer- und Bestellstatus),
+                  Daueraufträge, Folgebestellungen und Benachrichtigungen (nur für eingeloggte Nutzer).
+                - Du beantwortest Fragen zu rechtlichen und allgemeinen Shop-Themen wie Impressum,
+                  AGB, Datenschutz, Widerruf sowie Versand & Zahlung anhand der unten bereitgestellten Infos.
                 - Du gibst allgemeine Infos zum Shop.
 
                 Was du NICHT tust:
@@ -59,6 +118,7 @@ public class ChatService {
                 """);
 
         appendProductCatalogContext(systemPromptBuilder);
+        appendLegalContext(systemPromptBuilder);
 
         if (currentUser != null) {
             appendUserContext(systemPromptBuilder, currentUser);
@@ -96,6 +156,29 @@ public class ChatService {
         }
     }
 
+    /**
+     * Appends public legal and shop information so Shoppi can answer questions about
+     * Impressum, shipping, payment, cancellation and privacy. The terms of service (AGB)
+     * are loaded live from the database; the remaining facts mirror the static legal pages
+     * of the frontend (legalData.js / checkout.js) and must be kept in sync with them.
+     */
+    private void appendLegalContext(StringBuilder builder) {
+        builder.append(STATIC_LEGAL_INFO);
+        appendTermsOfServiceContext(builder);
+    }
+
+    private void appendTermsOfServiceContext(StringBuilder builder) {
+        try {
+            AgbVersionResponse latestTerms = agbService.getLatestVersion();
+            builder.append("[AGB - aktuelle Fassung]:\n")
+                    .append(latestTerms.agbText())
+                    .append("\n\n");
+        } catch (Exception exception) {
+            builder.append("[AGB]: Volltext aktuell nicht abrufbar. " +
+                    "Verweise den Nutzer auf die Seite /agb.\n\n");
+        }
+    }
+
     private void appendUserContext(StringBuilder builder, User currentUser) {
         builder.append("[NUTZERPROFIL]:\n")
                 .append("- Benutzername: ").append(currentUser.getUsername()).append("\n")
@@ -106,6 +189,9 @@ public class ChatService {
 
         appendCartContext(builder, currentUser);
         appendOrderHistoryContext(builder, currentUser);
+        appendStandingOrderContext(builder, currentUser);
+        appendFollowUpOrderContext(builder, currentUser);
+        appendNotificationContext(builder, currentUser);
     }
 
     private void appendCartContext(StringBuilder builder, User currentUser) {
@@ -130,21 +216,204 @@ public class ChatService {
     private void appendOrderHistoryContext(StringBuilder builder, User currentUser) {
         try {
             List<OrderResponse> recentOrders = orderService.listOrdersForCustomer(currentUser.getId())
-                    .stream().limit(5).toList();
+                    .stream().limit(MAX_RECENT_ORDERS).toList();
             if (recentOrders.isEmpty()) {
                 builder.append("[BESTELLHISTORIE]: Keine Bestellungen vorhanden.\n\n");
-            } else {
-                builder.append("[BESTELLHISTORIE] (letzte ").append(recentOrders.size()).append(" Bestellungen):\n");
-                recentOrders.forEach(order ->
-                        builder.append("- Bestellung #").append(order.id())
-                                .append(" | Status: ").append(order.status())
-                                .append(" | Betrag: ").append(order.totalPrice()).append(" EUR")
-                                .append(" | Datum: ").append(order.createdAt()).append("\n")
-                );
-                builder.append("\n");
+                return;
             }
+
+            appendOrderStatusLegend(builder);
+
+            builder.append("[BESTELLHISTORIE] (letzte ").append(recentOrders.size()).append(" Bestellungen):\n");
+            for (OrderResponse order : recentOrders) {
+                appendSingleOrder(builder, order);
+            }
+            builder.append("\n");
         } catch (Exception exception) {
             builder.append("[BESTELLHISTORIE]: Konnte nicht geladen werden.\n\n");
+        }
+    }
+
+    private void appendOrderStatusLegend(StringBuilder builder) {
+        builder.append("""
+                [BESTELLSTATUS-BEDEUTUNG]:
+                - PENDING: Bestellung aufgegeben, noch nicht bestätigt.
+                - Pending_Approval: Wartet auf Freigabe (z. B. Budgetfreigabe bei Unternehmenskunden).
+                - Rejected: Freigabe wurde abgelehnt.
+                - CONFIRMED: Bestätigt, wird bearbeitet.
+                - PACKED_IN_WAREHOUSE: Im Lager verpackt.
+                - READY_FOR_PICKUP: Abholbereit (Click & Collect).
+                - IN_TRUCK: Im Lieferfahrzeug unterwegs.
+                - SHIPPED: Versandt.
+                - DELIVERED: Zugestellt.
+                - CANCELLED: Storniert.
+
+                """);
+    }
+
+    private void appendSingleOrder(StringBuilder builder, OrderResponse order) {
+        String orderLabel = order.orderNumber() != null ? order.orderNumber() : "#" + order.id();
+        builder.append("- Bestellung ").append(orderLabel)
+                .append(" | Status: ").append(order.status())
+                .append(" | Versandart: ").append(order.shippingMethod())
+                .append(" | Betrag: ").append(order.totalPrice()).append(" EUR")
+                .append(" | Bestelldatum: ").append(order.createdAt());
+
+        if (order.estimatedDeliveryAt() != null) {
+            builder.append(" | Voraussichtliche Lieferung: ").append(order.estimatedDeliveryAt());
+        }
+        if (order.deliveredAt() != null) {
+            builder.append(" | Geliefert am: ").append(order.deliveredAt());
+        }
+        if (order.pickupStore() != null) {
+            builder.append(" | Abholfiliale: ").append(order.pickupStore().name())
+                    .append(" (").append(order.pickupStore().city()).append(")");
+        }
+        if (order.truckIdentifier() != null && !order.truckIdentifier().isBlank()) {
+            builder.append(" | Sendung: ").append(order.truckIdentifier());
+        }
+        builder.append("\n");
+
+        appendOrderItems(builder, order);
+    }
+
+    private void appendOrderItems(StringBuilder builder, OrderResponse order) {
+        if (order.items() == null || order.items().isEmpty()) {
+            return;
+        }
+        List<OrderItemResponse> items = order.items().stream().limit(MAX_ITEMS_PER_ORDER).toList();
+        builder.append("    Artikel: ");
+        for (int index = 0; index < items.size(); index++) {
+            OrderItemResponse item = items.get(index);
+            builder.append(item.productName()).append(" x").append(item.quantity());
+            if (index < items.size() - 1) {
+                builder.append(", ");
+            }
+        }
+        if (order.items().size() > MAX_ITEMS_PER_ORDER) {
+            builder.append(", …");
+        }
+        builder.append("\n");
+    }
+
+    private void appendStandingOrderContext(StringBuilder builder, User currentUser) {
+        try {
+            List<StandingOrderResponse> standingOrders =
+                    standingOrderService.listForCustomer(currentUser.getId());
+            if (standingOrders.isEmpty()) {
+                builder.append("[DAUERAUFTRÄGE]: Keine Daueraufträge vorhanden.\n\n");
+                return;
+            }
+            builder.append("[DAUERAUFTRÄGE] (").append(standingOrders.size()).append("):\n");
+            for (StandingOrderResponse standingOrder : standingOrders) {
+                builder.append("- Dauerauftrag #").append(standingOrder.id())
+                        .append(" | Intervall: alle ").append(standingOrder.intervalValue())
+                        .append(" ").append(formatIntervalType(standingOrder))
+                        .append(" | Nächste Ausführung: ").append(standingOrder.nextExecutionDate())
+                        .append(" | Status: ").append(standingOrder.active() ? "aktiv" : "pausiert");
+                appendStandingOrderItems(builder, standingOrder);
+                builder.append("\n");
+            }
+            builder.append("\n");
+        } catch (Exception exception) {
+            builder.append("[DAUERAUFTRÄGE]: Konnten nicht geladen werden.\n\n");
+        }
+    }
+
+    private void appendStandingOrderItems(StringBuilder builder, StandingOrderResponse standingOrder) {
+        if (standingOrder.items() == null || standingOrder.items().isEmpty()) {
+            return;
+        }
+        builder.append(" | Artikel: ");
+        List<StandingOrderItemResponse> items = standingOrder.items();
+        for (int index = 0; index < items.size(); index++) {
+            StandingOrderItemResponse item = items.get(index);
+            builder.append(item.productName()).append(" x").append(item.quantity());
+            if (index < items.size() - 1) {
+                builder.append(", ");
+            }
+        }
+    }
+
+    private String formatIntervalType(StandingOrderResponse standingOrder) {
+        if (standingOrder.intervalType() == null) {
+            return "";
+        }
+        return switch (standingOrder.intervalType()) {
+            case DAYS -> "Tag(e)";
+            case WEEKS -> "Woche(n)";
+            case MONTHS -> "Monat(e)";
+            case YEARS -> "Jahr(e)";
+        };
+    }
+
+    private void appendFollowUpOrderContext(StringBuilder builder, User currentUser) {
+        try {
+            List<FollowUpOrderResponse> followUpOrders =
+                    followUpOrderService.listForCustomer(currentUser.getId());
+            if (followUpOrders.isEmpty()) {
+                builder.append("[FOLGEBESTELLUNGEN]: Keine Folgebestellungen vorhanden.\n\n");
+                return;
+            }
+            builder.append("[FOLGEBESTELLUNGEN] (").append(followUpOrders.size()).append("):\n");
+            for (FollowUpOrderResponse followUpOrder : followUpOrders) {
+                builder.append("- Folgebestellung #").append(followUpOrder.id())
+                        .append(" | Ausführungsdatum: ").append(followUpOrder.executionDate())
+                        .append(" | Status: ").append(formatFollowUpStatus(followUpOrder));
+                appendFollowUpOrderItems(builder, followUpOrder);
+                builder.append("\n");
+            }
+            builder.append("\n");
+        } catch (Exception exception) {
+            builder.append("[FOLGEBESTELLUNGEN]: Konnten nicht geladen werden.\n\n");
+        }
+    }
+
+    private void appendFollowUpOrderItems(StringBuilder builder, FollowUpOrderResponse followUpOrder) {
+        if (followUpOrder.items() == null || followUpOrder.items().isEmpty()) {
+            return;
+        }
+        builder.append(" | Artikel: ");
+        List<FollowUpOrderItemResponse> items = followUpOrder.items();
+        for (int index = 0; index < items.size(); index++) {
+            FollowUpOrderItemResponse item = items.get(index);
+            builder.append(item.productName()).append(" x").append(item.quantity());
+            if (index < items.size() - 1) {
+                builder.append(", ");
+            }
+        }
+    }
+
+    private String formatFollowUpStatus(FollowUpOrderResponse followUpOrder) {
+        if (followUpOrder.status() == null) {
+            return "unbekannt";
+        }
+        return switch (followUpOrder.status()) {
+            case PENDING -> "ausstehend";
+            case EXECUTED -> "ausgeführt";
+            case CANCELLED -> "storniert";
+        };
+    }
+
+    private void appendNotificationContext(StringBuilder builder, User currentUser) {
+        try {
+            long unreadCount = systemNotificationService.getUnreadCount(currentUser);
+            List<SystemNotificationResponse> notifications = systemNotificationService.getAll(currentUser)
+                    .stream().limit(MAX_RECENT_NOTIFICATIONS).toList();
+            if (notifications.isEmpty()) {
+                builder.append("[BENACHRICHTIGUNGEN]: Keine Benachrichtigungen vorhanden.\n\n");
+                return;
+            }
+            builder.append("[BENACHRICHTIGUNGEN] (").append(unreadCount).append(" ungelesen, ")
+                    .append("letzte ").append(notifications.size()).append("):\n");
+            for (SystemNotificationResponse notification : notifications) {
+                builder.append("- ").append(notification.read() ? "[gelesen] " : "[ungelesen] ")
+                        .append(notification.message())
+                        .append("\n");
+            }
+            builder.append("\n");
+        } catch (Exception exception) {
+            builder.append("[BENACHRICHTIGUNGEN]: Konnten nicht geladen werden.\n\n");
         }
     }
 
