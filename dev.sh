@@ -25,12 +25,18 @@ HEALTH_URL="http://localhost:$PORT/api/health"
 
 COMMAND="${1:-}"
 KEEP_DB=false
+TEST_FILTER=""
 COMPOSE_FILES=()
 
-# Shift past the command arg, then scan remaining args for flags
+# Shift past the command arg, then scan remaining args for flags.
+# The first non-flag argument is treated as the test filter (for the 'test' command).
 [[ $# -gt 0 ]] && shift
 for arg in "$@"; do
-    [[ "$arg" == "--keep-db" ]] && KEEP_DB=true
+    if [[ "$arg" == "--keep-db" ]]; then
+        KEEP_DB=true
+    else
+        TEST_FILTER="$arg"
+    fi
 done
 
 # --- helpers -----------------------------------------------------------------
@@ -209,6 +215,9 @@ show_usage() {
     echo "  stop     Stop all containers"
     echo "  restart  Stop backend, then start backend"
     echo "  rebuild  Force full rebuild (recreates containers)"
+    echo "  test     Run the backend test suite in a Maven container (no local Maven needed)"
+    echo "           Integration tests spin up PostgreSQL via Testcontainers (Docker required)"
+    echo "           Optional filter: ./dev.sh test CartFlowIntegrationTest"
     echo ""
     echo "Options:"
     echo "  --keep-db   Keep PostgreSQL running (combine with stop/restart/rebuild)"
@@ -222,7 +231,7 @@ read_command_interactive() {
     input_command="$(echo "$input_command" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 
     case "$input_command" in
-        start|stop|restart|rebuild) ;;
+        start|stop|restart|rebuild|test) ;;
         *)
             echo "ERROR: Unknown command '$input_command'."
             exit 1
@@ -321,6 +330,42 @@ rebuild_backend() {
     fi
 }
 
+# --- test --------------------------------------------------------------------
+
+run_tests() {
+    test_docker_running || return 1
+
+    echo "Running backend tests in a Maven container (no local Java/Maven needed)..."
+    echo "Integration tests start a PostgreSQL container via Testcontainers using the host Docker daemon."
+    [[ -n "$TEST_FILTER" ]] && echo "Filter: -Dtest=$TEST_FILTER"
+    echo "(First run downloads dependencies into the cached volume and pulls the postgres image.)"
+    echo "-------------------------------------------------------------------------------"
+
+    local maven_args=("-B" "test")
+    [[ -n "$TEST_FILTER" ]] && maven_args+=("-Dtest=$TEST_FILTER")
+
+    # The mounted Docker socket lets Testcontainers start sibling containers;
+    # the host-gateway mapping plus TESTCONTAINERS_HOST_OVERRIDE let the Maven container
+    # reach the mapped database port on the host (works on Docker Desktop and native Linux).
+    docker run --rm \
+        -v "$ROOT:/app" \
+        -v webshop-mvn-repo:/root/.m2 \
+        -v /var/run/docker.sock:/var/run/docker.sock \
+        --add-host=host.docker.internal:host-gateway \
+        -e TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal \
+        -w /app \
+        maven:3.9-eclipse-temurin-21-alpine \
+        mvn "${maven_args[@]}"
+
+    local exit_code=$?
+    echo "-------------------------------------------------------------------------------"
+    if [[ $exit_code -ne 0 ]]; then
+        echo "ERROR: Tests failed (exit code $exit_code)."
+        return 1
+    fi
+    echo "All tests passed."
+}
+
 # --- dispatch ----------------------------------------------------------------
 
 if [[ -z "$COMMAND" ]]; then
@@ -341,6 +386,9 @@ case "$COMMAND" in
         ;;
     rebuild)
         rebuild_backend
+        ;;
+    test)
+        run_tests
         ;;
     *)
         echo "ERROR: Unknown command '$COMMAND'. Run './dev.sh' without arguments for help."

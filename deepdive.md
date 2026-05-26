@@ -169,6 +169,7 @@ Das eigentliche Steuerungsskript. Alles läuft über Docker — kein Java lokal 
 | `dev stop --keep-db` | Nur Backend-Container stoppen, PostgreSQL bleibt laufen |
 | `dev restart` | Backend-Container stoppen + neu starten |
 | `dev rebuild` | `docker compose up --build --force-recreate` (kein Layer-Cache) |
+| `dev test` | Test-Suite in einem Maven-Container ausführen (optional mit `-Dtest`-Filter) |
 
 ---
 
@@ -1027,6 +1028,37 @@ Get-Content src/main/resources/db/dev-seed.sql | docker exec -i webshop-postgres
 - `pom.xml` geändert und der Layer-Cache hat einen alten Stand
 - Build-Fehler die sich nicht durch `restart` beheben lassen
 - Saubere Datenbank für Tests gewünscht
+
+### dev test
+
+```
+dev.ps1 test [Filter]
+  └── docker run --rm                                  (Maven läuft im Container, kein lokales Maven)
+        -v <projekt>:/app
+        -v webshop-mvn-repo:/root/.m2                  (Dependency-Cache über Läufe hinweg)
+        -v /var/run/docker.sock:/var/run/docker.sock   (Testcontainers startet Geschwister-Container)
+        -e TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal
+        mvn -B test [-Dtest=<Filter>]
+```
+
+Es gibt zwei Arten von Tests:
+
+- **Unit-Tests** (`src/test/...`, Mockito) — mocken alle Repositories, fassen keine Datenbank an. Schnell.
+- **Integrationstests** (`*IntegrationTest`, erben von `AbstractIntegrationTest`) — `@SpringBootTest` mit einem
+  echten **PostgreSQL via Testcontainers** (`@ServiceConnection`). Flyway führt beim Kontext-Start die echten
+  Migrationen gegen den Container aus, sodass das reale Schema (inkl. PostgreSQL-Enum-Typen) getestet wird.
+  Ein Singleton-Container wird einmal pro JVM-Lauf gestartet und wiederverwendet.
+
+**Warum der gemountete Docker-Socket?** Der Maven-Container selbst hat keine Datenbank. Testcontainers spricht über
+den gemounteten Socket den Host-Docker-Daemon an und startet dort ein **Geschwister**-PostgreSQL. Damit der
+Maven-Container den auf dem Host gemappten DB-Port erreicht, zeigt `TESTCONTAINERS_HOST_OVERRIDE` auf
+`host.docker.internal`. Voraussetzung: Docker läuft.
+
+```bash
+dev test                          # komplette Suite (Unit + Integration)
+dev test CartFlowIntegrationTest  # nur eine Klasse
+dev test '*IntegrationTest'       # nur die Integrationstests
+```
 
 ---
 

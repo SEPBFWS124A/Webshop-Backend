@@ -208,6 +208,8 @@ Das Backend ist dann erreichbar unter: `http://localhost:8080`
 | `./dev.bat restart --keep-db` | Neustart ohne PostgreSQL-Neustart |
 | `./dev.bat rebuild` | Alle Container neu bauen (kein Layer-Cache) + PostgreSQL-Volume löschen (frische DB) |
 | `./dev.bat rebuild --keep-db` | Rebuild Backend ohne PostgreSQL-Neustart, Volume bleibt erhalten |
+| `./dev.bat test` | Test-Suite in einem Maven-Container ausführen (kein lokales Java/Maven nötig) |
+| `./dev.bat test <Filter>` | Nur bestimmte Tests, z.B. `./dev.bat test CartFlowIntegrationTest` oder `'*IntegrationTest'` |
 
 > **Wann `./dev.bat rebuild` statt `./dev.bat restart`?**
 > Nach Änderungen am `Dockerfile` oder wenn der Layer-Cache einen veralteten Stand hat.
@@ -215,6 +217,21 @@ Das Backend ist dann erreichbar unter: `http://localhost:8080`
 >
 > **Achtung:** `rebuild` (ohne `--keep-db`) löscht das PostgreSQL-Volume → alle Daten gehen verloren.
 > Testdaten danach erneut einspielen (Schritt 4).
+
+**Tests ausführen:**
+
+```bat
+./dev.bat test                          REM komplette Suite (Unit + Integration)
+./dev.bat test CartFlowIntegrationTest  REM nur eine Klasse
+./dev.bat test "*IntegrationTest"       REM nur die Integrationstests
+```
+
+`./dev.bat test` führt die Tests in einem Maven-Container aus — kein lokales Java/Maven nötig. Es gibt zwei Arten von Tests:
+
+- **Unit-Tests** (Mockito, keine Datenbank) — schnell, brauchen kein Docker zur Laufzeit der Tests selbst.
+- **Integrationstests** (`*IntegrationTest`) — starten via **Testcontainers** ein echtes PostgreSQL (`postgres:16-alpine`), gegen das Flyway die echten Migrationen ausführt. Dadurch werden auch PostgreSQL-spezifische Konstrukte (Enum-Typen etc.) getestet, die mit H2 nicht abbildbar wären. **Docker muss laufen.**
+
+> Beim ersten Lauf lädt Maven die Abhängigkeiten in ein Cache-Volume und zieht das `postgres:16-alpine`-Image — Folgeläufe sind deutlich schneller.
 
 ### Schritt 3 — Ollama-Modell ziehen (einmalig, nur für Shoppi KI-Assistent)
 ```bash
