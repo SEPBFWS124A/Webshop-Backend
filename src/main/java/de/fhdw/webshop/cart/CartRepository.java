@@ -13,6 +13,8 @@ public interface CartRepository extends JpaRepository<CartItem, Long> {
 
     Optional<CartItem> findByIdAndUserId(Long id, Long userId);
 
+    List<CartItem> findByUserIdAndBundleGroupKey(Long userId, String bundleGroupKey);
+
     Optional<CartItem> findByUserIdAndProductIdAndPersonalizationText(Long userId, Long productId, String personalizationText);
 
     Optional<CartItem> findByUserIdAndProductIdAndPersonalizationTextAndGiftCardAmountAndGiftCardRecipientEmailAndGiftCardMessage(

@@ -28,6 +28,7 @@ import de.fhdw.webshop.product.Product;
 import de.fhdw.webshop.product.ProductRepository;
 import de.fhdw.webshop.product.ProductService;
 import de.fhdw.webshop.product.ProductType;
+import de.fhdw.webshop.productbundle.ProductBundleService;
 import de.fhdw.webshop.reservation.StockReservationService;
 import de.fhdw.webshop.user.DeliveryAddress;
 import de.fhdw.webshop.user.DeliveryAddressRepository;
@@ -111,6 +112,7 @@ public class OrderService {
     private final PickupStoreService pickupStoreService;
     private final WishlistService wishlistService;
     private final StockReservationService stockReservationService;
+    private final ProductBundleService productBundleService;
 
     @Value("${app.frontend.base-url:http://localhost:5173}")
     private String frontendBaseUrl;
@@ -338,7 +340,12 @@ public class OrderService {
                                 cartItem.getGiftCardRecipientEmail(),
                                 cartItem.getGiftCardMessage(),
                                 cartItem.getSharedWishlistToken(),
-                                cartItem.getSharedWishlistListId()))
+                                cartItem.getSharedWishlistListId(),
+                                cartItem.getBundle() == null ? null : cartItem.getBundle().getId(),
+                                cartItem.getBundleTitle(),
+                                cartItem.getBundleGroupKey(),
+                                cartItem.getBundleDiscountPercent(),
+                                cartItem.getPriceOverride()))
                         .toList(),
                 deliveryAddress,
                 shippingMethod,
@@ -383,7 +390,12 @@ public class OrderService {
                         item.giftCardRecipientEmail(),
                         item.giftCardMessage(),
                         item.sharedWishlistToken(),
-                        item.sharedWishlistListId()))
+                        item.sharedWishlistListId(),
+                        null,
+                        null,
+                        null,
+                        null,
+                        null))
                 .toList();
 
         return prepareOrder(
@@ -492,7 +504,9 @@ public class OrderService {
             BigDecimal discountPercent = discountCustomerId != null
                     ? discountLookupPort.findBestActiveDiscountPercent(discountCustomerId, product.getId())
                     : BigDecimal.ZERO;
-            BigDecimal unitPrice = giftCard ? giftCardAmount : applyDiscount(product.getRecommendedRetailPrice(), discountPercent);
+            BigDecimal unitPrice = requestedItem.priceOverride() != null
+                    ? requestedItem.priceOverride().setScale(2, RoundingMode.HALF_UP)
+                    : (giftCard ? giftCardAmount : applyDiscount(product.getRecommendedRetailPrice(), discountPercent));
             BigDecimal lineTotal = unitPrice.multiply(BigDecimal.valueOf(requestedItem.quantity())).setScale(2, RoundingMode.HALF_UP);
             itemSubtotal = itemSubtotal.add(lineTotal);
             if (product.getCo2EmissionKg() != null) {
@@ -508,6 +522,10 @@ public class OrderService {
                     giftCardMessage,
                     sharedWishlistToken,
                     sharedWishlistListId,
+                    requestedItem.bundleId(),
+                    requestedItem.bundleTitle(),
+                    requestedItem.bundleGroupKey(),
+                    requestedItem.bundleDiscountPercent(),
                     unitPrice,
                     lineTotal));
         }
@@ -691,6 +709,10 @@ public class OrderService {
             applyGiftCardDetails(orderItem, preparedItem, true);
             orderItem.setSharedWishlistToken(preparedItem.sharedWishlistToken());
             orderItem.setSharedWishlistListId(preparedItem.sharedWishlistListId());
+            orderItem.setBundle(preparedItem.bundleId() == null ? null : productBundleService.loadBundle(preparedItem.bundleId()));
+            orderItem.setBundleTitle(preparedItem.bundleTitle());
+            orderItem.setBundleGroupKey(preparedItem.bundleGroupKey());
+            orderItem.setBundleDiscountPercent(preparedItem.bundleDiscountPercent());
             orderItem.setPriceAtOrderTime(preparedItem.unitPrice());
             order.getItems().add(orderItem);
         }
@@ -733,6 +755,10 @@ public class OrderService {
             applyGiftCardDetails(orderItem, preparedItem, false);
             orderItem.setSharedWishlistToken(preparedItem.sharedWishlistToken());
             orderItem.setSharedWishlistListId(preparedItem.sharedWishlistListId());
+            orderItem.setBundle(preparedItem.bundleId() == null ? null : productBundleService.loadBundle(preparedItem.bundleId()));
+            orderItem.setBundleTitle(preparedItem.bundleTitle());
+            orderItem.setBundleGroupKey(preparedItem.bundleGroupKey());
+            orderItem.setBundleDiscountPercent(preparedItem.bundleDiscountPercent());
             orderItem.setPriceAtOrderTime(preparedItem.unitPrice());
             order.getItems().add(orderItem);
         }
@@ -1377,6 +1403,10 @@ public class OrderService {
                 orderItem.getGiftCardCode(),
                 orderItem.getSharedWishlistToken(),
                 orderItem.getSharedWishlistListId(),
+                orderItem.getBundle() == null ? null : orderItem.getBundle().getId(),
+                orderItem.getBundleTitle(),
+                orderItem.getBundleGroupKey(),
+                orderItem.getBundleDiscountPercent(),
                 orderItem.getProduct().isPurchasable(),
                 orderItem.getQuantity(),
                 orderItem.getPriceAtOrderTime(),
@@ -1545,7 +1575,12 @@ public class OrderService {
             String giftCardRecipientEmail,
             String giftCardMessage,
             String sharedWishlistToken,
-            String sharedWishlistListId
+            String sharedWishlistListId,
+            Long bundleId,
+            String bundleTitle,
+            String bundleGroupKey,
+            BigDecimal bundleDiscountPercent,
+            BigDecimal priceOverride
     ) {}
 
     private record PreparedOrderItem(
@@ -1557,6 +1592,10 @@ public class OrderService {
             String giftCardMessage,
             String sharedWishlistToken,
             String sharedWishlistListId,
+            Long bundleId,
+            String bundleTitle,
+            String bundleGroupKey,
+            BigDecimal bundleDiscountPercent,
             BigDecimal unitPrice,
             BigDecimal lineTotal
     ) {}

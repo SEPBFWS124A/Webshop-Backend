@@ -21,6 +21,7 @@ import de.fhdw.webshop.pickup.PickupStoreService;
 import de.fhdw.webshop.product.Product;
 import de.fhdw.webshop.product.ProductRepository;
 import de.fhdw.webshop.product.ProductService;
+import de.fhdw.webshop.productbundle.ProductBundleService;
 import de.fhdw.webshop.reservation.StockReservationService;
 import de.fhdw.webshop.user.DeliveryAddressRepository;
 import de.fhdw.webshop.user.PaymentMethodRepository;
@@ -238,6 +239,7 @@ class OrderServiceTest {
         PickupStoreService pickupStoreService = mock(PickupStoreService.class);
         WishlistService wishlistService = mock(WishlistService.class);
         StockReservationService stockReservationService = mock(StockReservationService.class);
+        ProductBundleService productBundleService = mock(ProductBundleService.class);
 
         OrderService service = new OrderService(
                 orderRepository,
@@ -261,7 +263,8 @@ class OrderServiceTest {
                 pickupStoreRepository,
                 pickupStoreService,
                 wishlistService,
-                stockReservationService);
+                stockReservationService,
+                productBundleService);
 
         User customer = businessCustomer(10L, "employee");
         User manager = businessCustomer(11L, "manager");

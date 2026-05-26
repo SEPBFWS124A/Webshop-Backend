@@ -63,6 +63,7 @@ public class AdminNavigationService {
                             item("product-categories", "Kategorien", "/admin/products/categories", "pi pi-tags", PRODUCT_MANAGEMENT_ROLES),
                             item("product-attributes", "Attribute", "/admin/products/attributes", "pi pi-sliders-h", PRODUCT_MANAGEMENT_ROLES),
                             item("product-pricing", "Preise & Aktionen", "/admin/products/pricing", "pi pi-percentage", SALES_REPORTING_ROLES),
+                            item("product-bundles", "Produktbundles", "/admin/products/bundles", "pi pi-box", SALES_REPORTING_ROLES),
                             item("volume-discounts", "Volumenrabatte", "/admin/products/volume-discounts", "pi pi-percentage", SALES_REPORTING_ROLES),
                             item("warehouse", "Lager & Versand", "/admin/products/warehouse", "pi pi-truck", WAREHOUSE_ROLES),
                             item("stock-reservations", "Bestandsreservierungen", "/admin/products/stock-reservations", "pi pi-clock", ADMIN_ROLES)

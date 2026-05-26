@@ -64,4 +64,17 @@ public class OrderItem {
 
     @Column(name = "shared_wishlist_list_id", length = 140)
     private String sharedWishlistListId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "bundle_id")
+    private de.fhdw.webshop.productbundle.ProductBundle bundle;
+
+    @Column(name = "bundle_title", length = 180)
+    private String bundleTitle;
+
+    @Column(name = "bundle_group_key", length = 80)
+    private String bundleGroupKey;
+
+    @Column(name = "bundle_discount_percent", precision = 5, scale = 2)
+    private BigDecimal bundleDiscountPercent;
 }

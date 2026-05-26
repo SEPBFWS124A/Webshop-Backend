@@ -1,6 +1,7 @@
 package de.fhdw.webshop.cart;
 
 import de.fhdw.webshop.cart.dto.AddToCartRequest;
+import de.fhdw.webshop.cart.dto.AddBundleToCartRequest;
 import de.fhdw.webshop.cart.dto.CartResponse;
 import de.fhdw.webshop.cart.dto.QuickOrderConfirmRequest;
 import de.fhdw.webshop.cart.dto.QuickOrderConfirmResponse;
@@ -38,6 +39,13 @@ public class CartController {
         return ResponseEntity.ok(cartService.addItem(currentUser, addToCartRequest));
     }
 
+    @PostMapping("/bundles")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<CartResponse> addBundle(@AuthenticationPrincipal User currentUser,
+                                                  @Valid @RequestBody AddBundleToCartRequest request) {
+        return ResponseEntity.ok(cartService.addBundle(currentUser, request.bundleId(), request.quantity()));
+    }
+
     /** US #40 — Remove an item from own cart. */
     @DeleteMapping("/items/{productId}")
     @PreAuthorize("hasRole('CUSTOMER')")
@@ -52,6 +60,13 @@ public class CartController {
     public ResponseEntity<CartResponse> removeLineItem(@AuthenticationPrincipal User currentUser,
                                                        @PathVariable Long cartItemId) {
         return ResponseEntity.ok(cartService.removeItemByCartItemId(currentUser, cartItemId));
+    }
+
+    @DeleteMapping("/bundle-groups/{bundleGroupKey}")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<CartResponse> removeBundleGroup(@AuthenticationPrincipal User currentUser,
+                                                          @PathVariable String bundleGroupKey) {
+        return ResponseEntity.ok(cartService.removeBundleGroup(currentUser, bundleGroupKey));
     }
 
     /** US #73 — Update the quantity of a cart item; quantity 0 removes it. */
