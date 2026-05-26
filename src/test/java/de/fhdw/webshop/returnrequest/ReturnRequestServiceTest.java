@@ -1,13 +1,17 @@
 package de.fhdw.webshop.returnrequest;
 
+import de.fhdw.webshop.admin.AuditLogService;
 import de.fhdw.webshop.order.Order;
 import de.fhdw.webshop.order.OrderItem;
 import de.fhdw.webshop.order.OrderRepository;
 import de.fhdw.webshop.order.OrderStatus;
 import de.fhdw.webshop.product.Product;
+import de.fhdw.webshop.returnrequest.dto.CreateReturnRequestItem;
 import de.fhdw.webshop.returnrequest.dto.CreateReturnRequest;
+import de.fhdw.webshop.returnrequest.dto.ExternalRefundConfirmationRequest;
 import de.fhdw.webshop.returnrequest.dto.InspectReturnRequest;
 import de.fhdw.webshop.returnrequest.dto.ReturnRequestResponse;
+import de.fhdw.webshop.returnrequest.dto.ReturnStatusDecisionRequest;
 import de.fhdw.webshop.user.User;
 import de.fhdw.webshop.user.PaymentMethodType;
 import java.math.BigDecimal;
@@ -37,7 +41,8 @@ class ReturnRequestServiceTest {
                                 returnRequestRepository,
                                 returnRequestItemRepository,
                                 returnRequestImageRepository,
-                                orderRepository);
+                                orderRepository,
+                                mock(AuditLogService.class));
                 User customer = customer();
                 Order order = deliveredOrder(customer, Instant.now().minusSeconds(2 * 24 * 60 * 60));
                 OrderItem selectedItem = orderItem(101L, order, "Laptop Pro");
@@ -56,7 +61,7 @@ class ReturnRequestServiceTest {
                 ReturnRequestResponse response = service.createReturnRequest(
                                 customer,
                                 new CreateReturnRequest(order.getId(), ReturnReason.DOES_NOT_FIT,
-                                                List.of(selectedItem.getId()), null, List.of()));
+                                                List.of(selectedItem.getId()), List.of(), null, List.of()));
 
                 assertThat(response.id()).isEqualTo(501L);
                 assertThat(response.orderId()).isEqualTo(order.getId());
@@ -71,6 +76,96 @@ class ReturnRequestServiceTest {
         }
 
         @Test
+        void createsPartialReturnFromPerItemPayloadAndUsesRemainingQuantity() {
+                ReturnRequestRepository returnRequestRepository = mock(ReturnRequestRepository.class);
+                ReturnRequestItemRepository returnRequestItemRepository = mock(ReturnRequestItemRepository.class);
+                ReturnRequestImageRepository returnRequestImageRepository = mock(ReturnRequestImageRepository.class);
+                OrderRepository orderRepository = mock(OrderRepository.class);
+                ReturnRequestService service = new ReturnRequestService(
+                                returnRequestRepository,
+                                returnRequestItemRepository,
+                                returnRequestImageRepository,
+                                orderRepository,
+                                mock(AuditLogService.class));
+                User customer = customer();
+                Order order = deliveredOrder(customer, Instant.now().minusSeconds(2 * 24 * 60 * 60));
+                OrderItem item = orderItem(101L, order, "Laptop Pro");
+                item.setQuantity(3);
+                order.getItems().add(item);
+
+                when(orderRepository.findByIdAndCustomerId(order.getId(), customer.getId()))
+                                .thenReturn(Optional.of(order));
+                when(returnRequestItemRepository.sumReturnedQuantityForOrderItem(item.getId(), List.of(ReturnRequestStatus.REJECTED)))
+                                .thenReturn(1);
+                when(returnRequestRepository.save(any(ReturnRequest.class))).thenAnswer(invocation -> {
+                        ReturnRequest request = invocation.getArgument(0);
+                        request.setId(511L);
+                        return request;
+                });
+
+                ReturnRequestResponse response = service.createReturnRequest(
+                                customer,
+                                new CreateReturnRequest(
+                                                order.getId(),
+                                                null,
+                                                List.of(),
+                                                List.of(new CreateReturnRequestItem(
+                                                                item.getId(),
+                                                                2,
+                                                                ReturnReason.DAMAGED,
+                                                                null)),
+                                                null,
+                                                List.of()));
+
+                assertThat(response.id()).isEqualTo(511L);
+                assertThat(response.reason()).isEqualTo(ReturnReason.DAMAGED);
+                assertThat(response.items()).hasSize(1);
+                assertThat(response.items().getFirst().quantity()).isEqualTo(2);
+                assertThat(response.items().getFirst().reason()).isEqualTo(ReturnReason.DAMAGED);
+        }
+
+        @Test
+        void rejectsReturnRequestWhenRequestedQuantityExceedsRemainingQuantity() {
+                ReturnRequestRepository returnRequestRepository = mock(ReturnRequestRepository.class);
+                ReturnRequestItemRepository returnRequestItemRepository = mock(ReturnRequestItemRepository.class);
+                ReturnRequestImageRepository returnRequestImageRepository = mock(ReturnRequestImageRepository.class);
+                OrderRepository orderRepository = mock(OrderRepository.class);
+                ReturnRequestService service = new ReturnRequestService(
+                                returnRequestRepository,
+                                returnRequestItemRepository,
+                                returnRequestImageRepository,
+                                orderRepository,
+                                mock(AuditLogService.class));
+                User customer = customer();
+                Order order = deliveredOrder(customer, Instant.now().minusSeconds(2 * 24 * 60 * 60));
+                OrderItem item = orderItem(101L, order, "Laptop Pro");
+                item.setQuantity(2);
+                order.getItems().add(item);
+
+                when(orderRepository.findByIdAndCustomerId(order.getId(), customer.getId()))
+                                .thenReturn(Optional.of(order));
+                when(returnRequestItemRepository.sumReturnedQuantityForOrderItem(item.getId(), List.of(ReturnRequestStatus.REJECTED)))
+                                .thenReturn(1);
+
+                assertThatThrownBy(() -> service.createReturnRequest(
+                                customer,
+                                new CreateReturnRequest(
+                                                order.getId(),
+                                                null,
+                                                List.of(),
+                                                List.of(new CreateReturnRequestItem(
+                                                                item.getId(),
+                                                                2,
+                                                                ReturnReason.DAMAGED,
+                                                                null)),
+                                                null,
+                                                List.of())))
+                                .isInstanceOf(IllegalStateException.class)
+                                .hasMessageContaining("maximal 1");
+                verify(returnRequestRepository, never()).save(any(ReturnRequest.class));
+        }
+
+        @Test
         void rejectsReturnRequestsAfterFourteenDaysFromDelivery() {
                 ReturnRequestRepository returnRequestRepository = mock(ReturnRequestRepository.class);
                 ReturnRequestItemRepository returnRequestItemRepository = mock(ReturnRequestItemRepository.class);
@@ -80,7 +175,8 @@ class ReturnRequestServiceTest {
                                 returnRequestRepository,
                                 returnRequestItemRepository,
                                 returnRequestImageRepository,
-                                orderRepository);
+                                orderRepository,
+                                mock(AuditLogService.class));
                 User customer = customer();
                 Order order = deliveredOrder(customer, Instant.now().minusSeconds(15 * 24 * 60 * 60));
                 OrderItem item = orderItem(101L, order, "Laptop Pro");
@@ -92,7 +188,7 @@ class ReturnRequestServiceTest {
                 assertThatThrownBy(() -> service.createReturnRequest(
                                 customer,
                                 new CreateReturnRequest(order.getId(), ReturnReason.DEFECTIVE, List.of(item.getId()),
-                                                null, List.of())))
+                                                List.of(), null, List.of())))
                                 .isInstanceOf(IllegalStateException.class)
                                 .hasMessageContaining("14 Tagen");
                 verify(returnRequestRepository, never()).save(any(ReturnRequest.class));
@@ -108,7 +204,8 @@ class ReturnRequestServiceTest {
                                 returnRequestRepository,
                                 returnRequestItemRepository,
                                 returnRequestImageRepository,
-                                orderRepository);
+                                orderRepository,
+                                mock(AuditLogService.class));
                 User customer = customer();
                 Order order = deliveredOrder(customer, Instant.now().minusSeconds(2 * 24 * 60 * 60));
                 OrderItem item = orderItem(101L, order, "Laptop Pro");
@@ -130,6 +227,7 @@ class ReturnRequestServiceTest {
                                                 order.getId(),
                                                 ReturnReason.DEFECTIVE,
                                                 List.of(item.getId()),
+                                                List.of(),
                                                 "Display flackert nach wenigen Minuten.",
                                                 List.of(new de.fhdw.webshop.returnrequest.dto.ReturnRequestImageUpload(
                                                                 "display.png",
@@ -154,7 +252,8 @@ class ReturnRequestServiceTest {
                                 returnRequestRepository,
                                 returnRequestItemRepository,
                                 returnRequestImageRepository,
-                                orderRepository);
+                                orderRepository,
+                                mock(AuditLogService.class));
                 User customer = customer();
                 Order order = deliveredOrder(customer, Instant.now().minusSeconds(2 * 24 * 60 * 60));
 
@@ -170,6 +269,7 @@ class ReturnRequestServiceTest {
                                                 order.getId(),
                                                 ReturnReason.DEFECTIVE,
                                                 List.of(101L),
+                                                List.of(),
                                                 null,
                                                 List.of(image, image, image, image))))
                                 .isInstanceOf(IllegalArgumentException.class)
@@ -178,7 +278,7 @@ class ReturnRequestServiceTest {
         }
 
         @Test
-        void inspectingGoodReturnCompletesItRestocksInventoryAndInitiatesRefund() {
+        void inspectionNoteUpdatesReturnWithoutCompletingIt() {
                 ReturnRequestRepository returnRequestRepository = mock(ReturnRequestRepository.class);
                 ReturnRequestItemRepository returnRequestItemRepository = mock(ReturnRequestItemRepository.class);
                 ReturnRequestImageRepository returnRequestImageRepository = mock(ReturnRequestImageRepository.class);
@@ -187,14 +287,17 @@ class ReturnRequestServiceTest {
                                 returnRequestRepository,
                                 returnRequestItemRepository,
                                 returnRequestImageRepository,
-                                orderRepository);
+                                orderRepository,
+                                mock(AuditLogService.class));
                 User customer = customer();
                 Order order = deliveredOrder(customer, Instant.now().minusSeconds(2 * 24 * 60 * 60));
                 order.setPaymentMethodType(PaymentMethodType.CREDIT_CARD);
                 OrderItem item = orderItem(101L, order, "Laptop Pro");
                 item.setQuantity(2);
                 item.getProduct().setStock(3);
+                order.getItems().add(item);
                 ReturnRequest returnRequest = submittedReturnRequest(701L, customer, order, item);
+                returnRequest.setStatus(ReturnRequestStatus.GOODS_RECEIVED);
 
                 when(returnRequestRepository.findById(returnRequest.getId())).thenReturn(Optional.of(returnRequest));
                 when(returnRequestRepository.save(any(ReturnRequest.class)))
@@ -204,17 +307,15 @@ class ReturnRequestServiceTest {
                                 returnRequest.getId(),
                                 new InspectReturnRequest(ReturnInspectionCondition.GOOD));
 
-                assertThat(response.status()).isEqualTo(ReturnRequestStatus.COMPLETED);
+                assertThat(response.status()).isEqualTo(ReturnRequestStatus.GOODS_RECEIVED);
                 assertThat(response.inspectionCondition()).isEqualTo(ReturnInspectionCondition.GOOD);
-                assertThat(response.refundStatus()).isEqualTo(ReturnRefundStatus.INITIATED);
-                assertThat(response.refundMethod()).isEqualTo(ReturnRefundMethod.ORIGINAL_PAYMENT_METHOD);
-                assertThat(response.refundAmount()).isEqualByComparingTo("199.98");
-                assertThat(response.refundReference()).isEqualTo("RMA-701-REFUND");
-                assertThat(item.getProduct().getStock()).isEqualTo(5);
+                assertThat(response.inspectedAt()).isNotNull();
+                assertThat(response.refundStatus()).isEqualTo(ReturnRefundStatus.NOT_STARTED);
+                assertThat(item.getProduct().getStock()).isEqualTo(3);
         }
 
         @Test
-        void inspectingDefectiveReturnCompletesItAndRejectsRefundWithoutRestocking() {
+        void approvalPreparesRefundCalculationIncludingOrderLevelDiscountProRata() {
                 ReturnRequestRepository returnRequestRepository = mock(ReturnRequestRepository.class);
                 ReturnRequestItemRepository returnRequestItemRepository = mock(ReturnRequestItemRepository.class);
                 ReturnRequestImageRepository returnRequestImageRepository = mock(ReturnRequestImageRepository.class);
@@ -223,12 +324,127 @@ class ReturnRequestServiceTest {
                                 returnRequestRepository,
                                 returnRequestItemRepository,
                                 returnRequestImageRepository,
-                                orderRepository);
+                                orderRepository,
+                                mock(AuditLogService.class));
+                User customer = customer();
+                Order order = deliveredOrder(customer, Instant.now().minusSeconds(2 * 24 * 60 * 60));
+                order.setPaymentMethodType(PaymentMethodType.CREDIT_CARD);
+                order.setDiscountAmount(new BigDecimal("30.00"));
+
+                OrderItem returnedItem = orderItem(101L, order, "Laptop Pro");
+                returnedItem.setQuantity(2);
+                returnedItem.setPriceAtOrderTime(new BigDecimal("100.00"));
+                returnedItem.getProduct().setStock(5);
+
+                OrderItem secondItem = orderItem(102L, order, "Monitor");
+                secondItem.setQuantity(1);
+                secondItem.setPriceAtOrderTime(new BigDecimal("50.00"));
+
+                order.getItems().addAll(List.of(returnedItem, secondItem));
+
+                ReturnRequest returnRequest = submittedReturnRequest(711L, customer, order, returnedItem);
+                returnRequest.setStatus(ReturnRequestStatus.IN_REVIEW);
+                returnRequest.getItems().getFirst().setQuantity(2);
+                when(returnRequestRepository.findById(returnRequest.getId())).thenReturn(Optional.of(returnRequest));
+                when(returnRequestRepository.save(any(ReturnRequest.class)))
+                                .thenAnswer(invocation -> invocation.getArgument(0));
+
+                ReturnRequestResponse response = service.approveReturn(
+                                returnRequest.getId(),
+                                customer);
+
+                assertThat(response.status()).isEqualTo(ReturnRequestStatus.APPROVED);
+                assertThat(response.refundAmount()).isEqualByComparingTo("176.00");
+                assertThat(response.refundStatus()).isEqualTo(ReturnRefundStatus.INITIATED);
+                assertThat(response.refundMethod()).isEqualTo(ReturnRefundMethod.ORIGINAL_PAYMENT_METHOD);
+        }
+
+        @Test
+        void markGoodsReceivedMustHappenBeforeReviewAndExternalRefundRequiresApproval() {
+                ReturnRequestRepository returnRequestRepository = mock(ReturnRequestRepository.class);
+                ReturnRequestItemRepository returnRequestItemRepository = mock(ReturnRequestItemRepository.class);
+                ReturnRequestImageRepository returnRequestImageRepository = mock(ReturnRequestImageRepository.class);
+                OrderRepository orderRepository = mock(OrderRepository.class);
+                ReturnRequestService service = new ReturnRequestService(
+                                returnRequestRepository,
+                                returnRequestItemRepository,
+                                returnRequestImageRepository,
+                                orderRepository,
+                                mock(AuditLogService.class));
+                User employee = customer();
                 User customer = customer();
                 Order order = deliveredOrder(customer, Instant.now().minusSeconds(2 * 24 * 60 * 60));
                 OrderItem item = orderItem(101L, order, "Laptop Pro");
                 item.getProduct().setStock(3);
+                order.getItems().add(item);
+                ReturnRequest returnRequest = submittedReturnRequest(721L, customer, order, item);
+
+                when(returnRequestRepository.findById(returnRequest.getId())).thenReturn(Optional.of(returnRequest));
+                when(returnRequestRepository.save(any(ReturnRequest.class)))
+                                .thenAnswer(invocation -> invocation.getArgument(0));
+
+                ReturnRequestResponse goodsReceivedResponse = service.markGoodsReceived(returnRequest.getId(), employee);
+
+                assertThat(goodsReceivedResponse.status()).isEqualTo(ReturnRequestStatus.GOODS_RECEIVED);
+                assertThat(goodsReceivedResponse.goodsReceivedAt()).isNotNull();
+                assertThat(goodsReceivedResponse.inspectedAt()).isNull();
+                assertThat(item.getProduct().getStock()).isEqualTo(4);
+
+                assertThatThrownBy(() -> service.confirmRefundFromExternalSystem(
+                                returnRequest.getId(),
+                                new ExternalRefundConfirmationRequest("psp-test-721")))
+                                .isInstanceOf(IllegalStateException.class)
+                                .hasMessageContaining("Freigabe");
+        }
+
+        @Test
+        void rejectReturnRequiresDecisionReason() {
+                ReturnRequestRepository returnRequestRepository = mock(ReturnRequestRepository.class);
+                ReturnRequestItemRepository returnRequestItemRepository = mock(ReturnRequestItemRepository.class);
+                ReturnRequestImageRepository returnRequestImageRepository = mock(ReturnRequestImageRepository.class);
+                OrderRepository orderRepository = mock(OrderRepository.class);
+                ReturnRequestService service = new ReturnRequestService(
+                                returnRequestRepository,
+                                returnRequestItemRepository,
+                                returnRequestImageRepository,
+                                orderRepository,
+                                mock(AuditLogService.class));
+                User employee = customer();
+                User customer = customer();
+                Order order = deliveredOrder(customer, Instant.now().minusSeconds(2 * 24 * 60 * 60));
+                OrderItem item = orderItem(101L, order, "Laptop Pro");
+                ReturnRequest returnRequest = submittedReturnRequest(801L, customer, order, item);
+                returnRequest.setStatus(ReturnRequestStatus.IN_REVIEW);
+
+                when(returnRequestRepository.findById(returnRequest.getId())).thenReturn(Optional.of(returnRequest));
+
+                assertThatThrownBy(() -> service.rejectReturn(
+                                returnRequest.getId(),
+                                employee,
+                                new ReturnStatusDecisionRequest("   ")))
+                                .isInstanceOf(IllegalArgumentException.class)
+                                .hasMessageContaining("Ablehnungsgrund");
+        }
+
+        @Test
+        void inspectionNoteDoesNotRejectReturnOrRestockAgain() {
+                ReturnRequestRepository returnRequestRepository = mock(ReturnRequestRepository.class);
+                ReturnRequestItemRepository returnRequestItemRepository = mock(ReturnRequestItemRepository.class);
+                ReturnRequestImageRepository returnRequestImageRepository = mock(ReturnRequestImageRepository.class);
+                OrderRepository orderRepository = mock(OrderRepository.class);
+                ReturnRequestService service = new ReturnRequestService(
+                                returnRequestRepository,
+                                returnRequestItemRepository,
+                                returnRequestImageRepository,
+                                orderRepository,
+                                mock(AuditLogService.class));
+                User customer = customer();
+                Order order = deliveredOrder(customer, Instant.now().minusSeconds(2 * 24 * 60 * 60));
+                OrderItem item = orderItem(101L, order, "Laptop Pro");
+                item.getProduct().setStock(3);
+                order.getItems().add(item);
                 ReturnRequest returnRequest = submittedReturnRequest(702L, customer, order, item);
+                returnRequest.setStatus(ReturnRequestStatus.IN_REVIEW);
 
                 when(returnRequestRepository.findById(returnRequest.getId())).thenReturn(Optional.of(returnRequest));
                 when(returnRequestRepository.save(any(ReturnRequest.class)))
@@ -238,11 +454,49 @@ class ReturnRequestServiceTest {
                                 returnRequest.getId(),
                                 new InspectReturnRequest(ReturnInspectionCondition.DEFECTIVE));
 
-                assertThat(response.status()).isEqualTo(ReturnRequestStatus.COMPLETED);
+                assertThat(response.status()).isEqualTo(ReturnRequestStatus.IN_REVIEW);
                 assertThat(response.inspectionCondition()).isEqualTo(ReturnInspectionCondition.DEFECTIVE);
-                assertThat(response.refundStatus()).isEqualTo(ReturnRefundStatus.REJECTED);
+                assertThat(response.refundStatus()).isEqualTo(ReturnRefundStatus.NOT_STARTED);
                 assertThat(response.refundAmount()).isEqualByComparingTo("0.00");
                 assertThat(item.getProduct().getStock()).isEqualTo(3);
+        }
+
+        @Test
+        void externalRefundConfirmationCompletesApprovedReturn() {
+                ReturnRequestRepository returnRequestRepository = mock(ReturnRequestRepository.class);
+                ReturnRequestItemRepository returnRequestItemRepository = mock(ReturnRequestItemRepository.class);
+                ReturnRequestImageRepository returnRequestImageRepository = mock(ReturnRequestImageRepository.class);
+                OrderRepository orderRepository = mock(OrderRepository.class);
+                ReturnRequestService service = new ReturnRequestService(
+                                returnRequestRepository,
+                                returnRequestItemRepository,
+                                returnRequestImageRepository,
+                                orderRepository,
+                                mock(AuditLogService.class));
+                User customer = customer();
+                Order order = deliveredOrder(customer, Instant.now().minusSeconds(2 * 24 * 60 * 60));
+                order.setPaymentMethodType(PaymentMethodType.CREDIT_CARD);
+                OrderItem item = orderItem(101L, order, "Laptop Pro");
+                order.getItems().add(item);
+                ReturnRequest returnRequest = submittedReturnRequest(731L, customer, order, item);
+                returnRequest.setStatus(ReturnRequestStatus.APPROVED);
+                returnRequest.setRefundStatus(ReturnRefundStatus.INITIATED);
+                returnRequest.setRefundAmount(new BigDecimal("99.99"));
+                returnRequest.setRefundMethod(ReturnRefundMethod.ORIGINAL_PAYMENT_METHOD);
+                returnRequest.setRefundReference("RMA-731-REFUND");
+
+                when(returnRequestRepository.findById(returnRequest.getId())).thenReturn(Optional.of(returnRequest));
+                when(returnRequestRepository.save(any(ReturnRequest.class)))
+                                .thenAnswer(invocation -> invocation.getArgument(0));
+
+                ReturnRequestResponse response = service.confirmRefundFromExternalSystem(
+                                returnRequest.getId(),
+                                new ExternalRefundConfirmationRequest("PAY-731"));
+
+                assertThat(response.status()).isEqualTo(ReturnRequestStatus.REFUNDED);
+                assertThat(response.refundedAt()).isNotNull();
+                assertThat(response.refundReference()).isEqualTo("PAY-731");
+                assertThat(response.refundAmount()).isEqualByComparingTo("99.99");
         }
 
         @Test
@@ -255,7 +509,8 @@ class ReturnRequestServiceTest {
                                 returnRequestRepository,
                                 returnRequestItemRepository,
                                 returnRequestImageRepository,
-                                orderRepository);
+                                orderRepository,
+                                mock(AuditLogService.class));
                 User customer = customer();
                 Order order = deliveredOrder(customer, Instant.now().minusSeconds(2 * 24 * 60 * 60));
                 OrderItem item = orderItem(101L, order, "Laptop Pro");

@@ -1,10 +1,14 @@
 package de.fhdw.webshop.returnrequest;
 
+import de.fhdw.webshop.admin.AuditInitiator;
+import de.fhdw.webshop.admin.AuditLogService;
 import de.fhdw.webshop.order.Order;
 import de.fhdw.webshop.order.OrderItem;
 import de.fhdw.webshop.order.OrderRepository;
 import de.fhdw.webshop.order.OrderStatus;
+import de.fhdw.webshop.returnrequest.dto.CreateReturnRequestItem;
 import de.fhdw.webshop.returnrequest.dto.CreateReturnRequest;
+import de.fhdw.webshop.returnrequest.dto.ExternalRefundConfirmationRequest;
 import de.fhdw.webshop.returnrequest.dto.InspectReturnRequest;
 import de.fhdw.webshop.returnrequest.dto.ReturnRequestImageDownload;
 import de.fhdw.webshop.returnrequest.dto.ReturnRequestImageResponse;
@@ -13,6 +17,7 @@ import de.fhdw.webshop.returnrequest.dto.ReturnLabelAddressResponse;
 import de.fhdw.webshop.returnrequest.dto.ReturnRequestItemResponse;
 import de.fhdw.webshop.returnrequest.dto.ReturnRequestResponse;
 import de.fhdw.webshop.returnrequest.dto.ReturnShippingLabelResponse;
+import de.fhdw.webshop.returnrequest.dto.ReturnStatusDecisionRequest;
 import de.fhdw.webshop.user.User;
 import com.google.zxing.BarcodeFormat;
 import com.google.zxing.EncodeHintType;
@@ -21,6 +26,7 @@ import com.google.zxing.common.BitMatrix;
 import com.google.zxing.qrcode.QRCodeWriter;
 import jakarta.persistence.EntityNotFoundException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -65,6 +71,7 @@ public class ReturnRequestService {
     private final ReturnRequestItemRepository returnRequestItemRepository;
     private final ReturnRequestImageRepository returnRequestImageRepository;
     private final OrderRepository orderRepository;
+    private final AuditLogService auditLogService;
 
     @Transactional
     public ReturnRequestResponse createReturnRequest(User customer, CreateReturnRequest request) {
@@ -80,39 +87,110 @@ public class ReturnRequestService {
             throw new IllegalStateException("Die Rueckgabefrist von 14 Tagen nach Lieferdatum ist abgelaufen.");
         }
 
-        LinkedHashSet<Long> requestedItemIds = new LinkedHashSet<>(request.orderItemIds());
-        if (requestedItemIds.isEmpty()) {
+        List<RequestedReturnLine> requestedLines = normalizeRequestedLines(request, order);
+        if (requestedLines.isEmpty()) {
             throw new IllegalArgumentException("Bitte waehle mindestens einen Artikel fuer die Retoure aus.");
         }
 
         Map<Long, OrderItem> orderItemsById = order.getItems().stream()
                 .collect(Collectors.toMap(OrderItem::getId, Function.identity()));
+        ReturnReason overallReason = resolveOverallReason(request, requestedLines);
 
         ReturnRequest returnRequest = new ReturnRequest();
         returnRequest.setCustomer(customer);
         returnRequest.setOrder(order);
-        returnRequest.setReason(request.reason());
-        attachDefectDetails(returnRequest, request);
+        returnRequest.setReason(overallReason);
+        attachDefectDetails(returnRequest, request, requestedLines);
         attachShippingLabel(returnRequest, customer, order);
 
-        for (Long orderItemId : requestedItemIds) {
-            OrderItem orderItem = orderItemsById.get(orderItemId);
+        for (RequestedReturnLine line : requestedLines) {
+            OrderItem orderItem = orderItemsById.get(line.orderItemId());
             if (orderItem == null) {
-                throw new IllegalArgumentException("Der Artikel gehoert nicht zu dieser Bestellung: " + orderItemId);
+                throw new IllegalArgumentException("Der Artikel gehoert nicht zu dieser Bestellung: " + line.orderItemId());
             }
-            if (returnRequestItemRepository.existsByOrderItemId(orderItemId)) {
-                throw new IllegalStateException("Fuer diesen Artikel wurde bereits eine Retoure angemeldet.");
+            int alreadyReturned = getActiveReturnedQuantity(orderItem.getId());
+            int returnableQuantity = orderItem.getQuantity() - alreadyReturned;
+            if (line.quantity() > returnableQuantity) {
+                throw new IllegalStateException("Fuer " + orderItem.getProduct().getName()
+                        + " koennen maximal " + Math.max(returnableQuantity, 0)
+                        + " Stueck retourniert werden.");
             }
+            validateLineReason(line);
 
             ReturnRequestItem returnItem = new ReturnRequestItem();
             returnItem.setReturnRequest(returnRequest);
             returnItem.setOrderItem(orderItem);
             returnItem.setProductName(orderItem.getProduct().getName());
-            returnItem.setQuantity(orderItem.getQuantity());
+            returnItem.setQuantity(line.quantity());
+            returnItem.setReason(line.reason());
+            returnItem.setCustomerComment(line.comment());
             returnRequest.getItems().add(returnItem);
         }
 
-        return toResponse(returnRequestRepository.save(returnRequest));
+        ReturnRequest saved = returnRequestRepository.save(returnRequest);
+        auditLogService.record(customer, "RETURN_REQUEST_CREATED", "ReturnRequest", saved.getId(),
+                AuditInitiator.USER, "Retoure " + saved.getId() + " fuer Bestellung "
+                        + order.getOrderNumber() + " angemeldet.");
+        return toResponse(saved);
+    }
+
+    private List<RequestedReturnLine> normalizeRequestedLines(CreateReturnRequest request, Order order) {
+        if (!request.items().isEmpty()) {
+            LinkedHashSet<Long> seenOrderItemIds = new LinkedHashSet<>();
+            return request.items().stream()
+                    .map(item -> {
+                        if (!seenOrderItemIds.add(item.orderItemId())) {
+                            throw new IllegalArgumentException(
+                                    "Jeder Artikel darf pro Retoure nur einmal ausgewaehlt werden.");
+                        }
+                        return new RequestedReturnLine(
+                                item.orderItemId(),
+                                item.quantity(),
+                                item.reason(),
+                                normalizeDescription(item.comment()));
+                    })
+                    .toList();
+        }
+
+        ReturnReason fallbackReason = request.reason() == null ? ReturnReason.OTHER : request.reason();
+        LinkedHashSet<Long> requestedItemIds = new LinkedHashSet<>(request.orderItemIds());
+        Map<Long, OrderItem> orderItemsById = order.getItems().stream()
+                .collect(Collectors.toMap(OrderItem::getId, Function.identity()));
+        return requestedItemIds.stream()
+                .map(orderItemId -> {
+                    OrderItem orderItem = orderItemsById.get(orderItemId);
+                    int quantity = orderItem == null ? 1 : orderItem.getQuantity();
+                    return new RequestedReturnLine(orderItemId, quantity, fallbackReason, null);
+                })
+                .toList();
+    }
+
+    private int getActiveReturnedQuantity(Long orderItemId) {
+        Integer quantity = returnRequestItemRepository.sumReturnedQuantityForOrderItem(
+                orderItemId,
+                List.of(ReturnRequestStatus.REJECTED));
+        return quantity == null ? 0 : quantity;
+    }
+
+    private ReturnReason resolveOverallReason(CreateReturnRequest request, List<RequestedReturnLine> requestedLines) {
+        if (request.reason() != null) {
+            return request.reason();
+        }
+        if (requestedLines.isEmpty()) {
+            return ReturnReason.OTHER;
+        }
+        ReturnReason firstReason = requestedLines.getFirst().reason();
+        boolean allSameReason = requestedLines.stream().allMatch(line -> line.reason() == firstReason);
+        return allSameReason ? firstReason : ReturnReason.OTHER;
+    }
+
+    private void validateLineReason(RequestedReturnLine line) {
+        if (line.quantity() < 1) {
+            throw new IllegalArgumentException("Die Retourenmenge muss mindestens 1 betragen.");
+        }
+        if (line.reason() == ReturnReason.OTHER && (line.comment() == null || line.comment().isBlank())) {
+            throw new IllegalArgumentException("Bei 'Sonstiges' muss ein Kommentar angegeben werden.");
+        }
     }
 
     @Transactional(readOnly = true)
@@ -146,22 +224,130 @@ public class ReturnRequestService {
         ReturnRequest returnRequest = returnRequestRepository.findById(returnRequestId)
                 .orElseThrow(() -> new EntityNotFoundException("Return request not found: " + returnRequestId));
 
-        if (returnRequest.getStatus() != ReturnRequestStatus.SUBMITTED) {
-            throw new IllegalStateException("Nur offene Retouren koennen bewertet werden.");
+        if (returnRequest.getStatus() != ReturnRequestStatus.GOODS_RECEIVED
+                && returnRequest.getStatus() != ReturnRequestStatus.IN_REVIEW
+                && returnRequest.getStatus() != ReturnRequestStatus.APPROVED) {
+            throw new IllegalStateException("Ein Pruefvermerk ist erst nach dem Wareneingang moeglich.");
         }
 
         returnRequest.setInspectionCondition(request.condition());
         returnRequest.setInspectedAt(Instant.now());
-        returnRequest.setStatus(ReturnRequestStatus.COMPLETED);
 
-        if (request.condition() == ReturnInspectionCondition.GOOD) {
-            restockReturnedItems(returnRequest);
-            initiateRefund(returnRequest);
-        } else {
-            rejectRefund(returnRequest);
+        ReturnRequest saved = returnRequestRepository.save(returnRequest);
+        auditLogService.recordSystemAction("RETURN_REQUEST_INSPECTED", "ReturnRequest", saved.getId(),
+                "Pruefvermerk fuer Retoure aktualisiert: " + request.condition());
+        return toResponse(saved);
+    }
+
+    @Transactional
+    public ReturnRequestResponse markInReview(Long returnRequestId, User employee) {
+        ReturnRequest returnRequest = loadReturnRequest(returnRequestId);
+        if (returnRequest.getStatus() != ReturnRequestStatus.GOODS_RECEIVED) {
+            throw new IllegalStateException(
+                    "Eine Retoure kann erst nach dem Wareneingang in Pruefung gesetzt werden.");
         }
+        returnRequest.setStatus(ReturnRequestStatus.IN_REVIEW);
+        returnRequest.setDecidedBy(employee);
+        return auditAndRespond(returnRequest, employee, "RETURN_REQUEST_IN_REVIEW", "Retoure wird geprueft.");
+    }
 
-        return toResponse(returnRequestRepository.save(returnRequest));
+    @Transactional
+    public ReturnRequestResponse approveReturn(Long returnRequestId, User employee) {
+        ReturnRequest returnRequest = loadReturnRequest(returnRequestId);
+        if (returnRequest.getStatus() != ReturnRequestStatus.IN_REVIEW) {
+            throw new IllegalStateException("Nur Retouren in Pruefung koennen freigegeben werden.");
+        }
+        returnRequest.setStatus(ReturnRequestStatus.APPROVED);
+        returnRequest.setApprovedAt(Instant.now());
+        returnRequest.setInspectedAt(Instant.now());
+        returnRequest.setDecidedBy(employee);
+        prepareRefund(returnRequest);
+        return auditAndRespond(returnRequest, employee, "RETURN_REQUEST_APPROVED",
+                "Retoure freigegeben. Rueckerstattung fuer Fremdsystem vorbereitet: "
+                        + returnRequest.getRefundReference());
+    }
+
+    @Transactional
+    public ReturnRequestResponse rejectReturn(Long returnRequestId, User employee, ReturnStatusDecisionRequest request) {
+        ReturnRequest returnRequest = loadReturnRequest(returnRequestId);
+        if (returnRequest.getStatus() != ReturnRequestStatus.IN_REVIEW) {
+            throw new IllegalStateException("Nur Retouren in Pruefung koennen abgelehnt werden.");
+        }
+        String reason = normalizeRequiredDecisionReason(request.reason());
+        returnRequest.setStatus(ReturnRequestStatus.REJECTED);
+        returnRequest.setRejectedAt(Instant.now());
+        returnRequest.setInspectedAt(Instant.now());
+        returnRequest.setDecisionReason(reason);
+        returnRequest.setDecidedBy(employee);
+        rejectRefund(returnRequest);
+        return auditAndRespond(returnRequest, employee, "RETURN_REQUEST_REJECTED", "Retoure abgelehnt: " + reason);
+    }
+
+    @Transactional
+    public ReturnRequestResponse markGoodsReceived(Long returnRequestId, User employee) {
+        ReturnRequest returnRequest = loadReturnRequest(returnRequestId);
+        if (returnRequest.getStatus() != ReturnRequestStatus.SUBMITTED) {
+            throw new IllegalStateException("Nur beantragte Retouren koennen als Wareneingang markiert werden.");
+        }
+        returnRequest.setStatus(ReturnRequestStatus.GOODS_RECEIVED);
+        returnRequest.setGoodsReceivedAt(Instant.now());
+        returnRequest.setDecidedBy(employee);
+        restockReturnedItems(returnRequest);
+        return auditAndRespond(returnRequest, employee, "RETURN_REQUEST_GOODS_RECEIVED",
+                "Retourenware eingegangen und Bestand aktualisiert.");
+    }
+
+    @Transactional
+    public ReturnRequestResponse confirmRefundFromExternalSystem(
+            Long returnRequestId,
+            ExternalRefundConfirmationRequest request) {
+        ReturnRequest returnRequest = loadReturnRequest(returnRequestId);
+        if (returnRequest.getStatus() != ReturnRequestStatus.APPROVED) {
+            throw new IllegalStateException(
+                    "Eine Rueckerstattung kann erst nach Freigabe durch den Mitarbeiter vom Fremdsystem bestaetigt werden.");
+        }
+        returnRequest.setStatus(ReturnRequestStatus.REFUNDED);
+        returnRequest.setRefundedAt(Instant.now());
+        returnRequest.setRefundReference(normalizeExternalRefundReference(request.reference()));
+
+        ReturnRequest saved = returnRequestRepository.save(returnRequest);
+        auditLogService.recordSystemAction("RETURN_REQUEST_REFUNDED", "ReturnRequest", saved.getId(),
+                "Rueckerstattung durch Fremdsystem bestaetigt: " + saved.getRefundReference());
+        return toResponse(saved);
+    }
+
+    private ReturnRequest loadReturnRequest(Long returnRequestId) {
+        return returnRequestRepository.findById(returnRequestId)
+                .orElseThrow(() -> new EntityNotFoundException("Return request not found: " + returnRequestId));
+    }
+
+    private ReturnRequestResponse auditAndRespond(
+            ReturnRequest returnRequest,
+            User employee,
+            String action,
+            String details) {
+        ReturnRequest saved = returnRequestRepository.save(returnRequest);
+        auditLogService.record(employee, action, "ReturnRequest", saved.getId(), AuditInitiator.USER, details);
+        return toResponse(saved);
+    }
+
+    private String normalizeRequiredDecisionReason(String reason) {
+        String normalized = normalizeDescription(reason);
+        if (normalized == null || normalized.isBlank()) {
+            throw new IllegalArgumentException("Bitte gib einen Ablehnungsgrund an.");
+        }
+        return normalized;
+    }
+
+    private String normalizeExternalRefundReference(String reference) {
+        String normalized = normalizeDescription(reference);
+        if (normalized == null || normalized.isBlank()) {
+            throw new IllegalArgumentException("Bitte gib eine Referenz des Fremdsystems an.");
+        }
+        if (normalized.length() > 80) {
+            throw new IllegalArgumentException("Die Referenz des Fremdsystems darf maximal 80 Zeichen lang sein.");
+        }
+        return normalized;
     }
 
     @Transactional(readOnly = true)
@@ -242,7 +428,7 @@ public class ReturnRequestService {
         });
     }
 
-    private void initiateRefund(ReturnRequest returnRequest) {
+    private void prepareRefund(ReturnRequest returnRequest) {
         returnRequest.setRefundStatus(ReturnRefundStatus.INITIATED);
         returnRequest.setRefundMethod(returnRequest.getOrder().getPaymentMethodType() == null
                 ? ReturnRefundMethod.SHOP_CREDIT
@@ -259,16 +445,50 @@ public class ReturnRequestService {
     }
 
     private BigDecimal calculateRefundAmount(ReturnRequest returnRequest) {
-        return returnRequest.getItems().stream()
-                .map(item -> item.getOrderItem().getPriceAtOrderTime().multiply(BigDecimal.valueOf(item.getQuantity())))
+        BigDecimal returnedSubtotal = returnRequest.getItems().stream()
+                .map(this::calculateLineSubtotal)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal orderItemSubtotal = returnRequest.getOrder().getItems().stream()
+                .map(item -> calculateLineSubtotal(item.getPriceAtOrderTime(), item.getQuantity()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        if (returnedSubtotal.compareTo(BigDecimal.ZERO) <= 0 || orderItemSubtotal.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+
+        BigDecimal orderDiscount = returnRequest.getOrder().getDiscountAmount() == null
+                ? BigDecimal.ZERO
+                : returnRequest.getOrder().getDiscountAmount().max(BigDecimal.ZERO);
+        BigDecimal proportionalDiscount = orderDiscount.compareTo(BigDecimal.ZERO) > 0
+                ? returnedSubtotal.multiply(orderDiscount)
+                        .divide(orderItemSubtotal, 2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        return returnedSubtotal.subtract(proportionalDiscount)
+                .max(BigDecimal.ZERO)
+                .setScale(2, RoundingMode.HALF_UP);
     }
 
-    private void attachDefectDetails(ReturnRequest returnRequest, CreateReturnRequest request) {
+    private BigDecimal calculateLineSubtotal(ReturnRequestItem item) {
+        return calculateLineSubtotal(item.getOrderItem().getPriceAtOrderTime(), item.getQuantity());
+    }
+
+    private BigDecimal calculateLineSubtotal(BigDecimal unitPrice, int quantity) {
+        if (unitPrice == null || quantity <= 0) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+        return unitPrice.multiply(BigDecimal.valueOf(quantity)).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private void attachDefectDetails(
+            ReturnRequest returnRequest,
+            CreateReturnRequest request,
+            List<RequestedReturnLine> requestedLines) {
         String description = normalizeDescription(request.defectDescription());
         List<ReturnRequestImageUpload> images = request.defectImages() == null ? List.of() : request.defectImages();
+        boolean containsDefectiveLine = requestedLines.stream().anyMatch(line -> line.reason() == ReturnReason.DEFECTIVE);
 
-        if (request.reason() != ReturnReason.DEFECTIVE) {
+        if (!containsDefectiveLine) {
             if (description != null || !images.isEmpty()) {
                 throw new IllegalArgumentException(
                         "Defektdetails duerfen nur fuer den Rueckgabegrund Defekt uebermittelt werden.");
@@ -398,6 +618,13 @@ public class ReturnRequestService {
                 returnRequest.getStatus(),
                 returnRequest.getCreatedAt(),
                 returnRequest.getInspectedAt(),
+                returnRequest.getApprovedAt(),
+                returnRequest.getRejectedAt(),
+                returnRequest.getGoodsReceivedAt(),
+                returnRequest.getRefundedAt(),
+                returnRequest.getDecisionReason(),
+                returnRequest.getDecidedBy() == null ? null : returnRequest.getDecidedBy().getId(),
+                returnRequest.getDecidedBy() == null ? null : returnRequest.getDecidedBy().getUsername(),
                 returnRequest.getInspectionCondition(),
                 returnRequest.getRefundStatus(),
                 returnRequest.getRefundMethod(),
@@ -412,7 +639,10 @@ public class ReturnRequestService {
                                 item.getId(),
                                 item.getOrderItem().getId(),
                                 item.getProductName(),
-                                item.getQuantity()))
+                                item.getQuantity(),
+                                item.getReason(),
+                                item.getCustomerComment(),
+                                calculateLineSubtotal(item)))
                         .toList(),
                 toShippingLabelResponse(returnRequest));
     }
@@ -587,4 +817,10 @@ public class ReturnRequestService {
                 .replace("(", "\\(")
                 .replace(")", "\\)");
     }
+    private record RequestedReturnLine(
+            Long orderItemId,
+            int quantity,
+            ReturnReason reason,
+            String comment
+    ) {}
 }

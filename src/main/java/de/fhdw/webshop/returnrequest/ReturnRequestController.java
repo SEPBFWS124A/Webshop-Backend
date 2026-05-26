@@ -1,9 +1,11 @@
 package de.fhdw.webshop.returnrequest;
 
 import de.fhdw.webshop.returnrequest.dto.CreateReturnRequest;
+import de.fhdw.webshop.returnrequest.dto.ExternalRefundConfirmationRequest;
 import de.fhdw.webshop.returnrequest.dto.InspectReturnRequest;
 import de.fhdw.webshop.returnrequest.dto.ReturnRequestImageDownload;
 import de.fhdw.webshop.returnrequest.dto.ReturnRequestResponse;
+import de.fhdw.webshop.returnrequest.dto.ReturnStatusDecisionRequest;
 import de.fhdw.webshop.user.User;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -67,6 +69,47 @@ public class ReturnRequestController {
             @PathVariable Long returnRequestId,
             @Valid @RequestBody InspectReturnRequest request) {
         return ResponseEntity.ok(returnRequestService.inspectReturnRequest(returnRequestId, request));
+    }
+
+    @PutMapping("/api/admin/returns/{returnRequestId}/review")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'WAREHOUSE_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<ReturnRequestResponse> markReturnInReview(
+            @AuthenticationPrincipal User currentUser,
+            @PathVariable Long returnRequestId) {
+        return ResponseEntity.ok(returnRequestService.markInReview(returnRequestId, currentUser));
+    }
+
+    @PutMapping("/api/admin/returns/{returnRequestId}/approve")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'WAREHOUSE_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<ReturnRequestResponse> approveReturnRequest(
+            @AuthenticationPrincipal User currentUser,
+            @PathVariable Long returnRequestId) {
+        return ResponseEntity.ok(returnRequestService.approveReturn(returnRequestId, currentUser));
+    }
+
+    @PutMapping("/api/admin/returns/{returnRequestId}/reject")
+    @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'WAREHOUSE_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<ReturnRequestResponse> rejectReturnRequest(
+            @AuthenticationPrincipal User currentUser,
+            @PathVariable Long returnRequestId,
+            @Valid @RequestBody ReturnStatusDecisionRequest request) {
+        return ResponseEntity.ok(returnRequestService.rejectReturn(returnRequestId, currentUser, request));
+    }
+
+    @PutMapping("/api/admin/returns/{returnRequestId}/goods-received")
+    @PreAuthorize("hasAnyRole('WAREHOUSE_EMPLOYEE', 'ADMIN')")
+    public ResponseEntity<ReturnRequestResponse> markReturnGoodsReceived(
+            @AuthenticationPrincipal User currentUser,
+            @PathVariable Long returnRequestId) {
+        return ResponseEntity.ok(returnRequestService.markGoodsReceived(returnRequestId, currentUser));
+    }
+
+    @PutMapping("/api/integrations/returns/{returnRequestId}/refund")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ReturnRequestResponse> confirmRefundFromExternalSystem(
+            @PathVariable Long returnRequestId,
+            @Valid @RequestBody ExternalRefundConfirmationRequest request) {
+        return ResponseEntity.ok(returnRequestService.confirmRefundFromExternalSystem(returnRequestId, request));
     }
 
     @GetMapping(value = "/api/returns/{returnRequestId}/label.pdf", produces = MediaType.APPLICATION_PDF_VALUE)
