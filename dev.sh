@@ -17,7 +17,8 @@
 #              Polls /api/health until the app responds, then prints the ready message.
 #   stop    -> docker compose down  (or stop only backend with --keep-db)
 #   restart -> stop backend + start backend
-#   rebuild -> docker compose up -d --build --force-recreate
+#   rebuild -> docker compose down + remove postgres volume (fresh DB) + up --build --force-recreate
+#              (use --keep-db to keep the volume and rebuild only the backend)
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PORT=8080
@@ -214,7 +215,8 @@ show_usage() {
     echo "  start    Start all containers (auto-detects if rebuild is needed)"
     echo "  stop     Stop all containers"
     echo "  restart  Stop backend, then start backend"
-    echo "  rebuild  Force full rebuild (recreates containers)"
+    echo "  rebuild  Force full rebuild - also deletes the PostgreSQL volume (fresh DB)"
+    echo "           Use --keep-db to skip the volume deletion and keep existing data"
     echo "  test     Run the backend test suite in a Maven container (no local Maven needed)"
     echo "           Integration tests spin up PostgreSQL via Testcontainers (Docker required)"
     echo "           Optional filter: ./dev.sh test CartFlowIntegrationTest"
@@ -310,9 +312,16 @@ rebuild_backend() {
     setup_compose_files
 
     if [[ "$KEEP_DB" == "true" ]]; then
+        echo "Keeping PostgreSQL data (--keep-db)."
         docker compose "${COMPOSE_FILES[@]}" up -d --build --force-recreate backend
     else
         docker compose "${COMPOSE_FILES[@]}" down
+        local postgres_volume
+        postgres_volume="$(docker volume ls --format '{{.Name}}' | grep 'postgres_data' | head -1)"
+        if [[ -n "$postgres_volume" ]]; then
+            echo "Removing PostgreSQL volume ($postgres_volume) for a clean database..."
+            docker volume rm "$postgres_volume"
+        fi
         docker compose "${COMPOSE_FILES[@]}" up -d --build --force-recreate
     fi
 
