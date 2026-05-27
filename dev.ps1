@@ -20,12 +20,14 @@
 param(
     [string]$Command = "",
     [switch]$KeepDb,
-    [string]$TestFilter = ""
+    [string]$TestFilter = "",
+    [switch]$Yes
 )
 
 $Root = $PSScriptRoot
 $Port = 8080
 $HealthUrl = "http://localhost:$Port/api/health"
+$IncludeMailpit = $false   # set by 'loadtest' so outgoing mail is captured by Mailpit
 
 # --- helpers -----------------------------------------------------------------
 
@@ -70,6 +72,11 @@ function Get-OllamaComposeFiles {
         }
     }
 
+    if ($script:IncludeMailpit) {
+        Write-Host "Mailpit override enabled - outgoing mail is captured locally (no real SMTP)."
+        $composeFiles += "`"$RootPath\docker-compose.mailpit.yml`""
+    }
+
     return ($composeFiles -join " -f ")
 }
 
@@ -95,17 +102,20 @@ function Show-Usage {
     Write-Host "  test     Run the backend test suite in a Maven container (no local Maven needed)"
     Write-Host "           Integration tests spin up PostgreSQL via Testcontainers (Docker required)"
     Write-Host "           Optional filter: ./dev.bat test CartFlowIntegrationTest"
+    Write-Host "  loadtest Rebuild (fresh DB) + seed load-test data + run the k6 load test"
+    Write-Host "           DESTRUCTIVE: deletes the database. Asks for confirmation (skip with --yes)"
     Write-Host ""
     Write-Host "Options:"
     Write-Host "  --keep-db   Keep PostgreSQL data (combine with stop/restart/rebuild)"
+    Write-Host "  --yes       Skip the loadtest confirmation prompt"
     Write-Host ""
 }
 
 function Read-CommandInteractive {
     Show-Usage
-    $inputCommand = (Read-Host "Enter command (start/stop/restart/rebuild/test)").Trim().ToLower()
+    $inputCommand = (Read-Host "Enter command (start/stop/restart/rebuild/test/loadtest)").Trim().ToLower()
 
-    if ($inputCommand -notin @("start", "stop", "restart", "rebuild", "test")) {
+    if ($inputCommand -notin @("start", "stop", "restart", "rebuild", "test", "loadtest")) {
         Write-Host "ERROR: Unknown command '$inputCommand'."
         exit 1
     }
@@ -334,21 +344,115 @@ function Invoke-Tests {
     Write-Host "All tests passed."
 }
 
+# --- loadtest ----------------------------------------------------------------
+
+function Import-SeedFile {
+    param([string]$RelativePath, [string]$Label)
+    $seedPath = Join-Path $Root $RelativePath
+    if (-not (Test-Path $seedPath)) {
+        Write-Host "ERROR: Seed file not found: $seedPath"
+        return
+    }
+    Write-Host "Seeding $Label ..."
+    Get-Content $seedPath | docker exec -i webshop-postgres psql -U webshop -d webshop
+}
+
+function Invoke-K6Script {
+    param([string]$ScriptName, [bool]$PlaceOrders = $false)
+
+    Write-Host "-------------------------------------------------------------------------------"
+    Write-Host "Running k6: $ScriptName  (real orders: $(if ($PlaceOrders) { 'yes' } else { 'no' }))"
+    Write-Host "Live k6 output follows. Watch Grafana http://localhost:3001, Mailpit http://localhost:8025"
+    Write-Host "-------------------------------------------------------------------------------"
+
+    # Foreground docker run → k6's progress and final report stream straight to this console.
+    $dockerArguments = @(
+        "run", "--rm",
+        "-e", "BASE_URL=http://host.docker.internal:$Port",
+        "-e", "LOGIN_USER_PREFIX=loaduser",
+        "-e", "LOGIN_USER_COUNT=1000"
+    )
+    if ($PlaceOrders) {
+        $dockerArguments += @("-e", "PLACE_ORDERS=true")
+    }
+    $dockerArguments += @("-v", "${Root}\loadtest:/scripts", "grafana/k6", "run", "/scripts/$ScriptName")
+
+    & docker @dockerArguments
+}
+
+function Invoke-LoadTest {
+    if (-not (Test-DockerRunning)) { return }
+
+    if (-not $Yes) {
+        Write-Host "WARNING: 'loadtest' rebuilds the stack and DELETES the PostgreSQL database,"
+        Write-Host "         then seeds load-test data."
+        $answer = (Read-Host "Continue? [y/N]").Trim().ToLower()
+        if ($answer -notin @("y", "j")) {
+            Write-Host "Aborted."
+            return
+        }
+    }
+
+    # Fresh database + Mailpit override (captures all outgoing mail locally; no real SMTP).
+    $script:KeepDb = $false
+    $script:IncludeMailpit = $true
+    Rebuild-Backend
+    if (-not (Wait-ForBackend)) {
+        Write-Host "ERROR: Backend did not become ready - aborting load test."
+        return
+    }
+
+    Import-SeedFile "src\main\resources\db\dev-seed.sql" "base data (dev-seed)"
+    Import-SeedFile "src\main\resources\db\loadtest-seed.sql" "load-test data"
+
+    Write-Host ""
+    Write-Host "Backend is ready and seeded."
+    $choice = (Read-Host "Lasttest jetzt starten? [j]a / [n]ein / [a] ja inkl. Bestellungen (max. Auslastung)").Trim().ToLower()
+
+    $ordersIncluded = $false
+    $readTestRan = $false
+    if ($choice -in @("a", "alles", "b", "ja-inkl")) {
+        Invoke-K6Script -ScriptName "load-test.js" -PlaceOrders $true
+        $ordersIncluded = $true
+        $readTestRan = $true
+    } elseif ($choice -in @("j", "ja", "y", "")) {
+        Invoke-K6Script -ScriptName "load-test.js" -PlaceOrders $false
+        $readTestRan = $true
+    } else {
+        Write-Host "Lasttest übersprungen."
+    }
+
+    # Offer a focused order-only run afterwards (only if a read-only test ran).
+    if ($readTestRan -and -not $ordersIncluded) {
+        $orderChoice = (Read-Host "Jetzt noch ein reines Bestell-Lastszenario ausführen? [j/N]").Trim().ToLower()
+        if ($orderChoice -in @("j", "ja", "y")) {
+            Invoke-K6Script -ScriptName "order-load-test.js" -PlaceOrders $false
+        }
+    }
+
+    Write-Host "-------------------------------------------------------------------------------"
+    Write-Host "Done. The stack is still running for inspection:"
+    Write-Host "  Grafana: http://localhost:3001  (admin / admin)"
+    Write-Host "  Mailpit: http://localhost:8025  (captured emails)"
+    Write-Host "Run './dev.bat stop' to shut down."
+}
+
 # --- dispatch ----------------------------------------------------------------
 
 if (-not $Command) {
     $Command = Read-CommandInteractive
 }
 
-if ($Command -notin @("start", "stop", "restart", "rebuild", "test")) {
+if ($Command -notin @("start", "stop", "restart", "rebuild", "test", "loadtest")) {
     Write-Host "ERROR: Unknown command '$Command'. Run './dev.bat' without arguments for help."
     exit 1
 }
 
 switch ($Command) {
-    "start"   { Start-Backend }
-    "stop"    { Stop-Backend }
-    "restart" { Stop-Backend; Start-Sleep -Seconds 1; Start-Backend }
-    "rebuild" { Rebuild-Backend }
-    "test"    { Invoke-Tests }
+    "start"    { Start-Backend }
+    "stop"     { Stop-Backend }
+    "restart"  { Stop-Backend; Start-Sleep -Seconds 1; Start-Backend }
+    "rebuild"  { Rebuild-Backend }
+    "test"     { Invoke-Tests }
+    "loadtest" { Invoke-LoadTest }
 }
