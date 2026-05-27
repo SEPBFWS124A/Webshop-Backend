@@ -210,6 +210,7 @@ Das Backend ist dann erreichbar unter: `http://localhost:8080`
 | `./dev.bat rebuild --keep-db` | Rebuild Backend ohne PostgreSQL-Neustart, Volume bleibt erhalten |
 | `./dev.bat test` | Test-Suite in einem Maven-Container ausführen (kein lokales Java/Maven nötig) |
 | `./dev.bat test <Filter>` | Nur bestimmte Tests, z.B. `./dev.bat test CartFlowIntegrationTest` oder `'*IntegrationTest'` |
+| `./dev.bat loadtest` | Frische DB + Lastdaten einspielen + k6-Lasttest (destruktiv, mit Bestätigung; `--yes` überspringt) |
 
 > **Wann `./dev.bat rebuild` statt `./dev.bat restart`?**
 > Nach Änderungen am `Dockerfile` oder wenn der Layer-Cache einen veralteten Stand hat.
@@ -232,6 +233,8 @@ Das Backend ist dann erreichbar unter: `http://localhost:8080`
 - **Integrationstests** (`*IntegrationTest`) — starten via **Testcontainers** ein echtes PostgreSQL (`postgres:16-alpine`), gegen das Flyway die echten Migrationen ausführt. Dadurch werden auch PostgreSQL-spezifische Konstrukte (Enum-Typen etc.) getestet, die mit H2 nicht abbildbar wären. **Docker muss laufen.**
 
 > Beim ersten Lauf lädt Maven die Abhängigkeiten in ein Cache-Volume und zieht das `postgres:16-alpine`-Image — Folgeläufe sind deutlich schneller.
+
+**Last-/Ressourcentest:** `./dev.bat loadtest` baut eine frische DB, spielt eine realistische Lastdatenmenge ein und startet einen **k6**-Lasttest (beobachtbar in Grafana). Der Befehl ist **destruktiv** (löscht die DB) und fragt vorher nach. Details, Auswertung und ein optionales Bestell-Lastszenario: [`docs/loadtest.md`](docs/loadtest.md).
 
 ### Schritt 3 — Ollama-Modell ziehen (einmalig, nur für Shoppi KI-Assistent)
 ```bash
