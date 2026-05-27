@@ -225,7 +225,9 @@ function Stop-Backend {
         docker compose -f "$Root\docker-compose.yml" stop backend
     } else {
         Write-Host "Stopping all containers..."
-        docker compose -f "$Root\docker-compose.yml" down
+        # --remove-orphans also tears down containers from overrides (e.g. mailpit) that
+        # were started alongside the base stack but are not in this compose file.
+        docker compose -f "$Root\docker-compose.yml" down --remove-orphans
     }
 }
 
@@ -280,7 +282,7 @@ function Rebuild-Backend {
         Write-Host "Keeping PostgreSQL data (--keep-db)."
         Invoke-Expression "docker compose -f $composeFiles up -d --build --force-recreate backend"
     } else {
-        Invoke-Expression "docker compose -f $composeFiles down"
+        Invoke-Expression "docker compose -f $composeFiles down --remove-orphans"
         $postgresVolume = docker volume ls --format "{{.Name}}" | Where-Object { $_ -match "postgres_data" }
         if ($postgresVolume) {
             Write-Host "Removing PostgreSQL volume ($postgresVolume) for a clean database..."
