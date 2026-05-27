@@ -1,0 +1,30 @@
+# Opt-in override that captures ALL outgoing mail in a local Mailpit container
+# instead of sending it via a real SMTP server. Used automatically by `dev loadtest`
+# so that load tests never send real emails — independent of any SMTP values in .env.
+#
+# Manual use:
+#   docker compose -f docker-compose.yml -f docker-compose.mailpit.yml up -d --build
+#
+# The literal SPRING_MAIL_* values below override the ${MAIL_*}-interpolated values from
+# the base docker-compose.yml (later compose file wins), so they take effect regardless
+# of what is configured in .env.
+#
+# Mailpit web UI (read captured mails): http://localhost:8025
+services:
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: webshop-mailpit
+    ports:
+      - "127.0.0.1:8025:8025"   # web UI only; SMTP (1025) stays on the internal Docker network
+    restart: unless-stopped
+
+  backend:
+    environment:
+      SPRING_MAIL_HOST: mailpit
+      SPRING_MAIL_PORT: 1025
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH: "false"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE: "false"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_SSL_ENABLE: "false"
+    depends_on:
+      mailpit:
+        condition: service_started

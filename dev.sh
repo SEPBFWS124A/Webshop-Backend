@@ -26,18 +26,20 @@ HEALTH_URL="http://localhost:$PORT/api/health"
 
 COMMAND="${1:-}"
 KEEP_DB=false
+ASSUME_YES=false
 TEST_FILTER=""
+INCLUDE_MAILPIT=false   # set by 'loadtest' so outgoing mail is captured by Mailpit
 COMPOSE_FILES=()
 
 # Shift past the command arg, then scan remaining args for flags.
 # The first non-flag argument is treated as the test filter (for the 'test' command).
 [[ $# -gt 0 ]] && shift
 for arg in "$@"; do
-    if [[ "$arg" == "--keep-db" ]]; then
-        KEEP_DB=true
-    else
-        TEST_FILTER="$arg"
-    fi
+    case "$arg" in
+        --keep-db) KEEP_DB=true ;;
+        --yes|-y)  ASSUME_YES=true ;;
+        *)         TEST_FILTER="$arg" ;;
+    esac
 done
 
 # --- helpers -----------------------------------------------------------------
@@ -94,6 +96,11 @@ setup_compose_files() {
             echo "No dedicated GPU detected - Ollama will run on CPU."
             ;;
     esac
+
+    if [[ "$INCLUDE_MAILPIT" == "true" ]]; then
+        echo "Mailpit override enabled - outgoing mail is captured locally (no real SMTP)."
+        COMPOSE_FILES+=("-f" "$ROOT/docker-compose.mailpit.yml")
+    fi
 }
 
 test_docker_running() {
@@ -220,9 +227,12 @@ show_usage() {
     echo "  test     Run the backend test suite in a Maven container (no local Maven needed)"
     echo "           Integration tests spin up PostgreSQL via Testcontainers (Docker required)"
     echo "           Optional filter: ./dev.sh test CartFlowIntegrationTest"
+    echo "  loadtest Rebuild (fresh DB) + seed load-test data + run the k6 load test"
+    echo "           DESTRUCTIVE: deletes the database. Asks for confirmation (skip with --yes)"
     echo ""
     echo "Options:"
     echo "  --keep-db   Keep PostgreSQL running (combine with stop/restart/rebuild)"
+    echo "  --yes       Skip the loadtest confirmation prompt"
     echo ""
 }
 
@@ -233,7 +243,7 @@ read_command_interactive() {
     input_command="$(echo "$input_command" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 
     case "$input_command" in
-        start|stop|restart|rebuild|test) ;;
+        start|stop|restart|rebuild|test|loadtest) ;;
         *)
             echo "ERROR: Unknown command '$input_command'."
             exit 1
@@ -258,7 +268,9 @@ stop_backend() {
         docker compose -f "$ROOT/docker-compose.yml" stop backend
     else
         echo "Stopping all containers..."
-        docker compose -f "$ROOT/docker-compose.yml" down
+        # --remove-orphans also tears down containers from overrides (e.g. mailpit) that
+        # were started alongside the base stack but are not in this compose file.
+        docker compose -f "$ROOT/docker-compose.yml" down --remove-orphans
     fi
 }
 
@@ -315,7 +327,7 @@ rebuild_backend() {
         echo "Keeping PostgreSQL data (--keep-db)."
         docker compose "${COMPOSE_FILES[@]}" up -d --build --force-recreate backend
     else
-        docker compose "${COMPOSE_FILES[@]}" down
+        docker compose "${COMPOSE_FILES[@]}" down --remove-orphans
         local postgres_volume
         postgres_volume="$(docker volume ls --format '{{.Name}}' | grep 'postgres_data' | head -1)"
         if [[ -n "$postgres_volume" ]]; then
@@ -375,6 +387,109 @@ run_tests() {
     echo "All tests passed."
 }
 
+# --- loadtest ----------------------------------------------------------------
+
+import_seed_file() {
+    local relative_path="$1"
+    local label="$2"
+    local seed_path="$ROOT/$relative_path"
+    if [[ ! -f "$seed_path" ]]; then
+        echo "ERROR: Seed file not found: $seed_path"
+        return 1
+    fi
+    echo "Seeding $label ..."
+    docker exec -i webshop-postgres psql -U webshop -d webshop < "$seed_path"
+}
+
+run_k6_script() {
+    local script_name="$1"
+    local place_orders="$2"   # "true" / "false"
+
+    echo "-------------------------------------------------------------------------------"
+    echo "Running k6: $script_name  (real orders: $([[ "$place_orders" == "true" ]] && echo yes || echo no))"
+    echo "Live k6 output follows. Watch Grafana http://localhost:3001, Mailpit http://localhost:8025"
+    echo "-------------------------------------------------------------------------------"
+
+    local extra_env=()
+    [[ "$place_orders" == "true" ]] && extra_env=(-e PLACE_ORDERS=true)
+
+    # Foreground docker run → k6's progress and final report stream straight to this console.
+    docker run --rm \
+        -e "BASE_URL=http://host.docker.internal:$PORT" \
+        -e LOGIN_USER_PREFIX=loaduser \
+        -e LOGIN_USER_COUNT=1000 \
+        "${extra_env[@]}" \
+        --add-host=host.docker.internal:host-gateway \
+        -v "$ROOT/loadtest:/scripts" \
+        grafana/k6 run "/scripts/$script_name"
+}
+
+run_loadtest() {
+    test_docker_running || return 1
+
+    if [[ "$ASSUME_YES" != "true" ]]; then
+        echo "WARNING: 'loadtest' rebuilds the stack and DELETES the PostgreSQL database,"
+        echo "         then seeds load-test data."
+        printf "Continue? [y/N]: "
+        read -r answer
+        answer="$(echo "$answer" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+        if [[ "$answer" != "y" && "$answer" != "j" ]]; then
+            echo "Aborted."
+            return 0
+        fi
+    fi
+
+    # Fresh database + Mailpit override (captures all outgoing mail locally; no real SMTP).
+    KEEP_DB=false
+    INCLUDE_MAILPIT=true
+    rebuild_backend
+    if ! wait_for_backend; then
+        echo "ERROR: Backend did not become ready — aborting load test."
+        return 1
+    fi
+
+    import_seed_file "src/main/resources/db/dev-seed.sql" "base data (dev-seed)"
+    import_seed_file "src/main/resources/db/loadtest-seed.sql" "load-test data"
+
+    echo ""
+    echo "Backend is ready and seeded."
+    printf "Lasttest jetzt starten? [j]a / [n]ein / [a] ja inkl. Bestellungen (max. Auslastung): "
+    read -r choice
+    choice="$(echo "$choice" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+
+    local orders_included=false
+    local read_test_ran=false
+    case "$choice" in
+        a|alles|b|jainkl|ja-inkl)
+            run_k6_script "load-test.js" "true"
+            orders_included=true
+            read_test_ran=true
+            ;;
+        j|ja|y|"")
+            run_k6_script "load-test.js" "false"
+            read_test_ran=true
+            ;;
+        *)
+            echo "Lasttest uebersprungen."
+            ;;
+    esac
+
+    if [[ "$read_test_ran" == "true" && "$orders_included" != "true" ]]; then
+        printf "Jetzt noch ein reines Bestell-Lastszenario ausfuehren? [j/N]: "
+        read -r order_choice
+        order_choice="$(echo "$order_choice" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+        if [[ "$order_choice" == "j" || "$order_choice" == "ja" || "$order_choice" == "y" ]]; then
+            run_k6_script "order-load-test.js" "false"
+        fi
+    fi
+
+    echo "-------------------------------------------------------------------------------"
+    echo "Done. The stack is still running for inspection:"
+    echo "  Grafana: http://localhost:3001  (admin / admin)"
+    echo "  Mailpit: http://localhost:8025  (captured emails)"
+    echo "Run './dev.sh stop' to shut down."
+}
+
 # --- dispatch ----------------------------------------------------------------
 
 if [[ -z "$COMMAND" ]]; then
@@ -398,6 +513,9 @@ case "$COMMAND" in
         ;;
     test)
         run_tests
+        ;;
+    loadtest)
+        run_loadtest
         ;;
     *)
         echo "ERROR: Unknown command '$COMMAND'. Run './dev.sh' without arguments for help."

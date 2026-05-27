@@ -222,8 +222,11 @@ Das Backend ist dann erreichbar unter: `http://localhost:8080`
 | `./dev.sh rebuild --keep-db` | Rebuild ohne PostgreSQL-Neustart |
 | `./dev.sh test` | Test-Suite in einem Maven-Container ausführen (kein lokales Java/Maven nötig) |
 | `./dev.sh test <Filter>` | Nur bestimmte Tests, z.B. `./dev.sh test CartFlowIntegrationTest` oder `'*IntegrationTest'` |
+| `./dev.sh loadtest` | Frische DB + Lastdaten einspielen + k6-Lasttest (destruktiv, mit Bestätigung; `--yes` überspringt) |
 
 > **Tests:** `./dev.sh test` führt die Tests in einem Maven-Container aus. Die Integrationstests (`*IntegrationTest`) starten via **Testcontainers** ein echtes PostgreSQL (`postgres:16-alpine`), gegen das Flyway die echten Migrationen ausführt — Docker muss laufen. Die Unit-Tests (Mockito) brauchen keine Datenbank. Beim ersten Lauf werden Abhängigkeiten in ein Cache-Volume geladen und das `postgres:16-alpine`-Image gezogen.
+>
+> **Last-/Ressourcentest:** `./dev.sh loadtest` baut eine frische DB, spielt Lastdaten ein und startet einen **k6**-Lasttest (beobachtbar in Grafana). Destruktiv (löscht die DB), fragt vorher nach. Details: [`docs/loadtest.md`](docs/loadtest.md).
 
 ### Schritt 3 — Ollama-Modell ziehen (einmalig, nur für Shoppi KI-Assistent)
 ```bash
