@@ -88,6 +88,9 @@ public class Product {
     @Column(nullable = false)
     private boolean purchasable = false;
 
+    @Column(name = "trade_in_enabled", nullable = false)
+    private boolean tradeInEnabled = true;
+
     /** Promoted products are highlighted on the storefront (US #26). */
     @Column(nullable = false)
     private boolean promoted = false;

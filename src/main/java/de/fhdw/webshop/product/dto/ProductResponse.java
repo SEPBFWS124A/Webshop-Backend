@@ -24,6 +24,7 @@ public record ProductResponse(
         int availableStock,
         String sku,
         boolean purchasable,
+        boolean tradeInEnabled,
         boolean promoted,
         boolean personalizable,
         Integer personalizationMaxLength,

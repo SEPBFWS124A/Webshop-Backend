@@ -106,6 +106,7 @@ class ProductServiceVariantTest {
                 20,
                 "TEAM-SHIRT",
                 true,
+                true,
                 false,
                 null,
                 true,

@@ -19,6 +19,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,6 +30,7 @@ public class TradeInService {
     private static final BigDecimal RATE_LIKE_NEW   = new BigDecimal("0.30");
     private static final BigDecimal RATE_LIGHT_WEAR = new BigDecimal("0.15");
     private static final BigDecimal RATE_DEFECTIVE  = new BigDecimal("0.05");
+    private static final long RETURN_WINDOW_DAYS = 14;
 
     private final TradeInRepository tradeInRepository;
     private final OrderItemRepository orderItemRepository;
@@ -51,6 +53,13 @@ public class TradeInService {
 
         if (order.getStatus() != OrderStatus.DELIVERED) {
             throw new IllegalStateException("Trade-In ist nur für zugestellte Bestellungen möglich.");
+        }
+
+        if (!orderItem.getProduct().isTradeInEnabled()) {
+            throw new IllegalStateException("Trade-In ist fuer diesen Artikel deaktiviert.");
+        }
+        if (!isReturnWindowExpired(order)) {
+            throw new IllegalStateException("Trade-In ist erst nach Ablauf der 14-taegigen Retourenfrist moeglich.");
         }
 
         boolean alreadyPending = tradeInRepository.existsByOrderItemIdAndStatusNot(
@@ -154,6 +163,14 @@ public class TradeInService {
     private TradeInRequest loadById(Long id) {
         return tradeInRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Trade-In-Anfrage nicht gefunden: " + id));
+    }
+
+    private boolean isReturnWindowExpired(Order order) {
+        Instant deliveredAt = order.getDeliveredAt() != null ? order.getDeliveredAt() : order.getCreatedAt();
+        if (deliveredAt == null) {
+            return false;
+        }
+        return Instant.now().isAfter(deliveredAt.plus(RETURN_WINDOW_DAYS, ChronoUnit.DAYS));
     }
 
     private String generateCouponCode() {
