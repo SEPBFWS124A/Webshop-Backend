@@ -21,6 +21,7 @@ public record OrderItemResponse(
         String bundleGroupKey,
         BigDecimal bundleDiscountPercent,
         boolean productPurchasable,
+        boolean productTradeInEnabled,
         int quantity,
         BigDecimal priceAtOrderTime,
         BigDecimal lineTotal

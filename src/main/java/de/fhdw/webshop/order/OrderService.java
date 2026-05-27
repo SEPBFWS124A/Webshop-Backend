@@ -1408,6 +1408,7 @@ public class OrderService {
                 orderItem.getBundleGroupKey(),
                 orderItem.getBundleDiscountPercent(),
                 orderItem.getProduct().isPurchasable(),
+                orderItem.getProduct().isTradeInEnabled(),
                 orderItem.getQuantity(),
                 orderItem.getPriceAtOrderTime(),
                 orderItem.getPriceAtOrderTime()

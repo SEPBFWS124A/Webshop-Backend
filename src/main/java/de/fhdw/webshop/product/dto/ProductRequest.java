@@ -21,6 +21,7 @@ public record ProductRequest(
         @PositiveOrZero Integer stock,
         String sku,
         Boolean purchasable,
+        Boolean tradeInEnabled,
         Boolean personalizable,
         @PositiveOrZero Integer personalizationMaxLength,
         boolean hasVariants,

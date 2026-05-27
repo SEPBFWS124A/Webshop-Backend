@@ -215,6 +215,7 @@ public class ProductService {
                 availableStock,
                 product.getSku(),
                 product.isPurchasable(),
+                product.isTradeInEnabled(),
                 product.isPromoted(),
                 product.isPersonalizable(),
                 product.getPersonalizationMaxLength(),
@@ -242,6 +243,7 @@ public class ProductService {
         if (productRequest.purchasable() != null) {
             product.setPurchasable(productRequest.purchasable());
         }
+        product.setTradeInEnabled(productRequest.tradeInEnabled() == null || productRequest.tradeInEnabled());
         boolean personalizable = Boolean.TRUE.equals(productRequest.personalizable());
         product.setPersonalizable(personalizable);
         product.setPersonalizationMaxLength(resolvePersonalizationMaxLength(personalizable, productRequest.personalizationMaxLength()));
@@ -327,6 +329,7 @@ public class ProductService {
         variant.setStock(variantRequest.stock() == null ? parent.getStock() : variantRequest.stock());
         variant.setSku(firstNonBlank(variantRequest.sku(), buildGeneratedSku(parent, index)));
         variant.setPurchasable(parent.isPurchasable());
+        variant.setTradeInEnabled(parent.isTradeInEnabled());
         variant.setPromoted(false);
         variant.setPersonalizable(parent.isPersonalizable());
         variant.setPersonalizationMaxLength(parent.getPersonalizationMaxLength());
