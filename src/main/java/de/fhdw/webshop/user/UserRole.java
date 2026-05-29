@@ -10,6 +10,7 @@ package de.fhdw.webshop.user;
  */
 public enum UserRole {
     CUSTOMER,
+    SELLER,
     EMPLOYEE,
     SALES_EMPLOYEE,
     WAREHOUSE_EMPLOYEE,

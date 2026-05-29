@@ -128,10 +128,13 @@ public class AdminController {
 
     private UserRole determineRoleForUserType(UserType userType, UserRole requestedRole) {
         if (userType == UserType.BUSINESS || userType == UserType.PRIVATE) {
+            if (requestedRole == UserRole.SELLER && userType == UserType.BUSINESS) {
+                return UserRole.SELLER;
+            }
             return UserRole.CUSTOMER;
         }
-        if (requestedRole == UserRole.CUSTOMER) {
-            throw new IllegalArgumentException("Interne Benutzer duerfen nicht die Rolle Kunde erhalten.");
+        if (requestedRole == UserRole.CUSTOMER || requestedRole == UserRole.SELLER) {
+            throw new IllegalArgumentException("Interne Benutzer duerfen keine externen Rollen erhalten.");
         }
         return requestedRole;
     }
@@ -205,7 +208,7 @@ public class AdminController {
     }
 
     private void synchronizeUserBusinessIdentifiers(User user, UserRole effectiveRole) {
-        if (effectiveRole == UserRole.CUSTOMER) {
+        if (effectiveRole == UserRole.CUSTOMER || effectiveRole == UserRole.SELLER) {
             if (user.getCustomerNumber() == null) {
                 user.setCustomerNumber(nextCustomerNumber());
             }

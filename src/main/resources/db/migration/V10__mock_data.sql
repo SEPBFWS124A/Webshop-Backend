@@ -9,7 +9,7 @@ INSERT INTO users (username, email, password_hash, role, user_type, active)
 VALUES (
     'demo_vertrieb',
     'vertrieb@demo.de',
-    '$2a$10$8bCh1J0CQV8xLaHMcqEi7eCz5X5RqbVSG2VqTpWZzY5G.5X8P2GqO',
+    '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze',
     'SALES_EMPLOYEE',
     'PRIVATE',
     TRUE
@@ -19,12 +19,12 @@ VALUES (
 INSERT INTO users (username, email, password_hash, role, user_type, customer_number, active)
 VALUES
     ('demo_kunde1', 'kunde1@demo.de',
-     '$2a$10$8bCh1J0CQV8xLaHMcqEi7eCz5X5RqbVSG2VqTpWZzY5G.5X8P2GqO',
+     '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze',
      'CUSTOMER', 'PRIVATE',
      'K-' || to_char(nextval('customer_number_sequence'), 'FM000000'),
      TRUE),
     ('demo_kunde2', 'kunde2@demo.de',
-     '$2a$10$8bCh1J0CQV8xLaHMcqEi7eCz5X5RqbVSG2VqTpWZzY5G.5X8P2GqO',
+     '$2a$10$yT.Ge6bLC.BWERriPv/wguUMUtBF4iA3W0Q5VNDklGalWYlGy3Zze',
      'CUSTOMER', 'BUSINESS',
      'K-' || to_char(nextval('customer_number_sequence'), 'FM000000'),
      TRUE)
