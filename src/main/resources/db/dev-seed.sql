@@ -116,7 +116,8 @@ WHERE u.username = 'bob' AND p.name = 'Laptop Pro 15';
 INSERT INTO coupons (customer_id, code, discount_percent, valid_until, used)
 SELECT id, 'WELCOME10', 10.00, CURRENT_DATE + INTERVAL '30 days', FALSE
 FROM users
-WHERE username = 'alice';
+WHERE username = 'alice'
+ON CONFLICT (code) DO NOTHING;
 
 -- Cart items for alice
 INSERT INTO cart_items (user_id, product_id, quantity)
@@ -373,3 +374,25 @@ INSERT INTO order_items (order_id, product_id, quantity, price_at_order_time)
 SELECT delivered_order.id, p.id, 1, 29.99
 FROM delivered_order
 JOIN products p ON p.name = 'Wireless Mouse';
+
+-- Demo seller mapping for the seller portal milestone.
+-- Flyway creates the seller profiles before this seed runs, so the manual seed
+-- needs to align demo products and seeded order items afterwards.
+UPDATE products
+SET seller_name = CASE
+    WHEN name IN ('Digitaler Geschenkgutschein', 'Laptop Pro 15') THEN 'TechPartner GmbH'
+    WHEN name IN ('Wireless Mouse', 'Standing Desk') THEN 'Green Devices AG'
+    ELSE seller_name
+END
+WHERE name IN (
+    'Digitaler Geschenkgutschein',
+    'Laptop Pro 15',
+    'Wireless Mouse',
+    'Standing Desk'
+);
+
+UPDATE order_items oi
+SET seller_name = COALESCE(NULLIF(p.seller_name, ''), 'Webshop')
+FROM products p
+WHERE oi.product_id = p.id
+  AND oi.seller_name = 'Webshop';

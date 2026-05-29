@@ -280,7 +280,12 @@ function Rebuild-Backend {
 
     if ($KeepDb) {
         Write-Host "Keeping PostgreSQL data (--keep-db)."
-        Invoke-Expression "docker compose -f $composeFiles up -d --build --force-recreate backend"
+        Invoke-Expression "docker compose -f $composeFiles build --no-cache backend"
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "ERROR: docker compose build failed."
+            return
+        }
+        Invoke-Expression "docker compose -f $composeFiles up -d --force-recreate backend"
     } else {
         Invoke-Expression "docker compose -f $composeFiles down --remove-orphans"
         $postgresVolume = docker volume ls --format "{{.Name}}" | Where-Object { $_ -match "postgres_data" }
@@ -288,7 +293,12 @@ function Rebuild-Backend {
             Write-Host "Removing PostgreSQL volume ($postgresVolume) for a clean database..."
             docker volume rm $postgresVolume
         }
-        Invoke-Expression "docker compose -f $composeFiles up -d --build --force-recreate"
+        Invoke-Expression "docker compose -f $composeFiles build --no-cache backend"
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "ERROR: docker compose build failed."
+            return
+        }
+        Invoke-Expression "docker compose -f $composeFiles up -d --force-recreate"
     }
 
     if ($LASTEXITCODE -ne 0) {
