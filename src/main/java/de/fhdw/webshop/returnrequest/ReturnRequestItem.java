@@ -47,4 +47,14 @@ public class ReturnRequestItem {
 
     @Column(nullable = false)
     private int quantity;
+
+    @Column(name = "original_total_price", precision = 10, scale = 2)
+    private java.math.BigDecimal originalTotalPrice = java.math.BigDecimal.ZERO;
+
+    @Column(name = "discount_share", precision = 10, scale = 2)
+    private java.math.BigDecimal discountShare = java.math.BigDecimal.ZERO;
+
+    @Column(name = "refund_amount", precision = 10, scale = 2)
+    private java.math.BigDecimal refundAmount = java.math.BigDecimal.ZERO;
+
 }
