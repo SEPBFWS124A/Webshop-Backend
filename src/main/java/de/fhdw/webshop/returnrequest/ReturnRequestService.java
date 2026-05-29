@@ -124,6 +124,32 @@ public class ReturnRequestService {
             returnItem.setQuantity(line.quantity());
             returnItem.setReason(line.reason());
             returnItem.setCustomerComment(line.comment());
+
+// 1. Ursprungspreis der retournierten Menge berechnen
+            BigDecimal originalPrice = orderItem.getPriceAtOrderTime().multiply(BigDecimal.valueOf(line.quantity()));
+            
+
+            Order orderRetour = orderItem.getOrder();
+            BigDecimal discountShare = BigDecimal.ZERO;
+            
+
+            if (orderRetour.getDiscountAmount() != null && orderRetour.getDiscountAmount().compareTo(BigDecimal.ZERO) > 0) {
+                
+                BigDecimal orderTotalItemValue = order.getItems().stream()
+                        .map(item -> item.getPriceAtOrderTime().multiply(BigDecimal.valueOf(item.getQuantity())))
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                
+                if (orderTotalItemValue.compareTo(BigDecimal.ZERO) > 0) {
+
+                    BigDecimal shareRatio = originalPrice.divide(orderTotalItemValue, 4, java.math.RoundingMode.HALF_UP);
+                    discountShare = orderRetour.getDiscountAmount().multiply(shareRatio).setScale(2, java.math.RoundingMode.HALF_UP);
+                }
+            }
+            BigDecimal finalRefund = originalPrice.subtract(discountShare).max(BigDecimal.ZERO);
+            
+            returnItem.setOriginalTotalPrice(originalPrice);
+            returnItem.setDiscountShare(discountShare);
+            returnItem.setRefundAmount(finalRefund);
             returnRequest.getItems().add(returnItem);
         }
 
@@ -642,9 +668,13 @@ public class ReturnRequestService {
                                 item.getQuantity(),
                                 item.getReason(),
                                 item.getCustomerComment(),
-                                calculateLineSubtotal(item)))
+                                calculateLineSubtotal(item),
+                                item.getOriginalTotalPrice(),
+                                item.getDiscountShare(),
+                                item.getRefundAmount()
+                            ))
                         .toList(),
-                toShippingLabelResponse(returnRequest));
+                toShippingLabelResponse(returnRequest), returnRequest.getCouponDeduction());
     }
 
     private ReturnRequestImageResponse toImageResponse(ReturnRequest returnRequest, ReturnRequestImage image) {
