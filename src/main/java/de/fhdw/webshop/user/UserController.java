@@ -7,6 +7,8 @@ import de.fhdw.webshop.accountlink.AccountLinkService;
 import de.fhdw.webshop.accountlink.dto.TeamBudgetResponse;
 import de.fhdw.webshop.accountlink.dto.UpdateTeamBudgetRequest;
 import de.fhdw.webshop.user.dto.*;
+import de.fhdw.webshop.user.recentlyviewed.RecentlyViewedProductService;
+import de.fhdw.webshop.user.recentlyviewed.dto.RecentlyViewedProductResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -24,6 +26,7 @@ public class UserController {
     private final UserService userService;
     private final DiscountService discountService;
     private final AccountLinkService accountLinkService;
+    private final RecentlyViewedProductService recentlyViewedProductService;
 
     /** US #9 — Return own profile including customer number. */
     @GetMapping("/me")
@@ -88,6 +91,24 @@ public class UserController {
     @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<List<CouponResponse>> getMyCoupons(@AuthenticationPrincipal User currentUser) {
         return ResponseEntity.ok(discountService.listCouponsForCustomer(currentUser.getId()));
+    }
+
+    /** US #313 — Customer views their recently viewed products in the profile area. */
+    @GetMapping("/me/recently-viewed")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<List<RecentlyViewedProductResponse>> getMyRecentlyViewedProducts(
+            @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(recentlyViewedProductService.listForUser(currentUser));
+    }
+
+    /** US #313 — Record a product detail page visit for the current customer. */
+    @PostMapping("/me/recently-viewed/{productId}")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<Void> recordRecentlyViewedProduct(
+            @AuthenticationPrincipal User currentUser,
+            @PathVariable Long productId) {
+        recentlyViewedProductService.recordView(currentUser, productId);
+        return ResponseEntity.noContent().build();
     }
 
     /** Issue #220 — B2B administrators manage order limits for linked employee accounts. */
