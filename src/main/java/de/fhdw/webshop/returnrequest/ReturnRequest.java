@@ -147,4 +147,7 @@ public class ReturnRequest {
 
     @OneToMany(mappedBy = "returnRequest", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ReturnRequestImage> defectImages = new ArrayList<>();
+
+    @Column(name = "coupon_deduction", precision = 10, scale = 2)
+    private java.math.BigDecimal couponDeduction = java.math.BigDecimal.ZERO;
 }

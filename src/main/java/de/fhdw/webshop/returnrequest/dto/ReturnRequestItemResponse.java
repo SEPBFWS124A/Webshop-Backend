@@ -10,5 +10,8 @@ public record ReturnRequestItemResponse(
         int quantity,
         ReturnReason reason,
         String customerComment,
-        BigDecimal lineRefundAmount
+        BigDecimal lineRefundAmount,
+        BigDecimal originalTotalPrice,
+        BigDecimal discountShare,
+        BigDecimal refundAmount
 ) {}
