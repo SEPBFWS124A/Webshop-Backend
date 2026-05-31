@@ -52,11 +52,19 @@ public class ProductFeedbackController {
         }).toList();
     }
 
-    // POST: Speichert neues Feedback (wird z.B. vom Shop-Frontend aufgerufen)
-    @PostMapping
-    public ProductFeedback createFeedback(@RequestBody ProductFeedback feedback) {
-        return repository.save(feedback);
+import org.springframework.security.core.context.SecurityContextHolder;
+import de.fhdw.webshop.user.User;
+
+@PostMapping
+public ProductFeedback createFeedback(@RequestBody ProductFeedback feedback) {
+    Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+    
+    if (principal instanceof User user) {
+        feedback.setUserId(user.getId());
     }
+    
+    return repository.save(feedback);
+}
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteFeedback(@PathVariable Long id) {
