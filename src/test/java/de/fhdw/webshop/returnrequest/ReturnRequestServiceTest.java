@@ -593,4 +593,47 @@ class ReturnRequestServiceTest {
                 returnRequest.getItems().add(item);
                 return returnRequest;
         }
+
+        @Test
+        void approveReturnCalculatesProRataDiscountShare() {
+                ReturnRequestRepository returnRequestRepository = mock(ReturnRequestRepository.class);
+                ReturnRequestItemRepository returnRequestItemRepository = mock(ReturnRequestItemRepository.class);
+                ReturnRequestImageRepository returnRequestImageRepository = mock(ReturnRequestImageRepository.class);
+                OrderRepository orderRepository = mock(OrderRepository.class);
+                ReturnRequestService service = new ReturnRequestService(
+                                returnRequestRepository,
+                                returnRequestItemRepository,
+                                returnRequestImageRepository,
+                                orderRepository,
+                                mock(AuditLogService.class));
+                User customer = customer();
+                Order order = deliveredOrder(customer, Instant.now().minusSeconds(2 * 24 * 60 * 60));
+                order.setPaymentMethodType(PaymentMethodType.CREDIT_CARD);
+                order.setDiscountAmount(new BigDecimal("30.00"));
+
+                OrderItem returnedItem = orderItem(101L, order, "Laptop Pro");
+                returnedItem.setQuantity(2);
+                returnedItem.setPriceAtOrderTime(new BigDecimal("100.00"));
+                returnedItem.getProduct().setStock(5);
+
+                OrderItem secondItem = orderItem(102L, order, "Monitor");
+                secondItem.setQuantity(1);
+                secondItem.setPriceAtOrderTime(new BigDecimal("50.00"));
+
+                order.getItems().addAll(List.of(returnedItem, secondItem));
+
+                ReturnRequest returnRequest = submittedReturnRequest(711L, customer, order, returnedItem);
+                returnRequest.setStatus(ReturnRequestStatus.IN_REVIEW);
+                returnRequest.getItems().getFirst().setQuantity(2);
+                when(returnRequestRepository.findById(returnRequest.getId())).thenReturn(Optional.of(returnRequest));
+                when(returnRequestRepository.save(any(ReturnRequest.class)))
+                                .thenAnswer(invocation -> invocation.getArgument(0));
+
+                ReturnRequestResponse response = service.approveReturn(
+                                returnRequest.getId(),
+                                customer);
+
+                assertThat(response.status()).isEqualTo(ReturnRequestStatus.APPROVED);
+                assertThat(response.refundAmount()).isEqualByComparingTo("176.00");
+        }
 }
