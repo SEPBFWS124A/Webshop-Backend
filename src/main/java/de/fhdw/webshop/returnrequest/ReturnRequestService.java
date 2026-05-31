@@ -674,7 +674,8 @@ public class ReturnRequestService {
                                 item.getRefundAmount()
                             ))
                         .toList(),
-                toShippingLabelResponse(returnRequest));
+                toShippingLabelResponse(returnRequest),
+                returnRequest.getCouponDeduction());
     }
 
     private ReturnRequestImageResponse toImageResponse(ReturnRequest returnRequest, ReturnRequestImage image) {
