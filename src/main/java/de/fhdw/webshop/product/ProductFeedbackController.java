@@ -13,10 +13,10 @@ public class ProductFeedbackController {
         this.repository = repository;
     }
 
-    @PostMapping
-    public void createFeedback(@RequestBody ProductFeedback feedback) {
-        repository.save(feedback);
-    }
+@PostMapping
+public ProductFeedback createFeedback(@RequestBody ProductFeedback feedback) {
+    return repository.save(feedback);
+}
 
     @GetMapping
     public List<ProductFeedback> getAllFeedback() {
