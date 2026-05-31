@@ -23,6 +23,11 @@ public class SellerReviewController {
 
     private final SellerReviewService sellerReviewService;
 
+    @GetMapping("/api/seller-reviews/seller/{sellerName}")
+    public ResponseEntity<List<SellerReviewResponse>> listReviewsForSeller(@PathVariable String sellerName) {
+        return ResponseEntity.ok(sellerReviewService.listReviewsForSeller(sellerName));
+    }
+
     @GetMapping("/api/seller-reviews/my")
     @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<List<SellerReviewResponse>> listMyReviews(@AuthenticationPrincipal User currentUser) {

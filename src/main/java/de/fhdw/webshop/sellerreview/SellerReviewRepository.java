@@ -11,4 +11,6 @@ public interface SellerReviewRepository extends JpaRepository<SellerReview, Long
     List<SellerReview> findByOrderIdAndCustomerIdOrderByCreatedAtDesc(Long orderId, Long customerId);
 
     boolean existsByOrderIdAndCustomerIdAndSellerNameIgnoreCase(Long orderId, Long customerId, String sellerName);
+
+    List<SellerReview> findBySellerNameIgnoreCaseOrderByCreatedAtDesc(String sellerName);
 }
