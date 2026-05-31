@@ -1,2 +1,0 @@
-ALTER TABLE return_requests 
-ADD COLUMN IF NOT EXISTS coupon_deduction NUMERIC(10, 2) NOT NULL DEFAULT 0.00;
