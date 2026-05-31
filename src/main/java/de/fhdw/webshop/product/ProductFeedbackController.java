@@ -4,6 +4,7 @@ import de.fhdw.webshop.product.dto.ProductFeedbackDto;
 import de.fhdw.webshop.user.User;
 import de.fhdw.webshop.user.UserRepository;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -51,9 +52,6 @@ public class ProductFeedbackController {
             );
         }).toList();
     }
-
-import org.springframework.security.core.context.SecurityContextHolder;
-import de.fhdw.webshop.user.User;
 
 @PostMapping
 public ProductFeedback createFeedback(@RequestBody ProductFeedback feedback) {
