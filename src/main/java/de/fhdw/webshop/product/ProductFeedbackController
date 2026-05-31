@@ -1,0 +1,23 @@
+package de.fhdw.webshop.product;
+
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/product-feedback")
+public class ProductFeedbackController {
+    private final ProductFeedbackRepository repository;
+    
+    public ProductFeedbackController(ProductFeedbackRepository repository) {
+        this.repository = repository;
+    }
+
+    @PostMapping
+    public void createFeedback(@RequestBody ProductFeedback feedback) {
+        repository.save(feedback);
+    }
+
+    @GetMapping
+    public List<ProductFeedback> getAllFeedback() {
+        return repository.findAll();
+    }
+}
