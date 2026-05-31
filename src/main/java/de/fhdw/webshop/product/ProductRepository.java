@@ -50,4 +50,17 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
             @Param("ecoScores") List<ProductEcoScore> ecoScores,
             @Param("searchTerm") String searchTerm
     );
+
+    @Query("""
+            SELECT p FROM Product p
+            WHERE p.parentProduct IS NULL
+              AND p.purchasable = true
+              AND (:category = '' OR LOWER(p.category) = LOWER(:category))
+              AND (:sellerName = '' OR LOWER(p.sellerName) = LOWER(:sellerName))
+            ORDER BY p.promoted DESC, p.name ASC
+            """)
+    List<Product> searchMarketplaceProducts(
+            @Param("category") String category,
+            @Param("sellerName") String sellerName
+    );
 }

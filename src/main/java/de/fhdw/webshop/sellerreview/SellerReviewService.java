@@ -42,6 +42,14 @@ public class SellerReviewService {
     private final HelpfulVoteService helpfulVoteService;
 
     @Transactional(readOnly = true)
+    public List<SellerReviewResponse> listReviewsForSeller(String sellerName) {
+        return sellerReviewRepository.findBySellerNameIgnoreCaseOrderByCreatedAtDesc(sellerName)
+                .stream()
+                .map(review -> toResponse(review, null))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public List<SellerReviewResponse> listMyReviews(User currentUser) {
         return sellerReviewRepository.findByCustomerIdOrderByCreatedAtDesc(currentUser.getId())
                 .stream()
