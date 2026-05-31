@@ -35,5 +35,6 @@ public record ReturnRequestResponse(
         String defectDescription,
         List<ReturnRequestImageResponse> defectImages,
         List<ReturnRequestItemResponse> items,
-        ReturnShippingLabelResponse shippingLabel
+        ReturnShippingLabelResponse shippingLabel,
+        BigDecimal couponDeduction
 ) {}
