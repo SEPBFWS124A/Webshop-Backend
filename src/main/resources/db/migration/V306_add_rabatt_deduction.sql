@@ -1,7 +1,0 @@
-ALTER TABLE return_requests 
-   ADD COLUMN IF NOT EXISTS coupon_deduction NUMERIC(10, 2) NOT NULL DEFAULT 0.00;
-
-ALTER TABLE return_request_items
-    ADD COLUMN IF NOT EXISTS original_total_price NUMERIC(10, 2) DEFAULT 0.00;
-    ADD COLUMN IF NOT EXISTS discount_share NUMERIC(10, 2) DEFAULT 0.00;
-    ADD COLUMN IF NOT EXISTS refund_amount NUMERIC(10, 2) DEFAULT 0.00;
