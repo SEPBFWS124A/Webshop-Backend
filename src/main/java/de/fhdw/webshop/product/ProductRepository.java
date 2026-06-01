@@ -55,6 +55,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
             SELECT p FROM Product p
             WHERE p.parentProduct IS NULL
               AND p.purchasable = true
+              AND LOWER(p.sellerName) != 'webshop'
               AND (:category = '' OR LOWER(p.category) = LOWER(:category))
               AND (:sellerName = '' OR LOWER(p.sellerName) = LOWER(:sellerName))
             ORDER BY p.promoted DESC, p.name ASC
