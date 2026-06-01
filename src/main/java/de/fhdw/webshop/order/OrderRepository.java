@@ -36,6 +36,27 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
         boolean existsByTruckIdentifierAndStatus(String truckIdentifier, OrderStatus status);
 
+        boolean existsByOrderNumber(String orderNumber);
+
+        /**
+         * Checks if an open internal transfer already exists for a given product and source→target warehouse pair.
+         */
+        @Query("""
+                SELECT COUNT(o) > 0 FROM Order o
+                JOIN o.items item
+                WHERE o.internalTransfer = true
+                  AND o.sourceWarehouse.id = :sourceWarehouseId
+                  AND o.fulfillmentWarehouse.id = :targetWarehouseId
+                  AND item.product.id = :productId
+                  AND o.status IN :openStatuses
+                """)
+        boolean existsOpenTransfer(
+                @Param("sourceWarehouseId") Long sourceWarehouseId,
+                @Param("targetWarehouseId") Long targetWarehouseId,
+                @Param("productId") Long productId,
+                @Param("openStatuses") Collection<OrderStatus> openStatuses
+        );
+
         @Query("""
                         SELECT DISTINCT o FROM Order o
                         JOIN FETCH o.customer customer

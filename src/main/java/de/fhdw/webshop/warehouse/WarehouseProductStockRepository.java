@@ -13,4 +13,8 @@ public interface WarehouseProductStockRepository extends JpaRepository<Warehouse
             Long warehouseLocationId,
             Collection<Long> productIds
     );
+
+    List<WarehouseProductStock> findByWarehouseLocationId(Long warehouseLocationId);
+
+    List<WarehouseProductStock> findByProductId(Long productId);
 }

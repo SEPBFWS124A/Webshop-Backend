@@ -321,6 +321,7 @@ class WarehouseServiceTest {
         WarehouseTruckRepository warehouseTruckRepository = mock(WarehouseTruckRepository.class);
         AuditLogService auditLogService = mock(AuditLogService.class);
         ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+        WarehouseStockBalanceService warehouseStockBalanceService = mock(WarehouseStockBalanceService.class);
 
         WarehouseService service = new WarehouseService(
                 orderRepository,
@@ -331,7 +332,8 @@ class WarehouseServiceTest {
                 warehouseProductStockRepository,
                 warehouseTruckRepository,
                 auditLogService,
-                eventPublisher
+                eventPublisher,
+                warehouseStockBalanceService
         );
 
         when(orderRepository.findByTruckIdentifierOrderByCreatedAtAsc(anyString())).thenReturn(List.of());
