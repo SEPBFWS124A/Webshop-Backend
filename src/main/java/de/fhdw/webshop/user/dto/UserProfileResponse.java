@@ -15,5 +15,6 @@ public record UserProfileResponse(
         String employeeNumber,
         UserType userType,
         String customerNumber,
-        Instant agbAcceptedAt
+        Instant agbAcceptedAt,
+        boolean cartReminderEnabled
 ) {}

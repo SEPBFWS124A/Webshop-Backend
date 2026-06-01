@@ -23,6 +23,12 @@ public class UserService {
         return toProfileResponse(currentUser);
     }
 
+    @Transactional
+    public UserProfileResponse updateCartReminderSettings(User currentUser, CartReminderSettingsRequest request) {
+        currentUser.setCartReminderEnabled(Boolean.TRUE.equals(request.enabled()));
+        return toProfileResponse(userRepository.save(currentUser));
+    }
+
     public CheckoutProfileResponse getCheckoutProfile(User currentUser) {
         DeliveryAddressResponse deliveryAddress = deliveryAddressRepository.findFirstByUserId(currentUser.getId())
                 .map(this::toDeliveryAddressResponse)
@@ -111,7 +117,8 @@ public class UserService {
                 user.getEmployeeNumber(),
                 user.getUserType(),
                 user.getCustomerNumber(),
-                user.getAgbAcceptedAt()
+                user.getAgbAcceptedAt(),
+                user.isCartReminderEnabled()
         );
     }
 

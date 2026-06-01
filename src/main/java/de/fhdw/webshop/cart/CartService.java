@@ -10,6 +10,7 @@ import de.fhdw.webshop.cart.dto.QuickOrderPreviewResponse;
 import de.fhdw.webshop.cart.dto.QuickOrderPreviewRow;
 import de.fhdw.webshop.cart.audit.CartChangeAction;
 import de.fhdw.webshop.cart.audit.CartChangeLogService;
+import de.fhdw.webshop.cartreminder.CartReminderService;
 import de.fhdw.webshop.discount.Coupon;
 import de.fhdw.webshop.discount.CouponRepository;
 import de.fhdw.webshop.discount.VolumeDiscountService;
@@ -65,6 +66,7 @@ public class CartService {
     private final CartChangeLogService cartChangeLogService;
     private final StockReservationService stockReservationService;
     private final ProductBundleService productBundleService;
+    private final CartReminderService cartReminderService;
 
     private static final BigDecimal TAX_RATE      = BigDecimal.valueOf(0.19);
     private static final BigDecimal SHIPPING_COST = new BigDecimal("4.99");
@@ -214,6 +216,7 @@ public class CartService {
         cartItem.setQuantity(requestedQuantity);
         CartItem savedItem = cartRepository.save(cartItem);
         stockReservationService.refreshReservation(savedItem);
+        cartReminderService.markCartChanged(user.getId());
         return getCart(user.getId());
     }
 
@@ -238,6 +241,7 @@ public class CartService {
             stockReservationService.refreshReservation(savedItem);
         }
 
+        cartReminderService.markCartChanged(user.getId());
         return getCart(user.getId());
     }
 
@@ -273,7 +277,7 @@ public class CartService {
                 .orElseThrow(() -> new EntityNotFoundException("Item not in cart: productId=" + productId));
         stockReservationService.releaseCartItemReservation(cartItem.getId());
         cartRepository.deleteByUserIdAndProductId(user.getId(), productId);
-        return getCart(user.getId());
+        return getCartAndRefreshReminderState(user.getId());
     }
 
     /** US #253 - Removing an item from a customer cart by an employee is recorded as well. */
@@ -303,7 +307,7 @@ public class CartService {
                 .orElseThrow(() -> new EntityNotFoundException("Item not in cart: cartItemId=" + cartItemId));
         stockReservationService.releaseCartItemReservation(cartItem.getId());
         cartRepository.delete(cartItem);
-        return getCart(user.getId());
+        return getCartAndRefreshReminderState(user.getId());
     }
 
     @Transactional
@@ -322,7 +326,7 @@ public class CartService {
             stockReservationService.releaseCartItemReservation(bundleItem.getId());
         }
         cartRepository.deleteAll(bundleItems);
-        return getCart(user.getId());
+        return getCartAndRefreshReminderState(user.getId());
     }
 
     /** US #73 — Set a new quantity; quantity 0 removes the item entirely. */
@@ -338,6 +342,7 @@ public class CartService {
         cartItem.setQuantity(quantity);
         CartItem savedItem = cartRepository.save(cartItem);
         stockReservationService.refreshReservation(savedItem);
+        cartReminderService.markCartChanged(user.getId());
         return getCart(user.getId());
     }
 
@@ -379,6 +384,7 @@ public class CartService {
         cartItem.setQuantity(quantity);
         CartItem savedItem = cartRepository.save(cartItem);
         stockReservationService.refreshReservation(savedItem);
+        cartReminderService.markCartChanged(user.getId());
         return getCart(user.getId());
     }
 
@@ -428,6 +434,7 @@ public class CartService {
             CartItem savedItem = cartRepository.save(cartItem);
             stockReservationService.refreshReservation(savedItem);
         }
+        cartReminderService.markCartChanged(user.getId());
         return getCart(user.getId());
     }
 
@@ -492,6 +499,9 @@ public class CartService {
             addedQuantity += row.requestedQuantity();
         }
 
+        if (addedLines > 0) {
+            cartReminderService.markCartChanged(user.getId());
+        }
         return new QuickOrderConfirmResponse(getCart(user.getId()), addedLines, addedQuantity, skippedRows);
     }
 
@@ -500,12 +510,23 @@ public class CartService {
     public void clearCartSilently(Long userId) {
         stockReservationService.releaseUserReservations(userId);
         cartRepository.deleteByUserId(userId);
+        cartReminderService.markCartCleared(userId);
     }
 
     @Transactional
     public CartResponse clearCart(Long userId) {
         clearCartSilently(userId);
         return getCart(userId);
+    }
+
+    private CartResponse getCartAndRefreshReminderState(Long userId) {
+        CartResponse cart = getCart(userId);
+        if (cart.items().isEmpty()) {
+            cartReminderService.markCartCleared(userId);
+        } else {
+            cartReminderService.markCartChanged(userId);
+        }
+        return cart;
     }
 
     private CartItemResponse toItemResponse(CartItem cartItem, Long userId) {

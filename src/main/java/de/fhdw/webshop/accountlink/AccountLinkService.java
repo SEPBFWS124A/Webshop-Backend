@@ -219,6 +219,7 @@ public class AccountLinkService {
                 user.getEmployeeNumber(),
                 user.getUserType(),
                 user.getCustomerNumber(),
-                user.getAgbAcceptedAt());
+                user.getAgbAcceptedAt(),
+                user.isCartReminderEnabled());
     }
 }
