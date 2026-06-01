@@ -1,16 +1,16 @@
-package de.fhdw.webshop.reservation.dto;
+package de.fhdw.webshop.warehouse.dto;
 
 import java.time.Instant;
 import java.util.Map;
 
-public record InventoryStockResponse(
+public record StockOverviewItem(
         Long productId,
         String productName,
         String sku,
-        String category,
         int totalStock,
         int reservedStock,
         int availableStock,
         Map<Long, Integer> stockByLocation,
         Instant nextReservationExpiresAt
 ) {}
+

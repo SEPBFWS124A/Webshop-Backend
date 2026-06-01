@@ -19,6 +19,8 @@ import de.fhdw.webshop.user.User;
 import de.fhdw.webshop.warehouse.dto.AdvanceOrderResponse;
 import de.fhdw.webshop.warehouse.dto.AdvanceWarehouseOrderRequest;
 import de.fhdw.webshop.warehouse.dto.AutoAssignTruckIdentifiersResponse;
+import de.fhdw.webshop.warehouse.dto.DepartureReadinessResponse;
+import de.fhdw.webshop.warehouse.dto.StartDepartureResponse;
 import de.fhdw.webshop.warehouse.dto.AutoAssignTruckRouteResponse;
 import de.fhdw.webshop.warehouse.dto.CompletePackingResponse;
 import de.fhdw.webshop.warehouse.dto.PickOrderItemRequest;
@@ -78,6 +80,12 @@ public class WarehouseService {
             OrderStatus.SHIPPED
     );
 
+    /** Statuses considered "active" for departure readiness checks (excludes completed/cancelled). */
+    private static final List<OrderStatus> TRUCK_DEPARTURE_RELEVANT_STATUSES = List.of(
+            OrderStatus.PACKED_IN_WAREHOUSE,
+            OrderStatus.IN_TRUCK
+    );
+
     private static final List<OrderStatus> TRUCK_ASSIGNED_COUNT_STATUSES = List.of(
             OrderStatus.PACKED_IN_WAREHOUSE,
             OrderStatus.IN_TRUCK,
@@ -102,6 +110,7 @@ public class WarehouseService {
     private final WarehouseTruckRepository warehouseTruckRepository;
     private final AuditLogService auditLogService;
     private final ApplicationEventPublisher eventPublisher;
+    private final WarehouseStockBalanceService warehouseStockBalanceService;
 
     @Transactional
     public List<WarehouseOrderResponse> listOrders(OrderStatus status) {
@@ -233,6 +242,19 @@ public class WarehouseService {
             throw new IllegalArgumentException("Field 'nextStatus' is required. For package completion use POST /api/warehouse/orders/{orderId}/complete-packing");
         }
 
+        OrderStatus requestedNextStatus = request.nextStatus();
+        if (requestedNextStatus == order.getStatus()) {
+            // Some clients send the current status instead of the target status.
+            // We normalize this to the next valid workflow status.
+            requestedNextStatus = switch (order.getStatus()) {
+                case CONFIRMED -> OrderStatus.PACKED_IN_WAREHOUSE;
+                case PACKED_IN_WAREHOUSE -> OrderStatus.IN_TRUCK;
+                case IN_TRUCK -> OrderStatus.SHIPPED;
+                case SHIPPED -> OrderStatus.DELIVERED;
+                default -> requestedNextStatus;
+            };
+        }
+
         if (!ADVANCE_ENDPOINT_ALLOWED_STATUSES.contains(order.getStatus())) {
             throw new IllegalArgumentException(
                     "Order " + orderId + " has status " + order.getStatus()
@@ -240,9 +262,9 @@ public class WarehouseService {
                             + "Allowed input statuses: CONFIRMED, PACKED_IN_WAREHOUSE, IN_TRUCK, SHIPPED");
         }
 
-        if (!isAllowedTransition(order.getStatus(), request.nextStatus())) {
+        if (!isAllowedTransition(order.getStatus(), requestedNextStatus)) {
             throw new IllegalArgumentException(
-                    "Status transition " + order.getStatus() + " → " + request.nextStatus()
+                    "Status transition " + order.getStatus() + " → " + requestedNextStatus
                             + " is not allowed. "
                             + "Valid transitions: PACKED_IN_WAREHOUSE→IN_TRUCK, IN_TRUCK→SHIPPED, SHIPPED→DELIVERED");
         }
@@ -358,6 +380,9 @@ public class WarehouseService {
             order.setDeliveryLongitude(request.longitude());
         }
         Order saved = orderRepository.save(order);
+
+        // Handle stock booking for internal transfers
+        warehouseStockBalanceService.handleInternalTransferDelivered(saved);
 
         String coordInfo = request.latitude() != null
                 ? " at coordinates " + request.latitude() + "," + request.longitude()
@@ -764,6 +789,168 @@ public class WarehouseService {
                 changes.size(),
                 trucksUsed,
                 routesCreated
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Truck departure endpoints
+    // -------------------------------------------------------------------------
+
+    /**
+     * Checks departure readiness for a specific truck.
+     * Only considers active orders (PACKED_IN_WAREHOUSE, IN_TRUCK).
+     * DELIVERED/CANCELLED orders from previous trips are excluded.
+     */
+    @Transactional(readOnly = true)
+    public DepartureReadinessResponse checkDepartureReadiness(String truckIdentifier) {
+        WarehouseTruck truck = resolveTruck(truckIdentifier);
+        List<Order> allTruckOrders = loadTruckOrders(truckIdentifier);
+
+        // Only consider active orders — not delivered/cancelled from previous trips
+        List<Order> activeOrders = allTruckOrders.stream()
+                .filter(order -> TRUCK_DEPARTURE_RELEVANT_STATUSES.contains(order.getStatus()))
+                .toList();
+
+        List<DepartureReadinessResponse.OrderReadinessDetail> orderDetails = activeOrders.stream()
+                .map(order -> new DepartureReadinessResponse.OrderReadinessDetail(
+                        order.getId(),
+                        order.getOrderNumber(),
+                        order.getStatus(),
+                        order.getStatus() == OrderStatus.IN_TRUCK,
+                        order.getDeliveryCity(),
+                        order.getDeliveryPostalCode()
+                ))
+                .toList();
+
+        int readyCount = (int) activeOrders.stream()
+                .filter(o -> o.getStatus() == OrderStatus.IN_TRUCK)
+                .count();
+        int notReadyCount = activeOrders.size() - readyCount;
+
+        List<String> issues = new ArrayList<>();
+        if (activeOrders.isEmpty()) {
+            issues.add("Keine aktiven Bestellungen auf diesem LKW zugewiesen");
+        }
+        if (truck.getDepartureTime() != null || truck.getStatus() == TruckStatus.DEPARTED) {
+            issues.add("LKW ist bereits abgefahren");
+        }
+        boolean hasShipped = allTruckOrders.stream()
+                .anyMatch(order -> order.getStatus() == OrderStatus.SHIPPED);
+        if (hasShipped) {
+            issues.add("LKW hat bereits versendete Bestellungen auf der aktuellen Tour");
+        }
+        activeOrders.stream()
+                .filter(o -> o.getStatus() != OrderStatus.IN_TRUCK)
+                .forEach(o -> issues.add("Bestellung " + o.getOrderNumber() + " ist noch nicht verladen (Status: " + o.getStatus() + ")"));
+
+        boolean readyToDepart = issues.isEmpty() && !activeOrders.isEmpty() && notReadyCount == 0;
+
+        String message = readyToDepart
+                ? "LKW " + truckIdentifier + " ist abfahrbereit mit " + readyCount + " Paket(en)"
+                : "LKW " + truckIdentifier + " kann noch nicht abfahren: " + String.join("; ", issues);
+
+        return new DepartureReadinessResponse(
+                truckIdentifier,
+                readyToDepart,
+                activeOrders.size(),
+                readyCount,
+                notReadyCount,
+                orderDetails,
+                issues,
+                message
+        );
+    }
+
+    /**
+     * Starts the departure for a truck.
+     * Only IN_TRUCK orders are included in the route. PACKED_IN_WAREHOUSE orders
+     * (not yet loaded/confirmed by the driver) are removed from the truck assignment
+     * and made available for future routing.
+     * DELIVERED/CANCELLED orders from previous trips are completely ignored.
+     */
+    @Transactional
+    public StartDepartureResponse startDeparture(String truckIdentifier, User currentUser) {
+        WarehouseTruck truck = resolveTruck(truckIdentifier);
+        List<Order> allTruckOrders = loadTruckOrders(truckIdentifier);
+
+        // Reject if already departed
+        boolean hasShipped = allTruckOrders.stream()
+                .anyMatch(order -> order.getStatus() == OrderStatus.SHIPPED);
+        if (hasShipped || truck.getDepartureTime() != null || truck.getStatus() == TruckStatus.DEPARTED) {
+            throw new IllegalStateException("Truck " + truckIdentifier + " has already departed");
+        }
+
+        // Separate active orders into ready (IN_TRUCK) and not-ready (PACKED_IN_WAREHOUSE)
+        List<Order> readyOrders = allTruckOrders.stream()
+                .filter(order -> order.getStatus() == OrderStatus.IN_TRUCK)
+                .toList();
+
+        List<Order> notReadyOrders = allTruckOrders.stream()
+                .filter(order -> order.getStatus() == OrderStatus.PACKED_IN_WAREHOUSE)
+                .toList();
+
+        if (readyOrders.isEmpty()) {
+            throw new IllegalStateException("Truck " + truckIdentifier + " has no loaded orders (IN_TRUCK) to depart with");
+        }
+
+        // Remove not-ready orders from truck assignment (driver rejected / not loaded)
+        List<StartDepartureResponse.SkippedOrderSummary> skippedSummaries = new ArrayList<>();
+        if (!notReadyOrders.isEmpty()) {
+            for (Order skippedOrder : notReadyOrders) {
+                skippedOrder.setTruckIdentifier(null);
+                skippedOrder.setTruckAssignedAt(null);
+                skippedOrder.setRouteOptimizationId(null);
+                skippedSummaries.add(new StartDepartureResponse.SkippedOrderSummary(
+                        skippedOrder.getId(),
+                        skippedOrder.getOrderNumber(),
+                        "Nicht verladen – wird für zukünftige Routen verfügbar gemacht"
+                ));
+            }
+            orderRepository.saveAll(notReadyOrders);
+        }
+
+        // Advance all ready orders to SHIPPED
+        readyOrders.forEach(order -> order.setStatus(OrderStatus.SHIPPED));
+        orderRepository.saveAll(readyOrders);
+
+        // Update truck state
+        Instant departureTime = Instant.now();
+        truck.setDepartureTime(departureTime);
+        truck.setCurrentWarehouseLocation(null);
+        truck.setStatus(TruckStatus.DEPARTED);
+        truck.setCompletedAt(null);
+        warehouseTruckRepository.save(truck);
+
+        // Build response
+        List<StartDepartureResponse.ShippedOrderSummary> shippedSummaries = readyOrders.stream()
+                .map(order -> new StartDepartureResponse.ShippedOrderSummary(
+                        order.getId(),
+                        order.getOrderNumber(),
+                        order.getDeliveryCity(),
+                        order.getDeliveryPostalCode()
+                ))
+                .toList();
+
+        auditLogService.record(
+                currentUser, "TRUCK_DEPARTED", "WarehouseTruck", truck.getId(),
+                currentUser == null ? AuditInitiator.SYSTEM : AuditInitiator.USER,
+                "Truck " + truckIdentifier + " departed with " + readyOrders.size() + " order(s)"
+                        + (skippedSummaries.isEmpty() ? "" : ", " + skippedSummaries.size() + " order(s) removed from route"));
+
+        String message = String.format("LKW %s ist abgefahren mit %d Paket(en)%s",
+                truckIdentifier,
+                readyOrders.size(),
+                skippedSummaries.isEmpty() ? "" : " (" + skippedSummaries.size() + " Paket(e) aus Route entfernt)");
+
+        return new StartDepartureResponse(
+                true,
+                truckIdentifier,
+                readyOrders.size(),
+                skippedSummaries.size(),
+                departureTime,
+                shippedSummaries,
+                skippedSummaries,
+                message
         );
     }
 
@@ -1229,19 +1416,42 @@ public class WarehouseService {
     }
 
     private void ensureTruckReadyForDeparture(String truckIdentifier, WarehouseTruck truck) {
-        List<Order> truckOrders = loadTruckOrders(truckIdentifier);
-        if (truckOrders.isEmpty()) {
+        List<Order> allTruckOrders = loadTruckOrders(truckIdentifier);
+
+        // Filter out completed orders (DELIVERED, CANCELLED) — they are from previous trips
+        List<Order> activeOrders = allTruckOrders.stream()
+                .filter(order -> TRUCK_DEPARTURE_RELEVANT_STATUSES.contains(order.getStatus()))
+                .toList();
+
+        if (activeOrders.isEmpty()) {
             throw new IllegalStateException("Truck " + truckIdentifier + " has no assigned orders to depart");
         }
 
-        boolean hasShipped = truckOrders.stream().anyMatch(order -> order.getStatus() == OrderStatus.SHIPPED);
+        boolean hasShipped = allTruckOrders.stream().anyMatch(order -> order.getStatus() == OrderStatus.SHIPPED);
         if (hasShipped || truck.getDepartureTime() != null || truck.getStatus() == TruckStatus.DEPARTED) {
             throw new IllegalStateException("Truck " + truckIdentifier + " has already departed");
         }
 
-        boolean allInTruck = truckOrders.stream().allMatch(order -> order.getStatus() == OrderStatus.IN_TRUCK);
-        if (!allInTruck) {
-            throw new IllegalStateException("Truck " + truckIdentifier + " is not LOADED: all assigned orders must be IN_TRUCK");
+        // Check that ALL active orders are IN_TRUCK (ready for departure)
+        List<Order> notReadyOrders = activeOrders.stream()
+                .filter(order -> order.getStatus() != OrderStatus.IN_TRUCK)
+                .toList();
+
+        if (!notReadyOrders.isEmpty()) {
+            String orderSummary = notReadyOrders.stream()
+                    .map(order -> order.getOrderNumber() + " (" + order.getStatus() + ")")
+                    .limit(5)
+                    .toList()
+                    .toString();
+            int totalNotReady = notReadyOrders.size();
+            String message = String.format(
+                    "Truck %s cannot depart: %d order(s) are not ready. Not ready orders: %s%s",
+                    truckIdentifier,
+                    totalNotReady,
+                    orderSummary,
+                    totalNotReady > 5 ? "... and " + (totalNotReady - 5) + " more" : ""
+            );
+            throw new IllegalStateException(message);
         }
     }
 

@@ -126,6 +126,17 @@ public class Order {
     @Column(name = "delivery_longitude")
     private Double deliveryLongitude;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "order_type", nullable = false, length = 32)
+    private OrderType orderType = OrderType.CUSTOMER_ORDER;
+
+    @Column(name = "is_internal_transfer", nullable = false)
+    private boolean internalTransfer = false;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "source_warehouse_id")
+    private WarehouseLocation sourceWarehouse;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "fulfillment_warehouse_id")
     private WarehouseLocation fulfillmentWarehouse;

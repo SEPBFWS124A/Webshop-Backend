@@ -39,12 +39,15 @@ class WarehouseControllerTest {
     @Mock
     private WarehouseService warehouseService;
 
+    @Mock
+    private WarehouseStockBalanceService warehouseStockBalanceService;
+
     private MockMvc mockMvc;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
     void setUp() {
-        WarehouseController controller = new WarehouseController(warehouseService);
+        WarehouseController controller = new WarehouseController(warehouseService, warehouseStockBalanceService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
