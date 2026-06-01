@@ -24,7 +24,17 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
         List<Order> findByStatusOrderByCreatedAtAsc(OrderStatus status);
 
+        List<Order> findByStatusInOrderByCreatedAtAsc(Collection<OrderStatus> statuses);
+
         List<Order> findByStatusNotInOrderByCreatedAtAsc(Collection<OrderStatus> statuses);
+
+        List<Order> findByTruckIdentifierOrderByCreatedAtAsc(String truckIdentifier);
+
+        List<Order> findByTruckIdentifierAndStatusInOrderByCreatedAtAsc(String truckIdentifier, Collection<OrderStatus> statuses);
+
+        List<Order> findByTruckIdentifierAndStatus(String truckIdentifier, OrderStatus status);
+
+        boolean existsByTruckIdentifierAndStatus(String truckIdentifier, OrderStatus status);
 
         @Query("""
                         SELECT DISTINCT o FROM Order o

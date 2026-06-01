@@ -34,6 +34,15 @@ public class OrderItem {
     @Column(nullable = false)
     private int quantity;
 
+    @Column(name = "picked_at")
+    private Instant pickedAt;
+
+    @Column(name = "picked_by_user_id", length = 100)
+    private String pickedByUserId;
+
+    @Column(name = "picked_quantity")
+    private Integer pickedQuantity;
+
     /** Price captured at the moment the order was placed — immune to future price changes. */
     @Column(name = "price_at_order_time", nullable = false, precision = 10, scale = 2)
     private BigDecimal priceAtOrderTime;
