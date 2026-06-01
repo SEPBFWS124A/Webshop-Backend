@@ -204,7 +204,8 @@ public class AdminController {
                 user.getEmployeeNumber(),
                 user.getUserType(),
                 user.getCustomerNumber(),
-                user.getAgbAcceptedAt());
+                user.getAgbAcceptedAt(),
+                user.isCartReminderEnabled());
     }
 
     private void synchronizeUserBusinessIdentifiers(User user, UserRole effectiveRole) {
