@@ -111,6 +111,21 @@ public class Order {
     @Column(name = "truck_identifier", length = 50)
     private String truckIdentifier;
 
+    @Column(name = "truck_assigned_at")
+    private Instant truckAssignedAt;
+
+    @Column(name = "route_optimization_id", length = 100)
+    private String routeOptimizationId;
+
+    @Column(name = "updated_at")
+    private Instant updatedAt;
+
+    @Column(name = "delivery_latitude")
+    private Double deliveryLatitude;
+
+    @Column(name = "delivery_longitude")
+    private Double deliveryLongitude;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "fulfillment_warehouse_id")
     private WarehouseLocation fulfillmentWarehouse;
@@ -125,6 +140,21 @@ public class Order {
     @Column(name = "delivered_at")
     private Instant deliveredAt;
 
+    @Column(name = "packing_started_at")
+    private Instant packingStartedAt;
+
+    @Column(name = "packed_at")
+    private Instant packedAt;
+
+    @Column(name = "packed_by_user_id", length = 100)
+    private String packedByUserId;
+
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<OrderItem> items = new ArrayList<>();
+
+    @PrePersist
+    @PreUpdate
+    protected void onPersistOrUpdate() {
+        this.updatedAt = Instant.now();
+    }
 }

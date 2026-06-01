@@ -8,5 +8,8 @@ public record WarehouseLocationResponse(
         String postalCode,
         String city,
         String country,
-        boolean mainLocation
+        boolean mainLocation,
+        Double latitude,
+        Double longitude,
+        boolean isActive
 ) {}
