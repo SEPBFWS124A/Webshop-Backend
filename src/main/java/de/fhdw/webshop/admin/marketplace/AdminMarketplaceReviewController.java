@@ -42,8 +42,17 @@ public class AdminMarketplaceReviewController {
 
         Pageable pageable = PageRequest.of(page, size);
         String searchParam = (search != null && !search.isBlank()) ? search.trim() : null;
-        return productFeedbackRepository.findAllForAdmin(approved, searchParam, pageable)
-                .map(this::toProductReviewDto);
+        Page<ProductFeedback> resultPage;
+        if (approved == null && searchParam == null) {
+            resultPage = productFeedbackRepository.findAllByOrderByCreatedAtDesc(pageable);
+        } else if (approved != null && searchParam == null) {
+            resultPage = productFeedbackRepository.findByApprovedOrderByCreatedAtDesc(approved, pageable);
+        } else if (approved == null) {
+            resultPage = productFeedbackRepository.findBySearchTermOrderByCreatedAtDesc(searchParam, pageable);
+        } else {
+            resultPage = productFeedbackRepository.findByApprovedAndSearchTerm(approved, searchParam, pageable);
+        }
+        return resultPage.map(this::toProductReviewDto);
     }
 
     @PutMapping("/product-reviews/{id}/approve")
@@ -74,8 +83,17 @@ public class AdminMarketplaceReviewController {
 
         Pageable pageable = PageRequest.of(page, size);
         String searchParam = (search != null && !search.isBlank()) ? search.trim() : null;
-        return sellerReviewRepository.findAllForAdmin(approved, searchParam, pageable)
-                .map(this::toSellerReviewDto);
+        Page<SellerReview> resultPage;
+        if (approved == null && searchParam == null) {
+            resultPage = sellerReviewRepository.findAllByOrderByCreatedAtDesc(pageable);
+        } else if (approved != null && searchParam == null) {
+            resultPage = sellerReviewRepository.findByApprovedOrderByCreatedAtDesc(approved, pageable);
+        } else if (approved == null) {
+            resultPage = sellerReviewRepository.findBySearchTermOrderByCreatedAtDesc(searchParam, pageable);
+        } else {
+            resultPage = sellerReviewRepository.findByApprovedAndSearchTerm(approved, searchParam, pageable);
+        }
+        return resultPage.map(this::toSellerReviewDto);
     }
 
     @PutMapping("/seller-reviews/{id}/approve")

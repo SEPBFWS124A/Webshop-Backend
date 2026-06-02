@@ -16,17 +16,15 @@ public interface ProductFeedbackRepository extends JpaRepository<ProductFeedback
 
     List<ProductFeedback> findByProductIdAndApprovedTrueOrderByCreatedAtDesc(Long productId);
 
-    @Query("""
-            SELECT f FROM ProductFeedback f
-            WHERE (:approvedFilter IS NULL OR f.approved = :approvedFilter)
-            AND (:search IS NULL OR LOWER(f.comment) LIKE LOWER(CONCAT('%', :search, '%')))
-            ORDER BY f.createdAt DESC
-            """)
-    Page<ProductFeedback> findAllForAdmin(
-            @Param("approvedFilter") Boolean approvedFilter,
-            @Param("search") String search,
-            Pageable pageable
-    );
+    Page<ProductFeedback> findAllByOrderByCreatedAtDesc(Pageable pageable);
+
+    Page<ProductFeedback> findByApprovedOrderByCreatedAtDesc(Boolean approved, Pageable pageable);
+
+    @Query("SELECT f FROM ProductFeedback f WHERE LOWER(f.comment) LIKE LOWER(CONCAT('%', :search, '%')) ORDER BY f.createdAt DESC")
+    Page<ProductFeedback> findBySearchTermOrderByCreatedAtDesc(@Param("search") String search, Pageable pageable);
+
+    @Query("SELECT f FROM ProductFeedback f WHERE f.approved = :approved AND LOWER(f.comment) LIKE LOWER(CONCAT('%', :search, '%')) ORDER BY f.createdAt DESC")
+    Page<ProductFeedback> findByApprovedAndSearchTerm(@Param("approved") Boolean approved, @Param("search") String search, Pageable pageable);
 
     boolean existsByProductIdAndUserId(Long productId, Long userId);
 

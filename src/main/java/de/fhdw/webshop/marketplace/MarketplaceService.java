@@ -42,7 +42,7 @@ public class MarketplaceService {
         return sellerProfileRepository.findAllByActiveTrueOrderByDisplayNameAsc()
                 .stream()
                 .map(profile -> {
-                    List<SellerReview> reviews = sellerReviewRepository.findBySellerNameIgnoreCaseOrderByCreatedAtDesc(profile.getDisplayName());
+                    List<SellerReview> reviews = sellerReviewRepository.findBySellerNameIgnoreCaseAndApprovedTrueOrderByCreatedAtDesc(profile.getDisplayName());
                     double avg = reviews.stream().mapToInt(SellerReview::getRating).average().orElse(0.0);
                     double avgProduct = productFeedbackValidationService.getAverageRatingBySeller(profile.getDisplayName());
                     return new MarketplaceSellerDto(profile.getDisplayName(), profile.getDisplayName(), avg, reviews.size(), avgProduct);
@@ -60,7 +60,7 @@ public class MarketplaceService {
                 .map(this::toProductDto)
                 .toList();
 
-        List<SellerReview> reviews = sellerReviewRepository.findBySellerNameIgnoreCaseOrderByCreatedAtDesc(sellerName);
+        List<SellerReview> reviews = sellerReviewRepository.findBySellerNameIgnoreCaseAndApprovedTrueOrderByCreatedAtDesc(sellerName);
         OptionalDouble avg = reviews.stream().mapToInt(SellerReview::getRating).average();
 
         List<MarketplaceReviewDto> recentReviews = reviews.stream()
