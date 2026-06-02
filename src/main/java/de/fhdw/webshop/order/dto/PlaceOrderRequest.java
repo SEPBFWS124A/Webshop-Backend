@@ -24,5 +24,6 @@ public record PlaceOrderRequest(
         Boolean carbonCompensationSelected,
         Long pickupStoreId,
         String approvalReason,
-        List<@Valid PlaceOrderItemRequest> items
+        List<@Valid PlaceOrderItemRequest> items,
+        String affiliateCode
 ) {}

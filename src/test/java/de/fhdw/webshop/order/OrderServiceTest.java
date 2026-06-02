@@ -21,6 +21,7 @@ import de.fhdw.webshop.pickup.PickupStoreService;
 import de.fhdw.webshop.product.Product;
 import de.fhdw.webshop.product.ProductRepository;
 import de.fhdw.webshop.product.ProductService;
+import de.fhdw.webshop.affiliate.AffiliateService;
 import de.fhdw.webshop.productbundle.ProductBundleService;
 import de.fhdw.webshop.reservation.StockReservationService;
 import de.fhdw.webshop.user.DeliveryAddressRepository;
@@ -240,6 +241,7 @@ class OrderServiceTest {
         WishlistService wishlistService = mock(WishlistService.class);
         StockReservationService stockReservationService = mock(StockReservationService.class);
         ProductBundleService productBundleService = mock(ProductBundleService.class);
+        AffiliateService affiliateService = mock(AffiliateService.class);
 
         OrderService service = new OrderService(
                 orderRepository,
@@ -264,7 +266,8 @@ class OrderServiceTest {
                 pickupStoreService,
                 wishlistService,
                 stockReservationService,
-                productBundleService);
+                productBundleService,
+                affiliateService);
 
         User customer = businessCustomer(10L, "employee");
         User manager = businessCustomer(11L, "manager");
@@ -318,6 +321,7 @@ class OrderServiceTest {
                 false,
                 null,
                 approvalReason,
+                null,
                 null);
     }
 
@@ -338,6 +342,7 @@ class OrderServiceTest {
                 false,
                 false,
                 pickupStoreId,
+                null,
                 null,
                 null);
     }

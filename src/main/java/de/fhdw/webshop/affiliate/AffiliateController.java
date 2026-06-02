@@ -53,7 +53,7 @@ public class AffiliateController {
     @PreAuthorize("hasRole('AFFILIATE_CUSTOMER')")
     public ResponseEntity<List<AffiliateLinkResponse>> getLinks(
             @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(affiliateService.getLinks(user));
+        return ResponseEntity.ok(affiliateService.getLinksWithStats(user));
     }
 
     @DeleteMapping("/links/{id}")
@@ -63,6 +63,22 @@ public class AffiliateController {
             @AuthenticationPrincipal User user) {
         affiliateService.deactivateLink(user, id);
         return ResponseEntity.noContent().build();
+    }
+
+    // ── Dashboard-Statistiken ────────────────────────────────────────────────
+
+    @GetMapping("/stats")
+    @PreAuthorize("hasRole('AFFILIATE_CUSTOMER')")
+    public ResponseEntity<AffiliateDashboardStats> getStats(
+            @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(affiliateService.getDashboardStats(user));
+    }
+
+    @GetMapping("/conversions")
+    @PreAuthorize("hasRole('AFFILIATE_CUSTOMER')")
+    public ResponseEntity<List<AffiliateConversionResponse>> getConversions(
+            @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(affiliateService.getConversions(user));
     }
 
     // ── Click-Tracking (public) ───────────────────────────────────────────────

@@ -2,9 +2,14 @@ package de.fhdw.webshop.affiliate;
 
 import de.fhdw.webshop.admin.AuditLogService;
 import de.fhdw.webshop.affiliate.dto.AdminAffiliateApplicationResponse;
+import de.fhdw.webshop.affiliate.dto.AdminAffiliateListItem;
 import de.fhdw.webshop.affiliate.dto.AffiliateApplicationResponse;
+import de.fhdw.webshop.affiliate.dto.AffiliateConversionResponse;
+import de.fhdw.webshop.affiliate.dto.AffiliateDashboardStats;
 import de.fhdw.webshop.affiliate.dto.AffiliateLinkResponse;
 import de.fhdw.webshop.affiliate.dto.TrackClickResponse;
+import de.fhdw.webshop.order.Order;
+import de.fhdw.webshop.order.OrderItem;
 import de.fhdw.webshop.product.Product;
 import de.fhdw.webshop.product.ProductRepository;
 import de.fhdw.webshop.user.User;
@@ -12,6 +17,7 @@ import de.fhdw.webshop.user.UserRole;
 import de.fhdw.webshop.user.UserService;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,7 +27,10 @@ import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AffiliateService {
@@ -33,6 +42,7 @@ public class AffiliateService {
     private final AffiliateApplicationRepository applicationRepository;
     private final AffiliateProfileRepository profileRepository;
     private final AffiliateLinkRepository linkRepository;
+    private final AffiliateConversionRepository conversionRepository;
     private final ProductRepository productRepository;
     private final UserService userService;
     private final AuditLogService auditLogService;
@@ -195,7 +205,154 @@ public class AffiliateService {
                 linkId, "Link deaktiviert von " + user.getUsername());
     }
 
+    // ── Conversion-Tracking ──────────────────────────────────────────────────
+
+    @Transactional
+    public void processAffiliateConversions(Order order, String affiliateCode) {
+        try {
+            if (affiliateCode == null || affiliateCode.isBlank()) return;
+
+            AffiliateLink link = linkRepository.findByTrackingCodeAndActiveTrue(affiliateCode)
+                    .orElse(null);
+            if (link == null) return;
+
+            // Self-Conversion verhindern
+            if (order.getCustomer() != null
+                    && order.getCustomer().getId().equals(link.getAffiliateProfile().getUser().getId())) {
+                return;
+            }
+
+            // Doppelte Conversion verhindern
+            if (conversionRepository.existsByAffiliateLinkAndOrder(link, order)) return;
+
+            AffiliateProfile profile = link.getAffiliateProfile();
+            BigDecimal totalCommission = BigDecimal.ZERO;
+            Long linkedProductId = link.getProduct().getId();
+
+            for (OrderItem item : order.getItems()) {
+                if (!item.getProduct().getId().equals(linkedProductId)) continue;
+
+                BigDecimal purchaseAmount = item.getPriceAtOrderTime()
+                        .multiply(BigDecimal.valueOf(item.getQuantity()));
+                BigDecimal commissionAmount = purchaseAmount.multiply(profile.getCommissionRate());
+
+                AffiliateConversion conversion = new AffiliateConversion();
+                conversion.setAffiliateLink(link);
+                conversion.setOrder(order);
+                conversion.setOrderItem(item);
+                conversion.setPurchaseAmount(purchaseAmount);
+                conversion.setCommissionAmount(commissionAmount);
+                conversion.setStatus(AffiliateConversionStatus.PENDING);
+                conversionRepository.save(conversion);
+
+                totalCommission = totalCommission.add(commissionAmount);
+            }
+
+            if (totalCommission.compareTo(BigDecimal.ZERO) > 0) {
+                profile.setPendingEarnings(profile.getPendingEarnings().add(totalCommission));
+                profileRepository.save(profile);
+                auditLogService.recordSystemAction(
+                        "AFFILIATE_CONVERSION_CREATED", "AffiliateConversion",
+                        order.getId(),
+                        "Conversion für Bestellung " + order.getOrderNumber()
+                                + " via Code " + affiliateCode
+                                + " (Provision: " + totalCommission + " €)");
+            }
+        } catch (Exception e) {
+            log.error("Affiliate-Conversion-Tracking fehlgeschlagen für Bestellung {} mit Code {}: {}",
+                    order.getId(), affiliateCode, e.getMessage(), e);
+        }
+    }
+
+    // ── Dashboard-Statistiken & Admin-Gesamtübersicht ────────────────────────
+
+    @Transactional(readOnly = true)
+    public AffiliateDashboardStats getDashboardStats(User user) {
+        AffiliateProfile profile = profileRepository.findByUser(user)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Kein Affiliate-Profil gefunden."));
+        return buildStats(profile);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AffiliateConversionResponse> getConversions(User user) {
+        return conversionRepository
+                .findByAffiliateLink_AffiliateProfile_UserOrderByCreatedAtDesc(user)
+                .stream().map(this::toConversionResponse).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<AffiliateLinkResponse> getLinksWithStats(User user) {
+        AffiliateProfile profile = profileRepository.findByUser(user).orElse(null);
+        if (profile == null) return Collections.emptyList();
+        List<AffiliateLink> links =
+                linkRepository.findByAffiliateProfileOrderByCreatedAtDesc(profile);
+        Map<Long, List<AffiliateConversion>> byLink = conversionRepository
+                .findByAffiliateLink_AffiliateProfileOrderByCreatedAtDesc(profile)
+                .stream().collect(Collectors.groupingBy(c -> c.getAffiliateLink().getId()));
+        return links.stream()
+                .map(l -> toLinkResponseWithStats(l, byLink.getOrDefault(l.getId(), List.of())))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<AdminAffiliateListItem> getAllAffiliates() {
+        return profileRepository.findAll().stream().map(p -> {
+            List<AffiliateLink> links =
+                    linkRepository.findByAffiliateProfileOrderByCreatedAtDesc(p);
+            List<AffiliateConversion> convs =
+                    conversionRepository.findByAffiliateLink_AffiliateProfileOrderByCreatedAtDesc(p);
+            return new AdminAffiliateListItem(
+                    p.getId(), p.getUser().getId(),
+                    p.getUser().getUsername(), p.getUser().getEmail(),
+                    p.getCommissionRate(),
+                    links.size(),
+                    links.stream().mapToLong(AffiliateLink::getClickCount).sum(),
+                    convs.size(),
+                    p.getTotalEarningsConfirmed(),
+                    p.getPendingEarnings(),
+                    p.isActive());
+        }).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public AffiliateDashboardStats getAffiliateStatsForAdmin(Long affiliateId) {
+        AffiliateProfile profile = profileRepository.findById(affiliateId)
+                .orElseThrow(() -> new EntityNotFoundException(
+                        "Affiliate-Profil nicht gefunden: " + affiliateId));
+        return buildStats(profile);
+    }
+
+    @Transactional
+    public void updateCommissionRate(Long affiliateId, BigDecimal rate) {
+        AffiliateProfile profile = profileRepository.findById(affiliateId)
+                .orElseThrow(() -> new EntityNotFoundException(
+                        "Affiliate-Profil nicht gefunden: " + affiliateId));
+        profile.setCommissionRate(rate);
+        profileRepository.save(profile);
+        auditLogService.recordSystemAction(
+                "AFFILIATE_COMMISSION_RATE_UPDATED", "AffiliateProfile",
+                affiliateId, "Provisionsrate auf " + rate + " gesetzt für: "
+                        + profile.getUser().getUsername());
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private AffiliateDashboardStats buildStats(AffiliateProfile profile) {
+        List<AffiliateLink> links =
+                linkRepository.findByAffiliateProfileOrderByCreatedAtDesc(profile);
+        List<AffiliateConversion> conversions =
+                conversionRepository.findByAffiliateLink_AffiliateProfileOrderByCreatedAtDesc(profile);
+        return new AffiliateDashboardStats(
+                links.stream().mapToLong(AffiliateLink::getClickCount).sum(),
+                conversions.size(),
+                conversions.stream().map(AffiliateConversion::getPurchaseAmount)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add),
+                profile.getTotalEarningsConfirmed(),
+                profile.getPendingEarnings(),
+                links.stream().filter(AffiliateLink::isActive).count()
+        );
+    }
 
     private String generateTrackingCode() {
         StringBuilder sb = new StringBuilder(TRACKING_CODE_LENGTH);
@@ -203,6 +360,41 @@ public class AffiliateService {
             sb.append(TRACKING_CODE_CHARS.charAt(SECURE_RANDOM.nextInt(TRACKING_CODE_CHARS.length())));
         }
         return sb.toString();
+    }
+
+    private AffiliateConversionResponse toConversionResponse(AffiliateConversion c) {
+        return new AffiliateConversionResponse(
+                c.getId(),
+                c.getOrder().getId(),
+                c.getAffiliateLink().getProduct().getName(),
+                c.getPurchaseAmount(),
+                c.getCommissionAmount(),
+                c.getStatus(),
+                c.getCreatedAt()
+        );
+    }
+
+    private AffiliateLinkResponse toLinkResponseWithStats(
+            AffiliateLink link, List<AffiliateConversion> conversions) {
+        BigDecimal totalRevenue = conversions.stream()
+                .map(AffiliateConversion::getPurchaseAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalCommission = conversions.stream()
+                .map(AffiliateConversion::getCommissionAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new AffiliateLinkResponse(
+                link.getId(),
+                link.getTrackingCode(),
+                link.getProduct().getId(),
+                link.getProduct().getName(),
+                link.getProduct().getImageUrl(),
+                link.getClickCount(),
+                link.isActive(),
+                link.getCreatedAt(),
+                conversions.size(),
+                totalRevenue,
+                totalCommission
+        );
     }
 
     private AffiliateLinkResponse toLinkResponse(AffiliateLink link) {

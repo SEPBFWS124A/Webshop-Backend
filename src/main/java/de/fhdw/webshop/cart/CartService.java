@@ -197,6 +197,7 @@ public class CartService {
                     newCartItem.setGiftCardMessage(giftCardMessage);
                     newCartItem.setSharedWishlistToken(sharedWishlistToken);
                     newCartItem.setSharedWishlistListId(sharedWishlistListId);
+                    newCartItem.setAffiliateCode(trimToNull(addToCartRequest.affiliateCode()));
                     return newCartItem;
                 });
 
