@@ -86,7 +86,8 @@ public class AuthService {
                 user.getEmail(),
                 user.getRoles(),
                 user.getUserType(),
-                user.getCustomerNumber()
+                user.getCustomerNumber(),
+                user.getPreferredLanguage()
         );
     }
 }
