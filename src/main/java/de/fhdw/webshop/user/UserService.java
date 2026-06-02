@@ -29,6 +29,16 @@ public class UserService {
         return toProfileResponse(userRepository.save(currentUser));
     }
 
+    @Transactional
+    public UserProfileResponse updatePreferredLanguage(User currentUser, PreferredLanguageRequest request) {
+        String language = request.preferredLanguage().trim().toLowerCase();
+        if (!language.equals("de") && !language.equals("en")) {
+            throw new IllegalArgumentException("Unterstützte Sprachen sind de und en.");
+        }
+        currentUser.setPreferredLanguage(language);
+        return toProfileResponse(userRepository.save(currentUser));
+    }
+
     public CheckoutProfileResponse getCheckoutProfile(User currentUser) {
         DeliveryAddressResponse deliveryAddress = deliveryAddressRepository.findFirstByUserId(currentUser.getId())
                 .map(this::toDeliveryAddressResponse)
@@ -130,7 +140,8 @@ public class UserService {
                 user.getUserType(),
                 user.getCustomerNumber(),
                 user.getAgbAcceptedAt(),
-                user.isCartReminderEnabled()
+                user.isCartReminderEnabled(),
+                user.getPreferredLanguage()
         );
     }
 

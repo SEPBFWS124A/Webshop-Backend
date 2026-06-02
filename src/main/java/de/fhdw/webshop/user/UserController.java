@@ -65,6 +65,14 @@ public class UserController {
         return ResponseEntity.ok(userService.updateCartReminderSettings(currentUser, request));
     }
 
+    /** US #331 — Persist the preferred shop language for future sessions. */
+    @PutMapping("/me/language")
+    public ResponseEntity<UserProfileResponse> updatePreferredLanguage(
+            @AuthenticationPrincipal User currentUser,
+            @Valid @RequestBody PreferredLanguageRequest request) {
+        return ResponseEntity.ok(userService.updatePreferredLanguage(currentUser, request));
+    }
+
     /** US #7 — Deregister (soft-delete) own account. */
     @DeleteMapping("/me")
     public ResponseEntity<Void> deactivateAccount(@AuthenticationPrincipal User currentUser) {

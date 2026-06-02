@@ -170,6 +170,7 @@ Das eigentliche Steuerungsskript. Alles läuft über Docker — kein Java lokal 
 | `dev restart` | Backend-Container stoppen + neu starten |
 | `dev rebuild` | `docker compose up --build --force-recreate` (kein Layer-Cache) |
 | `dev test` | Test-Suite in einem Maven-Container ausführen (optional mit `-Dtest`-Filter) |
+| `<command> --skip-ollama` | `start`/`restart`/`rebuild`/`loadtest` ohne Ollama-Container (Image wird nicht gezogen, Shoppi liefert „nicht verfügbar") |
 
 ---
 
@@ -1058,6 +1059,25 @@ Maven-Container den auf dem Host gemappten DB-Port erreicht, zeigt `TESTCONTAINE
 dev test                          # komplette Suite (Unit + Integration)
 dev test CartFlowIntegrationTest  # nur eine Klasse
 dev test '*IntegrationTest'       # nur die Integrationstests
+```
+
+### dev --skip-ollama
+
+Optionaler Flag für `start`, `restart`, `rebuild` und `loadtest`. Bewirkt zwei Dinge:
+
+1. **GPU-Erkennung und das GPU-Compose-Override werden übersprungen** (sind ohne Ollama irrelevant).
+2. **`docker compose up` bekommt die Services explizit aufgezählt** — ohne `ollama` in der Liste:
+   ```
+   docker compose up -d --build postgres backend prometheus blackbox-exporter grafana [mailpit]
+   ```
+   Da Compose nur die gelisteten Services anfasst, wird das `ollama/ollama`-Image **weder gezogen noch gebaut** und der Container nicht gestartet. Erspart auf dem ersten Lauf den ~2 GB Image-Pull (und den ~10 GB Modell-Download, der ohnehin manuell ist).
+
+Im Frontend antwortet Shoppi dann mit einer „nicht verfügbar"-Meldung — alle anderen Funktionen bleiben unberührt. Wer das große Image schon mal lokal gezogen hatte: `docker image rm ollama/ollama` räumt es händisch auf (kein Teil des Flags).
+
+```bash
+dev start --skip-ollama
+dev rebuild --skip-ollama
+dev loadtest --skip-ollama --yes
 ```
 
 ---

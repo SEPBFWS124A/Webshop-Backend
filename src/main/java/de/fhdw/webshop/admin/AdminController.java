@@ -205,7 +205,8 @@ public class AdminController {
                 user.getUserType(),
                 user.getCustomerNumber(),
                 user.getAgbAcceptedAt(),
-                user.isCartReminderEnabled());
+                user.isCartReminderEnabled(),
+                user.getPreferredLanguage());
     }
 
     private void synchronizeUserBusinessIdentifiers(User user, UserRole effectiveRole) {
@@ -352,7 +353,8 @@ public class AdminController {
                 targetUser.getEmail(),
                 targetUser.getRoles(),
                 targetUser.getUserType(),
-                targetUser.getCustomerNumber()
+                targetUser.getCustomerNumber(),
+                targetUser.getPreferredLanguage()
         ));
     }
 

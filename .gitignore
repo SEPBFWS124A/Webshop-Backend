@@ -55,3 +55,14 @@ replay_pid*
 # ── Claude Code ──────────────────────────────────────────────────────────────
 CLAUDE.md
 .claude
+
+# ── Terraform ────────────────────────────────────────────────────────────────
+**/.terraform/
+**/.terraform.lock.hcl
+**/terraform.tfstate
+**/terraform.tfstate.backup
+**/terraform.tfstate.d/
+**/*.tfvars
+!**/terraform.tfvars.example
+**/.terraformrc
+**/terraform.rc

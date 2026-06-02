@@ -19,15 +19,35 @@
 
 param(
     [string]$Command = "",
-    [switch]$KeepDb,
-    [string]$TestFilter = "",
-    [switch]$Yes
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$RemainingArguments
 )
 
 $Root = $PSScriptRoot
 $Port = 8080
 $HealthUrl = "http://localhost:$Port/api/health"
+
+# Flags are parsed manually here (mirrors dev.sh). PowerShell's parameter binder does
+# not reliably match kebab-case names like --skip-ollama against switch parameters,
+# so we capture everything via $RemainingArguments and dispatch explicitly. This also
+# guarantees that an unknown flag does not crash the script with "parameter not found".
+$KeepDb = $false
+$Yes = $false
+$SkipOllama = $false
+$TestFilter = ""
 $IncludeMailpit = $false   # set by 'loadtest' so outgoing mail is captured by Mailpit
+
+if ($RemainingArguments) {
+    foreach ($rawArgument in $RemainingArguments) {
+        switch ($rawArgument.ToString().ToLower()) {
+            "--keep-db"     { $KeepDb = $true }
+            "--yes"         { $Yes = $true }
+            "-y"            { $Yes = $true }
+            "--skip-ollama" { $SkipOllama = $true }
+            default         { $TestFilter = $rawArgument }
+        }
+    }
+}
 
 # --- helpers -----------------------------------------------------------------
 
@@ -53,22 +73,26 @@ function Get-GpuVendor {
 function Get-OllamaComposeFiles {
     param([string]$RootPath)
 
-    $gpuVendor = Get-GpuVendor
     $composeFiles = @("`"$RootPath\docker-compose.yml`"")
 
-    switch ($gpuVendor) {
-        "nvidia" {
-            Write-Host "GPU detected: NVIDIA - enabling GPU acceleration for Ollama."
-            $composeFiles += "`"$RootPath\docker-compose.gpu-nvidia.yml`""
-        }
-        "amd" {
-            Write-Host "GPU detected: AMD - GPU acceleration requires ROCm (Linux only). Running Ollama on CPU."
-        }
-        "intel" {
-            Write-Host "GPU detected: Intel - GPU acceleration for Ollama in Docker is not supported on Windows. Running on CPU."
-        }
-        default {
-            Write-Host "No dedicated GPU detected - Ollama will run on CPU."
+    if ($script:SkipOllama) {
+        Write-Host "Ollama is skipped (--skip-ollama) - GPU detection and override disabled."
+    } else {
+        $gpuVendor = Get-GpuVendor
+        switch ($gpuVendor) {
+            "nvidia" {
+                Write-Host "GPU detected: NVIDIA - enabling GPU acceleration for Ollama."
+                $composeFiles += "`"$RootPath\docker-compose.gpu-nvidia.yml`""
+            }
+            "amd" {
+                Write-Host "GPU detected: AMD - GPU acceleration requires ROCm (Linux only). Running Ollama on CPU."
+            }
+            "intel" {
+                Write-Host "GPU detected: Intel - GPU acceleration for Ollama in Docker is not supported on Windows. Running on CPU."
+            }
+            default {
+                Write-Host "No dedicated GPU detected - Ollama will run on CPU."
+            }
         }
     }
 
@@ -78,6 +102,17 @@ function Get-OllamaComposeFiles {
     }
 
     return ($composeFiles -join " -f ")
+}
+
+# Returns the space-separated list of services that should be passed to
+# `docker compose up` when --skip-ollama is set, so that Compose neither pulls
+# nor starts the ollama service (and therefore does not download its image).
+function Get-NonOllamaServiceList {
+    $services = @("postgres", "backend", "prometheus", "blackbox-exporter", "grafana")
+    if ($script:IncludeMailpit) {
+        $services += "mailpit"
+    }
+    return ($services -join " ")
 }
 
 function Test-DockerRunning {
@@ -106,8 +141,10 @@ function Show-Usage {
     Write-Host "           DESTRUCTIVE: deletes the database. Asks for confirmation (skip with --yes)"
     Write-Host ""
     Write-Host "Options:"
-    Write-Host "  --keep-db   Keep PostgreSQL data (combine with stop/restart/rebuild)"
-    Write-Host "  --yes       Skip the loadtest confirmation prompt"
+    Write-Host "  --keep-db      Keep PostgreSQL data (combine with stop/restart/rebuild)"
+    Write-Host "  --yes          Skip the loadtest confirmation prompt"
+    Write-Host "  --skip-ollama  Do not start (or pull) the Ollama container - Shoppi will be unavailable"
+    Write-Host "                 Works with start/restart/rebuild/loadtest"
     Write-Host ""
 }
 
@@ -206,10 +243,16 @@ function Show-SeedHint {
     Write-Host "  Linux / macOS (bash):"
     Write-Host "    docker exec -i webshop-postgres psql -U webshop -d webshop < src/main/resources/db/dev-seed.sql"
     Write-Host ""
-    Write-Host "--- Shoppi KI-Assistent (Ollama model, run once) ---"
-    Write-Host "  docker exec webshop-ollama ollama pull gemma4:e4b"
-    Write-Host "  (This downloads ~10 GB on first run. The model is cached in the ollama_data volume.)"
-    Write-Host ""
+    if (-not $script:SkipOllama) {
+        Write-Host "--- Shoppi KI-Assistent (Ollama model, run once) ---"
+        Write-Host "  docker exec webshop-ollama ollama pull gemma4:e4b"
+        Write-Host "  (This downloads ~10 GB on first run. The model is cached in the ollama_data volume.)"
+        Write-Host ""
+    } else {
+        Write-Host "--- Shoppi KI-Assistent ---"
+        Write-Host "  Skipped (--skip-ollama). Shoppi answers with an 'unavailable' message."
+        Write-Host ""
+    }
     Write-Host "--- Monitoring & Alerting ---"
     Write-Host "  Grafana:    http://localhost:3001  (admin / admin)"
     Write-Host "  Dashboards: JVM Overview, HTTP Requests, Spring Boot Overview"
@@ -252,6 +295,10 @@ function Start-Backend {
 
     if ($KeepDb) {
         Invoke-Expression "docker compose -f $composeFiles up -d --build backend"
+    } elseif ($SkipOllama) {
+        $services = Get-NonOllamaServiceList
+        Write-Host "Starting services without ollama (--skip-ollama): $services"
+        Invoke-Expression "docker compose -f $composeFiles up -d --build $services"
     } else {
         Invoke-Expression "docker compose -f $composeFiles up -d --build"
     }
@@ -298,7 +345,13 @@ function Rebuild-Backend {
             Write-Host "ERROR: docker compose build failed."
             return
         }
-        Invoke-Expression "docker compose -f $composeFiles up -d --force-recreate"
+        if ($SkipOllama) {
+            $services = Get-NonOllamaServiceList
+            Write-Host "Starting services without ollama (--skip-ollama): $services"
+            Invoke-Expression "docker compose -f $composeFiles up -d --force-recreate $services"
+        } else {
+            Invoke-Expression "docker compose -f $composeFiles up -d --force-recreate"
+        }
     }
 
     if ($LASTEXITCODE -ne 0) {

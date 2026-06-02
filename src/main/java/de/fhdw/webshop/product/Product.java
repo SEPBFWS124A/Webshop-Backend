@@ -84,6 +84,12 @@ public class Product {
     @Column(name = "warehouse_position", length = 80)
     private String warehousePosition;
 
+    @Column(name = "supplier_name", length = 255)
+    private String supplierName;
+
+    @Column(name = "supplier_lead_time_days")
+    private Integer supplierLeadTimeDays = 7;
+
     /** When false, the product is hidden from customers but visible to employees (US #8, #10, #15). */
     @Column(nullable = false)
     private boolean purchasable = false;

@@ -81,6 +81,9 @@ public class User implements UserDetails {
     @Column(name = "cart_reminder_enabled", nullable = false)
     private boolean cartReminderEnabled = true;
 
+    @Column(name = "preferred_language", nullable = false, length = 8)
+    private String preferredLanguage = "de";
+
     // ── Convenience helpers ────────────────────────────────────────────────────
 
     public boolean hasRole(UserRole role) {
