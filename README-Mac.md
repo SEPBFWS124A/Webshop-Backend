@@ -228,6 +228,8 @@ Das Backend ist dann erreichbar unter: `http://localhost:8080`
 > **Tests:** `./dev.sh test` führt die Tests in einem Maven-Container aus. Die Integrationstests (`*IntegrationTest`) starten via **Testcontainers** ein echtes PostgreSQL (`postgres:16-alpine`), gegen das Flyway die echten Migrationen ausführt — Docker muss laufen. Die Unit-Tests (Mockito) brauchen keine Datenbank. Beim ersten Lauf werden Abhängigkeiten in ein Cache-Volume geladen und das `postgres:16-alpine`-Image gezogen.
 >
 > **Last-/Ressourcentest:** `./dev.sh loadtest` baut eine frische DB, spielt Lastdaten ein und startet einen **k6**-Lasttest (beobachtbar in Grafana). Destruktiv (löscht die DB), fragt vorher nach. Details: [`docs/loadtest.md`](docs/loadtest.md).
+>
+> **Ohne Shoppi entwickeln (`--skip-ollama`):** Mit dem Flag an `start`, `restart`, `rebuild` oder `loadtest` wird der Ollama-Container **nicht gestartet** und das `ollama/ollama`-Image **nicht** heruntergeladen — spart Setup-Zeit und RAM. Shoppi liefert dann nur eine „nicht verfügbar"-Meldung; alle anderen Funktionen sind unbeeinflusst. Beispiel: `./dev.sh start --skip-ollama`.
 
 ### Schritt 4 — Ollama-Modell ziehen (einmalig, nur für Shoppi KI-Assistent)
 ```bash
