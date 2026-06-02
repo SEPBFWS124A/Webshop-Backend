@@ -7,6 +7,7 @@ import java.util.List;
 
 public record WarehouseOrderResponse(
         Long id,
+        Long orderId,
         String orderNumber,
         String customerName,
         String customerEmail,
@@ -20,10 +21,12 @@ public record WarehouseOrderResponse(
         List<String> warehouseWarnings,
         ShippingMethod shippingMethod,
         boolean clickAndCollect,
+        String deliveryAddress,
         String deliveryStreet,
         String deliveryCity,
         String deliveryPostalCode,
         String deliveryCountry,
         Instant createdAt,
+        Instant updatedAt,
         List<WarehouseOrderItemResponse> items
 ) {}

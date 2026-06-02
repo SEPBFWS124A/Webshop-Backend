@@ -78,6 +78,9 @@ public class User implements UserDetails {
     @Column(name = "agb_accepted_at")
     private Instant agbAcceptedAt;
 
+    @Column(name = "cart_reminder_enabled", nullable = false)
+    private boolean cartReminderEnabled = true;
+
     // ── Convenience helpers ────────────────────────────────────────────────────
 
     public boolean hasRole(UserRole role) {

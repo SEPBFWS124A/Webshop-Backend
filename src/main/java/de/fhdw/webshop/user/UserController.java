@@ -56,6 +56,15 @@ public class UserController {
         return ResponseEntity.noContent().build();
     }
 
+    /** US #325 — Customer enables or disables abandoned-cart reminder emails. */
+    @PutMapping("/me/cart-reminders")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<UserProfileResponse> updateCartReminderSettings(
+            @AuthenticationPrincipal User currentUser,
+            @Valid @RequestBody CartReminderSettingsRequest request) {
+        return ResponseEntity.ok(userService.updateCartReminderSettings(currentUser, request));
+    }
+
     /** US #7 — Deregister (soft-delete) own account. */
     @DeleteMapping("/me")
     public ResponseEntity<Void> deactivateAccount(@AuthenticationPrincipal User currentUser) {

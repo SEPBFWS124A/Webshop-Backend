@@ -44,4 +44,10 @@ public class WarehouseLocation {
 
     @Column(nullable = false)
     private boolean active = true;
+
+    @Column(name = "latitude")
+    private Double latitude;
+
+    @Column(name = "longitude")
+    private Double longitude;
 }

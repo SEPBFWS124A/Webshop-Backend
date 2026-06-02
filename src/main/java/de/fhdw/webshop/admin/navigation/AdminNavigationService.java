@@ -55,6 +55,14 @@ public class AdminNavigationService {
                     )
             ),
             new NavigationGroup(
+                "customer-service",
+                "Kundenservice",
+                "pi pi-headphones",
+                List.of(
+                        item("product-feedback", "Produkt-Feedback (Intern)", "/admin/customers/product-feedback", "pi pi-comments", ADVERTISEMENT_ROLES)
+                )
+                ),
+            new NavigationGroup(
                     "product-management",
                     "Produktverwaltung",
                     "pi pi-box",

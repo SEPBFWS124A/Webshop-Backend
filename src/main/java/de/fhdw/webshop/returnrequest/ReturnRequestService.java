@@ -125,7 +125,7 @@ public class ReturnRequestService {
             returnItem.setReason(line.reason());
             returnItem.setCustomerComment(line.comment());
 
-// 1. Ursprungspreis der retournierten Menge berechnen
+
             BigDecimal originalPrice = orderItem.getPriceAtOrderTime().multiply(BigDecimal.valueOf(line.quantity()));
             
 
@@ -152,6 +152,11 @@ public class ReturnRequestService {
             returnItem.setRefundAmount(finalRefund);
             returnRequest.getItems().add(returnItem);
         }
+
+        BigDecimal totalCouponDeduction = returnRequest.getItems().stream()
+                .map(item -> item.getDiscountShare() != null ? item.getDiscountShare() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        returnRequest.setCouponDeduction(totalCouponDeduction);
 
         ReturnRequest saved = returnRequestRepository.save(returnRequest);
         auditLogService.record(customer, "RETURN_REQUEST_CREATED", "ReturnRequest", saved.getId(),
@@ -470,28 +475,10 @@ public class ReturnRequestService {
         returnRequest.setRefundReference("RMA-" + returnRequest.getId() + "-REJECTED");
     }
 
-    private BigDecimal calculateRefundAmount(ReturnRequest returnRequest) {
-        BigDecimal returnedSubtotal = returnRequest.getItems().stream()
-                .map(this::calculateLineSubtotal)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        BigDecimal orderItemSubtotal = returnRequest.getOrder().getItems().stream()
-                .map(item -> calculateLineSubtotal(item.getPriceAtOrderTime(), item.getQuantity()))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        if (returnedSubtotal.compareTo(BigDecimal.ZERO) <= 0 || orderItemSubtotal.compareTo(BigDecimal.ZERO) <= 0) {
-            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
-        }
-
-        BigDecimal orderDiscount = returnRequest.getOrder().getDiscountAmount() == null
-                ? BigDecimal.ZERO
-                : returnRequest.getOrder().getDiscountAmount().max(BigDecimal.ZERO);
-        BigDecimal proportionalDiscount = orderDiscount.compareTo(BigDecimal.ZERO) > 0
-                ? returnedSubtotal.multiply(orderDiscount)
-                        .divide(orderItemSubtotal, 2, RoundingMode.HALF_UP)
-                : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
-        return returnedSubtotal.subtract(proportionalDiscount)
-                .max(BigDecimal.ZERO)
+private BigDecimal calculateRefundAmount(ReturnRequest returnRequest) {
+        return returnRequest.getItems().stream()
+                .map(item -> item.getRefundAmount() != null ? item.getRefundAmount() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .setScale(2, RoundingMode.HALF_UP);
     }
 
@@ -674,7 +661,8 @@ public class ReturnRequestService {
                                 item.getRefundAmount()
                             ))
                         .toList(),
-                toShippingLabelResponse(returnRequest), returnRequest.getCouponDeduction());
+                toShippingLabelResponse(returnRequest),
+                returnRequest.getCouponDeduction());
     }
 
     private ReturnRequestImageResponse toImageResponse(ReturnRequest returnRequest, ReturnRequestImage image) {

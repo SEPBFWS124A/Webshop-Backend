@@ -10,10 +10,15 @@ import de.fhdw.webshop.reservation.dto.CartReservationInfo;
 import de.fhdw.webshop.reservation.dto.InventoryStockResponse;
 import de.fhdw.webshop.reservation.dto.StockReservationResponse;
 import de.fhdw.webshop.user.User;
+import de.fhdw.webshop.warehouse.WarehouseLocation;
+import de.fhdw.webshop.warehouse.WarehouseLocationRepository;
+import de.fhdw.webshop.warehouse.WarehouseProductStock;
+import de.fhdw.webshop.warehouse.WarehouseProductStockRepository;
 import jakarta.persistence.EntityNotFoundException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -31,6 +36,8 @@ public class StockReservationService {
     private final StockReservationRepository stockReservationRepository;
     private final AvailabilityNotificationRepository availabilityNotificationRepository;
     private final ProductRepository productRepository;
+    private final WarehouseLocationRepository warehouseLocationRepository;
+    private final WarehouseProductStockRepository warehouseProductStockRepository;
     private final EmailService emailService;
 
     @Value("${app.stock-reservations.ttl-minutes:15}")
@@ -214,6 +221,11 @@ public class StockReservationService {
         Map<Long, List<StockReservation>> reservationsByProduct = activeReservations.stream()
                 .collect(Collectors.groupingBy(reservation -> reservation.getProduct().getId()));
 
+        List<WarehouseLocation> locations = warehouseLocationRepository.findActiveLocations();
+        List<WarehouseProductStock> allWarehouseStocks = warehouseProductStockRepository.findAll();
+        Map<Long, List<WarehouseProductStock>> warehouseStocksByProduct = allWarehouseStocks.stream()
+                .collect(Collectors.groupingBy(stock -> stock.getProduct().getId()));
+
         return productRepository.findAll().stream()
                 .filter(product -> product.getParentProduct() == null)
                 .sorted(Comparator.comparing(Product::getName, String.CASE_INSENSITIVE_ORDER))
@@ -228,16 +240,28 @@ public class StockReservationService {
                             .min(Instant::compareTo)
                             .orElse(null);
 
+                    Map<Long, Integer> stockByLocation = new LinkedHashMap<>();
+                    locations.forEach(location -> stockByLocation.put(location.getId(), 0));
+                    warehouseStocksByProduct.getOrDefault(product.getId(), List.of())
+                            .forEach(stock -> {
+                                Long locationId = stock.getWarehouseLocation().getId();
+                                if (stockByLocation.containsKey(locationId)) {
+                                    stockByLocation.put(locationId, stock.getQuantity());
+                                }
+                            });
+                    int totalStock = stockByLocation.values().stream().mapToInt(Integer::intValue).sum();
+
                     return new InventoryStockResponse(
                             product.getId(),
                             product.getName(),
                             product.getSku(),
                             product.getCategory(),
-                            product.getStock(),
+                            totalStock,
                             reservedStock,
                             product.getProductType() == ProductType.DIGITAL_GIFT_CARD
                                     ? VIRTUAL_GIFT_CARD_STOCK
-                                    : Math.max(product.getStock() - reservedStock, 0),
+                                    : Math.max(totalStock - reservedStock, 0),
+                            stockByLocation,
                             nextExpiry
                     );
                 })

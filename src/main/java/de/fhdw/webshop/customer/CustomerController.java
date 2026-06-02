@@ -295,7 +295,8 @@ public class CustomerController {
                 customer.getEmployeeNumber(),
                 customer.getUserType(),
                 customer.getCustomerNumber(),
-                customer.getAgbAcceptedAt());
+                customer.getAgbAcceptedAt(),
+                customer.isCartReminderEnabled());
 
         CartResponse cart = cartService.getCart(id);
         BigDecimal cartTotal = cart != null && cart.total() != null ? cart.total() : BigDecimal.ZERO;
@@ -383,7 +384,8 @@ public class CustomerController {
                 user.getEmployeeNumber(),
                 user.getUserType(),
                 user.getCustomerNumber(),
-                user.getAgbAcceptedAt());
+                user.getAgbAcceptedAt(),
+                user.isCartReminderEnabled());
     }
 
     private List<String> buildAlerts(
