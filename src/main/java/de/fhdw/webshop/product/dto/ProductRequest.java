@@ -26,5 +26,7 @@ public record ProductRequest(
         @PositiveOrZero Integer personalizationMaxLength,
         boolean hasVariants,
         List<ProductVariantAttributeRequest> variantAttributes,
-        List<ProductVariantRequest> variants
+        List<ProductVariantRequest> variants,
+        String supplierName,
+        Integer supplierLeadTimeDays
 ) {}

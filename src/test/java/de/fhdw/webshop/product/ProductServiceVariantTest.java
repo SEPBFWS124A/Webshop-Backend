@@ -114,7 +114,9 @@ class ProductServiceVariantTest {
                         new ProductVariantAttributeRequest("Farbe", List.of("Rot", "Blau")),
                         new ProductVariantAttributeRequest("Groesse", List.of("S", "M"))
                 ),
-                variants
+                variants,
+                "EcoLogistics GmbH", 
+                3
         );
     }
 

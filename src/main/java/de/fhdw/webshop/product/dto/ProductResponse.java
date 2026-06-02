@@ -33,5 +33,7 @@ public record ProductResponse(
         Map<String, String> variantValues,
         List<ProductVariantAttributeResponse> variantAttributes,
         List<ProductResponse> variants,
-        Instant createdAt
+        Instant createdAt,
+        String supplierName,
+        Integer supplierLeadTimeDays
 ) {}
