@@ -94,7 +94,8 @@ public class User implements UserDetails {
     public UserRole getPrimaryRole() {
         if (roles == null || roles.isEmpty()) return UserRole.CUSTOMER;
         for (UserRole r : List.of(UserRole.ADMIN, UserRole.SALES_EMPLOYEE,
-                UserRole.WAREHOUSE_EMPLOYEE, UserRole.EMPLOYEE, UserRole.SELLER, UserRole.CUSTOMER)) {
+                UserRole.WAREHOUSE_EMPLOYEE, UserRole.EMPLOYEE, UserRole.SELLER,
+                UserRole.AFFILIATE_CUSTOMER, UserRole.CUSTOMER)) {
             if (roles.contains(r)) return r;
         }
         return roles.iterator().next();

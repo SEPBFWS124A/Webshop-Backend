@@ -45,6 +45,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/products").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/products/{id}").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/products/{id}/questions").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/products/{id}/feedback").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/product-bundles/active").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/advertisements/active").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/wishlist/shared/**").permitAll()
@@ -70,6 +71,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/seller-reviews/seller/**").permitAll()
                         // AGB – latest version readable without login (shown on /agb page and checkout)
                         .requestMatchers(HttpMethod.GET, "/api/agb/latest").permitAll()
+                        // Affiliate click tracking — public so links work without login
+                        .requestMatchers(HttpMethod.GET, "/api/affiliate/track/**").permitAll()
                         // Shoppi chatbot — public, auth-aware (personal context only when authenticated)
                         .requestMatchers(HttpMethod.POST, "/api/chat/message").permitAll()
                         // All other endpoints require authentication

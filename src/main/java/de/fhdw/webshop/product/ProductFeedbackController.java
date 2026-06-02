@@ -17,7 +17,6 @@ public class ProductFeedbackController {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
 
-    // Konstruktor-Injection für alle drei Repositories
     public ProductFeedbackController(
             ProductFeedbackRepository repository,
             ProductRepository productRepository,
@@ -27,20 +26,17 @@ public class ProductFeedbackController {
         this.userRepository = userRepository;
     }
 
-    // GET: Lädt alle Feedbacks und wandelt die IDs in echte Namen um
     @GetMapping
     public List<ProductFeedbackDto> getAllFeedback() {
         return repository.findAll().stream().map(feedback -> {
-            
-                String title = productRepository.findById(feedback.getProductId())
-                    .map(Product::getName) 
+            String title = productRepository.findById(feedback.getProductId())
+                    .map(Product::getName)
                     .orElse("Unbekanntes Produkt");
 
-                String name = userRepository.findById(feedback.getUserId())
-                    .map(User::getUsername) 
+            String name = userRepository.findById(feedback.getUserId())
+                    .map(User::getUsername)
                     .orElse("Gast");
 
-            // 3. Als fertiges DTO zurückgeben
             return new ProductFeedbackDto(
                     feedback.getId(),
                     title,
@@ -53,16 +49,16 @@ public class ProductFeedbackController {
         }).toList();
     }
 
-@PostMapping
-public ProductFeedback createFeedback(@RequestBody ProductFeedback feedback) {
-    Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-    
-    if (principal instanceof User user) {
-        feedback.setUserId(user.getId());
+    @PostMapping
+    public ProductFeedback createFeedback(@RequestBody ProductFeedback feedback) {
+        Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+
+        if (principal instanceof User user) {
+            feedback.setUserId(user.getId());
+        }
+
+        return repository.save(feedback);
     }
-    
-    return repository.save(feedback);
-}
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteFeedback(@PathVariable Long id) {
