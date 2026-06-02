@@ -27,6 +27,7 @@ HEALTH_URL="http://localhost:$PORT/api/health"
 COMMAND="${1:-}"
 KEEP_DB=false
 ASSUME_YES=false
+SKIP_OLLAMA=false
 TEST_FILTER=""
 INCLUDE_MAILPIT=false   # set by 'loadtest' so outgoing mail is captured by Mailpit
 COMPOSE_FILES=()
@@ -36,9 +37,10 @@ COMPOSE_FILES=()
 [[ $# -gt 0 ]] && shift
 for arg in "$@"; do
     case "$arg" in
-        --keep-db) KEEP_DB=true ;;
-        --yes|-y)  ASSUME_YES=true ;;
-        *)         TEST_FILTER="$arg" ;;
+        --keep-db)     KEEP_DB=true ;;
+        --yes|-y)      ASSUME_YES=true ;;
+        --skip-ollama) SKIP_OLLAMA=true ;;
+        *)             TEST_FILTER="$arg" ;;
     esac
 done
 
@@ -77,30 +79,45 @@ get_gpu_vendor() {
 
 setup_compose_files() {
     COMPOSE_FILES=("-f" "$ROOT/docker-compose.yml")
-    local gpu_vendor
-    gpu_vendor="$(get_gpu_vendor)"
 
-    case "$gpu_vendor" in
-        nvidia)
-            echo "GPU detected: NVIDIA - enabling GPU acceleration for Ollama."
-            COMPOSE_FILES+=("-f" "$ROOT/docker-compose.gpu-nvidia.yml")
-            ;;
-        amd)
-            echo "GPU detected: AMD - enabling GPU acceleration for Ollama (ROCm)."
-            COMPOSE_FILES+=("-f" "$ROOT/docker-compose.gpu-amd.yml")
-            ;;
-        macos)
-            echo "macOS: GPU passthrough is not supported in Docker. Ollama will run on CPU."
-            ;;
-        *)
-            echo "No dedicated GPU detected - Ollama will run on CPU."
-            ;;
-    esac
+    if [[ "$SKIP_OLLAMA" == "true" ]]; then
+        echo "Ollama is skipped (--skip-ollama) - GPU detection and override disabled."
+    else
+        local gpu_vendor
+        gpu_vendor="$(get_gpu_vendor)"
+        case "$gpu_vendor" in
+            nvidia)
+                echo "GPU detected: NVIDIA - enabling GPU acceleration for Ollama."
+                COMPOSE_FILES+=("-f" "$ROOT/docker-compose.gpu-nvidia.yml")
+                ;;
+            amd)
+                echo "GPU detected: AMD - enabling GPU acceleration for Ollama (ROCm)."
+                COMPOSE_FILES+=("-f" "$ROOT/docker-compose.gpu-amd.yml")
+                ;;
+            macos)
+                echo "macOS: GPU passthrough is not supported in Docker. Ollama will run on CPU."
+                ;;
+            *)
+                echo "No dedicated GPU detected - Ollama will run on CPU."
+                ;;
+        esac
+    fi
 
     if [[ "$INCLUDE_MAILPIT" == "true" ]]; then
         echo "Mailpit override enabled - outgoing mail is captured locally (no real SMTP)."
         COMPOSE_FILES+=("-f" "$ROOT/docker-compose.mailpit.yml")
     fi
+}
+
+# Echoes the space-separated list of services to pass to `docker compose up`
+# when --skip-ollama is set, so that Compose neither pulls nor starts the
+# ollama service (and therefore does not download its image).
+non_ollama_service_list() {
+    local services="postgres backend prometheus blackbox-exporter grafana"
+    if [[ "$INCLUDE_MAILPIT" == "true" ]]; then
+        services="$services mailpit"
+    fi
+    echo "$services"
 }
 
 test_docker_running() {
@@ -203,9 +220,14 @@ show_seed_hint() {
     echo "  docker exec -i webshop-postgres psql -U webshop -d webshop \\"
     echo "    < src/main/resources/db/dev-seed.sql"
     echo ""
-    echo "--- Shoppi KI-Assistent (Ollama model, run once) ---"
-    echo "  docker exec webshop-ollama ollama pull gemma4:e4b"
-    echo "  (This downloads ~10 GB on first run. Model is cached in the ollama_data volume.)"
+    if [[ "$SKIP_OLLAMA" == "true" ]]; then
+        echo "--- Shoppi KI-Assistent ---"
+        echo "  Skipped (--skip-ollama). Shoppi answers with an 'unavailable' message."
+    else
+        echo "--- Shoppi KI-Assistent (Ollama model, run once) ---"
+        echo "  docker exec webshop-ollama ollama pull gemma4:e4b"
+        echo "  (This downloads ~10 GB on first run. Model is cached in the ollama_data volume.)"
+    fi
     echo ""
     echo "--- Monitoring & Alerting ---"
     echo "  Grafana:    http://localhost:3001  (admin / admin)"
@@ -231,8 +253,10 @@ show_usage() {
     echo "           DESTRUCTIVE: deletes the database. Asks for confirmation (skip with --yes)"
     echo ""
     echo "Options:"
-    echo "  --keep-db   Keep PostgreSQL running (combine with stop/restart/rebuild)"
-    echo "  --yes       Skip the loadtest confirmation prompt"
+    echo "  --keep-db      Keep PostgreSQL running (combine with stop/restart/rebuild)"
+    echo "  --yes          Skip the loadtest confirmation prompt"
+    echo "  --skip-ollama  Do not start (or pull) the Ollama container - Shoppi will be unavailable"
+    echo "                 Works with start/restart/rebuild/loadtest"
     echo ""
 }
 
@@ -297,6 +321,12 @@ start_backend() {
 
     if [[ "$KEEP_DB" == "true" ]]; then
         docker compose "${COMPOSE_FILES[@]}" up -d --build backend
+    elif [[ "$SKIP_OLLAMA" == "true" ]]; then
+        local services
+        services="$(non_ollama_service_list)"
+        echo "Starting services without ollama (--skip-ollama): $services"
+        # shellcheck disable=SC2086
+        docker compose "${COMPOSE_FILES[@]}" up -d --build $services
     else
         docker compose "${COMPOSE_FILES[@]}" up -d --build
     fi
@@ -334,7 +364,15 @@ rebuild_backend() {
             echo "Removing PostgreSQL volume ($postgres_volume) for a clean database..."
             docker volume rm "$postgres_volume"
         fi
-        docker compose "${COMPOSE_FILES[@]}" up -d --build --force-recreate
+        if [[ "$SKIP_OLLAMA" == "true" ]]; then
+            local services
+            services="$(non_ollama_service_list)"
+            echo "Starting services without ollama (--skip-ollama): $services"
+            # shellcheck disable=SC2086
+            docker compose "${COMPOSE_FILES[@]}" up -d --build --force-recreate $services
+        else
+            docker compose "${COMPOSE_FILES[@]}" up -d --build --force-recreate
+        fi
     fi
 
     if [[ $? -ne 0 ]]; then
