@@ -25,7 +25,7 @@ public class AffiliateProfile {
     private User user;
 
     @Column(name = "commission_rate", nullable = false, precision = 5, scale = 4)
-    private BigDecimal commissionRate = new BigDecimal("0.0500");
+    private BigDecimal commissionRate = new BigDecimal("0.0100");
 
     @Column(name = "total_earnings_confirmed", nullable = false, precision = 12, scale = 2)
     private BigDecimal totalEarningsConfirmed = BigDecimal.ZERO;

@@ -100,7 +100,7 @@ public class AffiliateService {
         if (profileRepository.findByUser(application.getUser()).isEmpty()) {
             AffiliateProfile profile = new AffiliateProfile();
             profile.setUser(application.getUser());
-            profile.setCommissionRate(new BigDecimal("0.0500"));
+            profile.setCommissionRate(new BigDecimal("0.0100"));
             profile.setActive(true);
             profileRepository.save(profile);
         }
