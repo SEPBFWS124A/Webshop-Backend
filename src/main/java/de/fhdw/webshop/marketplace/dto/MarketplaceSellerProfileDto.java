@@ -8,6 +8,7 @@ public record MarketplaceSellerProfileDto(
         double avgRating,
         long reviewCount,
         List<MarketplaceProductDto> products,
-        List<MarketplaceReviewDto> recentReviews
+        List<MarketplaceReviewDto> recentReviews,
+        double avgProductRating
 ) {
 }

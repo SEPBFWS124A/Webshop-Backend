@@ -5,6 +5,7 @@ import de.fhdw.webshop.marketplace.dto.MarketplaceReviewDto;
 import de.fhdw.webshop.marketplace.dto.MarketplaceSellerDto;
 import de.fhdw.webshop.marketplace.dto.MarketplaceSellerProfileDto;
 import de.fhdw.webshop.product.Product;
+import de.fhdw.webshop.product.ProductFeedbackValidationService;
 import de.fhdw.webshop.product.ProductRepository;
 import de.fhdw.webshop.sellerportal.SellerProfileRepository;
 import de.fhdw.webshop.sellerreview.SellerReview;
@@ -24,6 +25,7 @@ public class MarketplaceService {
     private final ProductRepository productRepository;
     private final SellerProfileRepository sellerProfileRepository;
     private final SellerReviewRepository sellerReviewRepository;
+    private final ProductFeedbackValidationService productFeedbackValidationService;
 
     @Transactional(readOnly = true)
     public List<MarketplaceProductDto> listProducts(String category, String sellerName) {
@@ -42,7 +44,8 @@ public class MarketplaceService {
                 .map(profile -> {
                     List<SellerReview> reviews = sellerReviewRepository.findBySellerNameIgnoreCaseOrderByCreatedAtDesc(profile.getDisplayName());
                     double avg = reviews.stream().mapToInt(SellerReview::getRating).average().orElse(0.0);
-                    return new MarketplaceSellerDto(profile.getDisplayName(), profile.getDisplayName(), avg, reviews.size());
+                    double avgProduct = productFeedbackValidationService.getAverageRatingBySeller(profile.getDisplayName());
+                    return new MarketplaceSellerDto(profile.getDisplayName(), profile.getDisplayName(), avg, reviews.size(), avgProduct);
                 })
                 .toList();
     }
@@ -65,13 +68,16 @@ public class MarketplaceService {
                 .map(r -> new MarketplaceReviewDto(r.getId(), r.getRating(), r.getComment(), r.getCreatedAt()))
                 .toList();
 
+        double avgProduct = productFeedbackValidationService.getAverageRatingBySeller(sellerName);
+
         return new MarketplaceSellerProfileDto(
                 sellerName,
                 sellerName,
                 avg.orElse(0.0),
                 reviews.size(),
                 products,
-                recentReviews
+                recentReviews,
+                avgProduct
         );
     }
 

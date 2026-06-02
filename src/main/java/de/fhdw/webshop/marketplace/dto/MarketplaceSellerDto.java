@@ -4,6 +4,7 @@ public record MarketplaceSellerDto(
         String sellerName,
         String displayName,
         double avgRating,
-        long reviewCount
+        long reviewCount,
+        double avgProductRating
 ) {
 }

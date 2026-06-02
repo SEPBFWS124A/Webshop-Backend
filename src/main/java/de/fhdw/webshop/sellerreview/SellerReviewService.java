@@ -35,6 +35,15 @@ public class SellerReviewService {
     private static final long MAX_IMAGE_SIZE_BYTES = 5L * 1024L * 1024L;
     private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
 
+    // Eine Bestellung ist ab Bestellbestaetigung bewertbar – also alle Status
+    // ausser noch nicht bestaetigten oder abgebrochenen Bestellungen.
+    private static final Set<OrderStatus> NON_REVIEWABLE_STATUSES = Set.of(
+            OrderStatus.PENDING,
+            OrderStatus.Pending_Approval,
+            OrderStatus.Rejected,
+            OrderStatus.CANCELLED
+    );
+
     private final SellerReviewRepository sellerReviewRepository;
     private final SellerReviewImageRepository sellerReviewImageRepository;
     private final OrderRepository orderRepository;
@@ -89,8 +98,8 @@ public class SellerReviewService {
         Order order = orderRepository.findByIdAndCustomerId(orderId, currentUser.getId())
                 .orElseThrow(() -> new EntityNotFoundException("Order not found: " + orderId));
 
-        if (order.getStatus() != OrderStatus.DELIVERED) {
-            throw new IllegalArgumentException("Verkaeufer koennen erst nach einer abgeschlossenen Bestellung bewertet werden.");
+        if (NON_REVIEWABLE_STATUSES.contains(order.getStatus())) {
+            throw new IllegalArgumentException("Verkaeufer koennen erst nach Bestellbestaetigung bewertet werden.");
         }
 
         String requestedSeller = normalizeRequired(request.sellerName(), "Bitte einen Verkaeufer aus der Bestellung auswaehlen.");
@@ -135,6 +144,19 @@ public class SellerReviewService {
         return sellerReviewImageRepository.findAllByOrderByCreatedAtDesc()
                 .stream()
                 .map(this::toImageResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<Long> getReviewableOrderIds(String sellerName, User currentUser) {
+        return orderRepository.findByCustomerIdOrderByCreatedAtDesc(currentUser.getId())
+                .stream()
+                .filter(order -> !NON_REVIEWABLE_STATUSES.contains(order.getStatus()))
+                .filter(order -> order.getItems().stream()
+                        .anyMatch(item -> sellerName.equalsIgnoreCase(normalizeSellerName(item))))
+                .filter(order -> !sellerReviewRepository.existsByOrderIdAndCustomerIdAndSellerNameIgnoreCase(
+                        order.getId(), currentUser.getId(), sellerName))
+                .map(order -> order.getId())
                 .toList();
     }
 

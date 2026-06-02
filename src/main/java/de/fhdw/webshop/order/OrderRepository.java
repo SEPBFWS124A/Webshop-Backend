@@ -126,4 +126,16 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
                         @Param("customerId") Long customerId,
                         @Param("status") String status,
                         @Param("cutoff") Instant cutoff);
+
+        @Query("""
+                        SELECT COUNT(o) > 0 FROM Order o
+                        JOIN o.items item
+                        WHERE o.customer.id = :userId
+                          AND o.status NOT IN :excludedStatuses
+                          AND item.product.id = :productId
+                        """)
+        boolean existsReviewableOrderWithProduct(
+                        @Param("productId") Long productId,
+                        @Param("userId") Long userId,
+                        @Param("excludedStatuses") Collection<OrderStatus> excludedStatuses);
 }

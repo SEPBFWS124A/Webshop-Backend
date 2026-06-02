@@ -75,6 +75,14 @@ public class SellerReviewController {
         return ResponseEntity.ok(sellerReviewService.voteReview(reviewId, currentUser, request.helpful()));
     }
 
+    @GetMapping("/api/seller-reviews/reviewable-orders/{sellerName}")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<List<Long>> getReviewableOrders(
+            @PathVariable String sellerName,
+            @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(sellerReviewService.getReviewableOrderIds(sellerName, currentUser));
+    }
+
     @GetMapping("/api/admin/seller-review-images")
     @PreAuthorize("hasAnyRole('EMPLOYEE', 'SALES_EMPLOYEE', 'ADMIN')")
     public ResponseEntity<List<SellerReviewImageResponse>> listReviewImagesForModeration() {
