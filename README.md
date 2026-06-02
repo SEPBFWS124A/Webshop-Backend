@@ -236,6 +236,12 @@ Das Backend ist dann erreichbar unter: `http://localhost:8080`
 
 **Last-/Ressourcentest:** `./dev.bat loadtest` baut eine frische DB, spielt eine realistische Lastdatenmenge ein und startet einen **k6**-Lasttest (beobachtbar in Grafana). Der Befehl ist **destruktiv** (löscht die DB) und fragt vorher nach. Details, Auswertung und ein optionales Bestell-Lastszenario: [`docs/loadtest.md`](docs/loadtest.md).
 
+**Ohne Shoppi entwickeln (`--skip-ollama`):** Mit dem Flag `--skip-ollama` an `start`, `restart`, `rebuild` oder `loadtest` wird der Ollama-Container **nicht gestartet** und das große `ollama/ollama`-Image **nicht** heruntergeladen — spart Setup-Zeit und RAM, wenn du gerade nicht an Shoppi/KI arbeitest. Shoppi liefert dann im Frontend nur eine „nicht verfügbar"-Meldung; alle anderen Funktionen sind unbeeinflusst.
+```bat
+./dev.bat start --skip-ollama
+./dev.bat loadtest --skip-ollama --yes
+```
+
 ### Schritt 3 — Ollama-Modell ziehen (einmalig, nur für Shoppi KI-Assistent)
 ```bash
 docker exec webshop-ollama ollama pull gemma4:e4b
