@@ -16,5 +16,6 @@ public record AuthResponse(
         String email,
         Set<UserRole> roles,
         UserType userType,
-        String customerNumber
+        String customerNumber,
+        String preferredLanguage
 ) {}

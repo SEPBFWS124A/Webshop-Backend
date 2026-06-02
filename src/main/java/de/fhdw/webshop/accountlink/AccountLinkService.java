@@ -220,6 +220,7 @@ public class AccountLinkService {
                 user.getUserType(),
                 user.getCustomerNumber(),
                 user.getAgbAcceptedAt(),
-                user.isCartReminderEnabled());
+                user.isCartReminderEnabled(),
+                user.getPreferredLanguage());
     }
 }
