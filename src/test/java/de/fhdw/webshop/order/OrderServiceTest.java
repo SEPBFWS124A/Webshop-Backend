@@ -12,6 +12,7 @@ import de.fhdw.webshop.cart.CartRepository;
 import de.fhdw.webshop.cart.CartService;
 import de.fhdw.webshop.discount.CouponRepository;
 import de.fhdw.webshop.discount.VolumeDiscountService;
+import de.fhdw.webshop.messaging.OrderEventPublisher;
 import de.fhdw.webshop.order.dto.OrderPreviewResponse;
 import de.fhdw.webshop.order.dto.OrderResponse;
 import de.fhdw.webshop.order.dto.PlaceOrderRequest;
@@ -240,6 +241,7 @@ class OrderServiceTest {
         WishlistService wishlistService = mock(WishlistService.class);
         StockReservationService stockReservationService = mock(StockReservationService.class);
         ProductBundleService productBundleService = mock(ProductBundleService.class);
+        OrderEventPublisher orderEventPublisher = mock(OrderEventPublisher.class);
 
         OrderService service = new OrderService(
                 orderRepository,
@@ -264,7 +266,8 @@ class OrderServiceTest {
                 pickupStoreService,
                 wishlistService,
                 stockReservationService,
-                productBundleService);
+                productBundleService,
+                orderEventPublisher);
 
         User customer = businessCustomer(10L, "employee");
         User manager = businessCustomer(11L, "manager");
