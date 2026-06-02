@@ -2,6 +2,7 @@ package de.fhdw.webshop.purchaseorder;
 
 import de.fhdw.webshop.product.Product;
 import de.fhdw.webshop.user.User;
+import de.fhdw.webshop.warehouse.WarehouseLocation;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -46,4 +47,9 @@ public class PurchaseOrder {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ordered_by_user_id")
     private User orderedByUser;
+
+    /** #138/#139 — Target warehouse where goods will be received. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "warehouse_location_id")
+    private WarehouseLocation warehouseLocation;
 }
