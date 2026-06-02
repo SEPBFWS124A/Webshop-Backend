@@ -28,6 +28,8 @@ import de.fhdw.webshop.product.Product;
 import de.fhdw.webshop.product.ProductRepository;
 import de.fhdw.webshop.product.ProductService;
 import de.fhdw.webshop.product.ProductType;
+import de.fhdw.webshop.messaging.OrderCreatedEvent;
+import de.fhdw.webshop.messaging.OrderEventPublisher;
 import de.fhdw.webshop.productbundle.ProductBundleService;
 import de.fhdw.webshop.reservation.StockReservationService;
 import de.fhdw.webshop.user.DeliveryAddress;
@@ -113,6 +115,7 @@ public class OrderService {
     private final WishlistService wishlistService;
     private final StockReservationService stockReservationService;
     private final ProductBundleService productBundleService;
+    private final OrderEventPublisher orderEventPublisher;
 
     @Value("${app.frontend.base-url:http://localhost:5173}")
     private String frontendBaseUrl;
@@ -278,6 +281,7 @@ public class OrderService {
         markCheckoutCodeAsUsed(preparedOrder, savedOrder, customer);
         boolean confirmationEmailSent = sendOrderConfirmation(savedOrder);
         sendGiftCardEmails(savedOrder);
+        orderEventPublisher.publishOrderCreated(toOrderCreatedEvent(savedOrder));
         return toResponse(savedOrder, confirmationEmailSent);
     }
 
@@ -297,6 +301,7 @@ public class OrderService {
         markCheckoutCodeAsUsed(preparedOrder, savedOrder, null);
         boolean confirmationEmailSent = sendOrderConfirmation(savedOrder);
         sendGiftCardEmails(savedOrder);
+        orderEventPublisher.publishOrderCreated(toOrderCreatedEvent(savedOrder));
         return toResponse(savedOrder, confirmationEmailSent);
     }
 
@@ -1627,4 +1632,18 @@ public class OrderService {
             String code,
             String type
     ) {}
+
+    private OrderCreatedEvent toOrderCreatedEvent(Order order) {
+        int itemCount = order.getItems() == null ? 0 : order.getItems().size();
+        Long customerId = order.getCustomer() == null ? null : order.getCustomer().getId();
+        return new OrderCreatedEvent(
+                order.getId(),
+                order.getOrderNumber(),
+                customerId,
+                order.getCustomerEmail(),
+                order.getTotalPrice(),
+                itemCount,
+                Instant.now()
+        );
+    }
 }
