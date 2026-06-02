@@ -24,7 +24,7 @@ public class ProductReviewController {
     @GetMapping("/api/products/{productId}/feedback")
     public ResponseEntity<Map<String, Object>> listFeedback(@PathVariable Long productId) {
         List<ProductFeedbackDto> reviews = productFeedbackRepository
-                .findByProductIdOrderByCreatedAtDesc(productId)
+                .findByProductIdAndApprovedTrueOrderByCreatedAtDesc(productId)
                 .stream()
                 .map(f -> new ProductFeedbackDto(
                         f.getId(),

@@ -16,4 +16,5 @@ public class ProductFeedback {
     private String comment;
     private LocalDateTime createdAt = LocalDateTime.now();
     private String source;
+    private Boolean approved = false;
 }

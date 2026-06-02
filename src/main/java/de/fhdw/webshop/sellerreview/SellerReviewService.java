@@ -52,7 +52,7 @@ public class SellerReviewService {
 
     @Transactional(readOnly = true)
     public List<SellerReviewResponse> listReviewsForSeller(String sellerName) {
-        return sellerReviewRepository.findBySellerNameIgnoreCaseOrderByCreatedAtDesc(sellerName)
+        return sellerReviewRepository.findBySellerNameIgnoreCaseAndApprovedTrueOrderByCreatedAtDesc(sellerName)
                 .stream()
                 .map(review -> toResponse(review, null))
                 .toList();
