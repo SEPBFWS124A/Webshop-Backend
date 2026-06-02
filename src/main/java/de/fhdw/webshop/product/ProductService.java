@@ -226,7 +226,9 @@ public class ProductService {
                 product.getParentProduct() == null
                         ? product.getVariants().stream().map(this::toResponse).toList()
                         : List.of(),
-                product.getCreatedAt()
+                product.getCreatedAt(),
+                product.getSupplierName(),
+                product.getSupplierLeadTimeDays()
         );
     }
 
@@ -248,6 +250,12 @@ public class ProductService {
         product.setPersonalizable(personalizable);
         product.setPersonalizationMaxLength(resolvePersonalizationMaxLength(personalizable, productRequest.personalizationMaxLength()));
         product.setHasVariants(productRequest.hasVariants());
+        if (productRequest.supplierName() != null) {
+            product.setSupplierName(trimToNull(productRequest.supplierName()));
+        }
+        if (productRequest.supplierLeadTimeDays() != null) {
+            product.setSupplierLeadTimeDays(productRequest.supplierLeadTimeDays());
+        }
     }
 
     private void syncVariants(Product parent, ProductRequest productRequest) {
