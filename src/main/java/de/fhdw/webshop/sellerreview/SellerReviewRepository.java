@@ -20,18 +20,26 @@ public interface SellerReviewRepository extends JpaRepository<SellerReview, Long
 
     List<SellerReview> findBySellerNameIgnoreCaseAndApprovedTrueOrderByCreatedAtDesc(String sellerName);
 
+    Page<SellerReview> findAllByOrderByCreatedAtDesc(Pageable pageable);
+
+    Page<SellerReview> findByApprovedOrderByCreatedAtDesc(Boolean approved, Pageable pageable);
+
     @Query("""
-            SELECT r FROM SellerReview r
-            WHERE (:approvedFilter IS NULL OR r.approved = :approvedFilter)
-            AND (:search IS NULL OR
-                LOWER(r.comment) LIKE LOWER(CONCAT('%', :search, '%'))
-                OR LOWER(r.sellerName) LIKE LOWER(CONCAT('%', :search, '%'))
-                OR LOWER(r.customer.username) LIKE LOWER(CONCAT('%', :search, '%')))
+            SELECT r FROM SellerReview r JOIN r.customer c
+            WHERE LOWER(r.comment) LIKE LOWER(CONCAT('%', :search, '%'))
+               OR LOWER(r.sellerName) LIKE LOWER(CONCAT('%', :search, '%'))
+               OR LOWER(c.username) LIKE LOWER(CONCAT('%', :search, '%'))
             ORDER BY r.createdAt DESC
             """)
-    Page<SellerReview> findAllForAdmin(
-            @Param("approvedFilter") Boolean approvedFilter,
-            @Param("search") String search,
-            Pageable pageable
-    );
+    Page<SellerReview> findBySearchTermOrderByCreatedAtDesc(@Param("search") String search, Pageable pageable);
+
+    @Query("""
+            SELECT r FROM SellerReview r JOIN r.customer c
+            WHERE r.approved = :approved
+            AND (LOWER(r.comment) LIKE LOWER(CONCAT('%', :search, '%'))
+               OR LOWER(r.sellerName) LIKE LOWER(CONCAT('%', :search, '%'))
+               OR LOWER(c.username) LIKE LOWER(CONCAT('%', :search, '%')))
+            ORDER BY r.createdAt DESC
+            """)
+    Page<SellerReview> findByApprovedAndSearchTerm(@Param("approved") Boolean approved, @Param("search") String search, Pageable pageable);
 }
