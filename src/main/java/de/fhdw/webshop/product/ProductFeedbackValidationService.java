@@ -58,8 +58,8 @@ public class ProductFeedbackValidationService {
 
     @Transactional(readOnly = true)
     public ProductFeedbackStatsResponse getStats(Long productId) {
-        Double avg = productFeedbackRepository.findAverageRatingByProductId(productId);
-        long count = productFeedbackRepository.countByProductId(productId);
+        Double avg = productFeedbackRepository.findAverageRatingByProductIdApproved(productId);
+        long count = productFeedbackRepository.countByProductIdAndApprovedTrue(productId);
         return new ProductFeedbackStatsResponse(avg != null ? avg : 0.0, count);
     }
 

@@ -46,6 +46,9 @@ public class SellerReview {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    @Column(nullable = false)
+    private Boolean approved = false;
+
     @PrePersist
     void onCreate() {
         createdAt = Instant.now();
