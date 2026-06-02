@@ -74,7 +74,7 @@ public class AdminNavigationService {
                             item("product-bundles", "Produktbundles", "/admin/products/bundles", "pi pi-box", SALES_REPORTING_ROLES),
                             item("volume-discounts", "Volumenrabatte", "/admin/products/volume-discounts", "pi pi-percentage", SALES_REPORTING_ROLES),
                             item("warehouse", "Lager & Versand", "/admin/products/warehouse", "pi pi-truck", WAREHOUSE_ROLES),
-                            item("stock-reservations", "Bestandsreservierungen", "/admin/products/stock-reservations", "pi pi-clock", ADMIN_ROLES)
+                            item("stock-reservations", "Bestandsreservierungen", "/admin/products/stock-reservations", "pi pi-clock", WAREHOUSE_ROLES)
                     )
             ),
             new NavigationGroup(
