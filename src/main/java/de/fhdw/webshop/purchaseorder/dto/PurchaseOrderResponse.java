@@ -14,5 +14,7 @@ public record PurchaseOrderResponse(
         PurchaseOrderStatus status,
         Integer aiSuggestedQuantity,
         Instant orderedAt,
-        Instant receivedAt
+        Instant receivedAt,
+        Long warehouseLocationId,
+        String warehouseLocationName
 ) {}

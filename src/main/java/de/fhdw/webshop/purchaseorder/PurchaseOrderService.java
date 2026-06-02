@@ -8,6 +8,10 @@ import de.fhdw.webshop.purchaseorder.dto.CreatePurchaseOrderRequest;
 import de.fhdw.webshop.purchaseorder.dto.PurchaseOrderResponse;
 import de.fhdw.webshop.stockforecast.SoldQuantityRepository;
 import de.fhdw.webshop.user.User;
+import de.fhdw.webshop.warehouse.WarehouseLocation;
+import de.fhdw.webshop.warehouse.WarehouseLocationRepository;
+import de.fhdw.webshop.warehouse.WarehouseProductStock;
+import de.fhdw.webshop.warehouse.WarehouseProductStockRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,6 +34,8 @@ public class PurchaseOrderService {
     private final ProductRepository productRepository;
     private final SoldQuantityRepository soldQuantityRepository;
     private final OllamaClient ollamaClient;
+    private final WarehouseLocationRepository warehouseLocationRepository;
+    private final WarehouseProductStockRepository warehouseProductStockRepository;
 
     @Transactional(readOnly = true)
     public List<PurchaseOrderResponse> listAll() {
@@ -45,6 +51,12 @@ public class PurchaseOrderService {
 
         int aiSuggestedQuantity = suggestQuantity(product);
 
+        WarehouseLocation warehouse = null;
+        if (request.warehouseLocationId() != null) {
+            warehouse = warehouseLocationRepository.findById(request.warehouseLocationId())
+                    .orElse(null);
+        }
+
         PurchaseOrder purchaseOrder = new PurchaseOrder();
         purchaseOrder.setProduct(product);
         purchaseOrder.setQuantity(request.quantity());
@@ -55,10 +67,16 @@ public class PurchaseOrderService {
         );
         purchaseOrder.setAiSuggestedQuantity(aiSuggestedQuantity);
         purchaseOrder.setOrderedByUser(actingUser);
+        purchaseOrder.setWarehouseLocation(warehouse);
 
         return toResponse(purchaseOrderRepository.save(purchaseOrder));
     }
 
+    /**
+     * #138 — Confirm goods receipt.
+     * Updates both the global product.stock and the warehouse-specific
+     * warehouse_product_stocks entry so the AdminInventoryPage reflects the change.
+     */
     @Transactional
     public PurchaseOrderResponse confirmReceipt(Long purchaseOrderId, User actingUser) {
         PurchaseOrder purchaseOrder = purchaseOrderRepository.findById(purchaseOrderId)
@@ -68,9 +86,37 @@ public class PurchaseOrderService {
             throw new IllegalStateException("Wareneingang wurde bereits bestätigt.");
         }
 
-        Product product = purchaseOrder.getProduct();
-        product.setStock(product.getStock() + purchaseOrder.getQuantity());
+        int qty = purchaseOrder.getQuantity();
+        Product product = productRepository.findById(purchaseOrder.getProduct().getId())
+                .orElseThrow(() -> new EntityNotFoundException("Product not found"));
+
+        // 1. Update global stock on the product
+        product.setStock(product.getStock() + qty);
         productRepository.save(product);
+
+        // 2. Update warehouse-specific stock so AdminInventoryPage reflects the change
+        WarehouseLocation warehouse = purchaseOrder.getWarehouseLocation();
+        if (warehouse == null) {
+            // Fallback: use the first available warehouse location
+            warehouse = warehouseLocationRepository.findAll().stream().findFirst().orElse(null);
+        }
+        if (warehouse != null) {
+            final WarehouseLocation wh = warehouse;
+            WarehouseProductStock stock = warehouseProductStockRepository
+                    .findByProductIdAndWarehouseLocationId(product.getId(), wh.getId())
+                    .orElseGet(() -> {
+                        WarehouseProductStock newStock = new WarehouseProductStock();
+                        newStock.setProduct(product);
+                        newStock.setWarehouseLocation(wh);
+                        newStock.setQuantity(0);
+                        return newStock;
+                    });
+            stock.setQuantity(stock.getQuantity() + qty);
+            warehouseProductStockRepository.save(stock);
+            log.info("Received {} units of product {} into warehouse {}", qty, product.getId(), wh.getId());
+        } else {
+            log.warn("No warehouse location available for purchase order {}; only global stock updated", purchaseOrderId);
+        }
 
         purchaseOrder.setStatus(PurchaseOrderStatus.RECEIVED);
         purchaseOrder.setReceivedAt(Instant.now());
@@ -121,6 +167,7 @@ public class PurchaseOrderService {
     }
 
     private PurchaseOrderResponse toResponse(PurchaseOrder po) {
+        WarehouseLocation wh = po.getWarehouseLocation();
         return new PurchaseOrderResponse(
                 po.getId(),
                 po.getProduct().getId(),
@@ -131,7 +178,9 @@ public class PurchaseOrderService {
                 po.getStatus(),
                 po.getAiSuggestedQuantity(),
                 po.getOrderedAt(),
-                po.getReceivedAt()
+                po.getReceivedAt(),
+                wh != null ? wh.getId() : null,
+                wh != null ? wh.getName() : null
         );
     }
 }
