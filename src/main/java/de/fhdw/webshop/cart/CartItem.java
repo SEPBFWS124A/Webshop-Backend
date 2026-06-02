@@ -68,4 +68,7 @@ public class CartItem {
 
     @Column(name = "added_at", nullable = false, updatable = false)
     private Instant addedAt = Instant.now();
+
+    @Column(name = "affiliate_code", length = 12)
+    private String affiliateCode;
 }

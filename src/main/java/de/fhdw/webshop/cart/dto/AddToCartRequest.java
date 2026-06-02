@@ -12,5 +12,6 @@ public record AddToCartRequest(
         String giftCardRecipientEmail,
         String giftCardMessage,
         String sharedWishlistToken,
-        String sharedWishlistListId
+        String sharedWishlistListId,
+        String affiliateCode
 ) {}

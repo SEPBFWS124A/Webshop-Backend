@@ -20,6 +20,7 @@ import de.fhdw.webshop.order.dto.OrderApprovalResponse;
 import de.fhdw.webshop.order.dto.OrderPreviewItemResponse;
 import de.fhdw.webshop.order.dto.OrderPreviewResponse;
 import de.fhdw.webshop.order.dto.OrderResponse;
+import de.fhdw.webshop.affiliate.AffiliateService;
 import de.fhdw.webshop.order.dto.PlaceOrderRequest;
 import de.fhdw.webshop.pickup.PickupStore;
 import de.fhdw.webshop.pickup.PickupStoreRepository;
@@ -115,6 +116,7 @@ public class OrderService {
     private final WishlistService wishlistService;
     private final StockReservationService stockReservationService;
     private final ProductBundleService productBundleService;
+    private final AffiliateService affiliateService;
     private final OrderEventPublisher orderEventPublisher;
 
     @Value("${app.frontend.base-url:http://localhost:5173}")
@@ -276,9 +278,16 @@ public class OrderService {
             cartService.clearCartSilently(customer.getId());
             return toResponse(savedOrder);
         }
+        // Affiliate-Code aus CartItems lesen, bevor der Warenkorb geleert wird
+        String affiliateCode = cartRepository.findByUserId(customer.getId()).stream()
+                .filter(item -> item.getAffiliateCode() != null)
+                .map(CartItem::getAffiliateCode)
+                .findFirst()
+                .orElse(placeOrderRequest != null ? placeOrderRequest.affiliateCode() : null);
         Order savedOrder = persistPreparedOrder(preparedOrder);
         cartService.clearCartSilently(customer.getId());
         markCheckoutCodeAsUsed(preparedOrder, savedOrder, customer);
+        affiliateService.processAffiliateConversions(savedOrder, affiliateCode);
         boolean confirmationEmailSent = sendOrderConfirmation(savedOrder);
         sendGiftCardEmails(savedOrder);
         orderEventPublisher.publishOrderCreated(toOrderCreatedEvent(savedOrder));
@@ -299,6 +308,8 @@ public class OrderService {
         PreparedOrder preparedOrder = prepareGuestOrder(placeOrderRequest);
         Order savedOrder = persistPreparedOrder(preparedOrder);
         markCheckoutCodeAsUsed(preparedOrder, savedOrder, null);
+        affiliateService.processAffiliateConversions(
+                savedOrder, placeOrderRequest != null ? placeOrderRequest.affiliateCode() : null);
         boolean confirmationEmailSent = sendOrderConfirmation(savedOrder);
         sendGiftCardEmails(savedOrder);
         orderEventPublisher.publishOrderCreated(toOrderCreatedEvent(savedOrder));

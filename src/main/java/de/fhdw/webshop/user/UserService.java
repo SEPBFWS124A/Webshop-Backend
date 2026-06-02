@@ -117,6 +117,18 @@ public class UserService {
                 .orElseThrow(() -> new EntityNotFoundException("User not found: " + userId));
     }
 
+    @Transactional
+    public void addRole(User user, UserRole role) {
+        user.getRoles().add(role);
+        userRepository.save(user);
+    }
+
+    @Transactional
+    public void removeRole(User user, UserRole role) {
+        user.getRoles().remove(role);
+        userRepository.save(user);
+    }
+
     private UserProfileResponse toProfileResponse(User user) {
         return new UserProfileResponse(
                 user.getId(),

@@ -121,7 +121,7 @@ INSERT INTO affiliate_links (affiliate_profile_id, product_id, tracking_code, cl
 SELECT
     ap.id,
     p.id,
-    'DEMOAFFIL3001',
+    'DEMOAFFIL301',
     47,
     TRUE,
     NOW() - INTERVAL '20 days'
