@@ -3,6 +3,7 @@ package de.fhdw.webshop.user;
 /**
  * Roles that can be assigned to a user account.
  * CUSTOMER: regular end-user who can browse products and place orders.
+ * AFFILIATE_CUSTOMER: customer who has been approved for the affiliate program; always held alongside CUSTOMER.
  * EMPLOYEE: internal staff with read access to customer and product data.
  * SALES_EMPLOYEE: employee with additional authority to manage pricing, discounts, and promotions.
  * WAREHOUSE_EMPLOYEE: employee responsible for picking, packing, and shipping orders.
@@ -10,6 +11,7 @@ package de.fhdw.webshop.user;
  */
 public enum UserRole {
     CUSTOMER,
+    AFFILIATE_CUSTOMER,
     SELLER,
     EMPLOYEE,
     SALES_EMPLOYEE,
