@@ -145,6 +145,26 @@ public class SystemNotificationService {
         return notification;
     }
 
+    @Transactional
+    public SystemNotification createPriceAlertNotification(
+            User recipient,
+            Long productId,
+            String productName,
+            String message,
+            String targetUrl
+    ) {
+        SystemNotification notification = new SystemNotification();
+        notification.setType(SystemNotificationType.PRICE_ALERT_TRIGGERED);
+        notification.setRecipientUser(recipient);
+        notification.setProductId(productId);
+        notification.setProductName(productName);
+        notification.setCurrentPeriodUnits(0);
+        notification.setPreviousPeriodUnits(0);
+        notification.setCustomMessage(message);
+        notification.setTargetUrl(targetUrl);
+        return repository.save(notification);
+    }
+
     private List<SystemNotification> repositoryFor(User currentUser) {
         if (isCustomerOnly(currentUser)) {
             return repository.findByRecipientUserIdOrderByCreatedAtDesc(currentUser.getId());
