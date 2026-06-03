@@ -271,6 +271,7 @@ class WarehouseControllerTest {
                 "max@example.test",
                 status,
                 false,
+                false,
                 "DE-33602",
                 "Germany · Bielefeld",
                 null,

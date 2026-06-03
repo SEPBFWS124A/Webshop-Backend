@@ -86,6 +86,16 @@ public class Order {
     @Column(nullable = false, columnDefinition = "order_status")
     private OrderStatus status = OrderStatus.PENDING;
 
+    /** #149 — Fulfillment tag: the order contains a restricted product and needs special shipping. */
+    @Column(name = "restricted_shipping", nullable = false)
+    private boolean restrictedShipping = false;
+
+    @Column(name = "restriction_verified_at")
+    private Instant restrictionVerifiedAt;
+
+    @Column(name = "restriction_verification_reference", length = 120)
+    private String restrictionVerificationReference;
+
     @Column(name = "coupon_code", length = 50)
     private String couponCode;
 

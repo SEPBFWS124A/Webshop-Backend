@@ -13,6 +13,7 @@ public record WarehouseOrderResponse(
         String customerEmail,
         OrderStatus status,
         boolean plusMember,
+        boolean restrictedShipping,
         String regionKey,
         String regionLabel,
         String truckIdentifier,

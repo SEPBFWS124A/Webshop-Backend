@@ -1728,6 +1728,7 @@ public class WarehouseService {
                 order.getCustomerEmail(),
                 order.getStatus(),
                 plusMember,
+                order.isRestrictedShipping(),
                 regionKey,
                 regionLabels.getOrDefault(regionKey, "Unbekannte Route"),
                 order.getTruckIdentifier(),
