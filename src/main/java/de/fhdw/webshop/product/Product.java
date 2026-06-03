@@ -97,6 +97,14 @@ public class Product {
     @Column(name = "trade_in_enabled", nullable = false)
     private boolean tradeInEnabled = true;
 
+    /** #147 — When true, the product can only be bought by verified customers under specific conditions. */
+    @Column(nullable = false)
+    private boolean restricted = false;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "restriction_type", length = 40)
+    private RestrictionType restrictionType;
+
     /** Promoted products are highlighted on the storefront (US #26). */
     @Column(nullable = false)
     private boolean promoted = false;

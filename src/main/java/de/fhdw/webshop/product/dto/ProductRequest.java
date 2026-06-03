@@ -1,6 +1,7 @@
 package de.fhdw.webshop.product.dto;
 
 import de.fhdw.webshop.product.ProductEcoScore;
+import de.fhdw.webshop.product.RestrictionType;
 
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
@@ -28,5 +29,7 @@ public record ProductRequest(
         List<ProductVariantAttributeRequest> variantAttributes,
         List<ProductVariantRequest> variants,
         String supplierName,
-        Integer supplierLeadTimeDays
+        Integer supplierLeadTimeDays,
+        Boolean restricted,
+        RestrictionType restrictionType
 ) {}

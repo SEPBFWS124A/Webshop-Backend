@@ -115,8 +115,10 @@ class ProductServiceVariantTest {
                         new ProductVariantAttributeRequest("Groesse", List.of("S", "M"))
                 ),
                 variants,
-                "EcoLogistics GmbH", 
-                3
+                "EcoLogistics GmbH",
+                3,
+                false,
+                null
         );
     }
 
