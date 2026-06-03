@@ -2,11 +2,13 @@ package de.fhdw.webshop.product;
 
 import de.fhdw.webshop.admin.AuditInitiator;
 import de.fhdw.webshop.admin.AuditLogService;
+import de.fhdw.webshop.pricealert.ProductPriceChangedEvent;
 import de.fhdw.webshop.product.dto.*;
 import de.fhdw.webshop.reservation.StockReservationService;
 import de.fhdw.webshop.user.User;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,6 +30,7 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final AuditLogService auditLogService;
     private final StockReservationService stockReservationService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional(readOnly = true)
     public List<ProductResponse> listProducts(Boolean purchasableOnly, String category, String searchTerm) {
@@ -89,11 +92,15 @@ public class ProductService {
         if (product.getParentProduct() != null) {
             throw new IllegalArgumentException("Variant products must be edited through their parent product.");
         }
+        BigDecimal oldPrice = product.getRecommendedRetailPrice();
         applyProductRequest(product, productRequest);
         syncVariants(product, productRequest);
         Product savedProduct = productRepository.save(product);
         recordProductAction(actingUser, "UPDATE_PRODUCT", savedProduct,
                 "Product updated: " + savedProduct.getName());
+        if (oldPrice == null || oldPrice.compareTo(savedProduct.getRecommendedRetailPrice()) != 0) {
+            eventPublisher.publishEvent(new ProductPriceChangedEvent(savedProduct.getId()));
+        }
         return toResponse(savedProduct);
     }
 
@@ -154,6 +161,7 @@ public class ProductService {
         Product savedProduct = productRepository.save(product);
         recordProductAction(actingUser, "UPDATE_PRODUCT_PRICE", savedProduct,
                 "Product price updated to " + updatePriceRequest.recommendedRetailPrice() + ": " + savedProduct.getName());
+        eventPublisher.publishEvent(new ProductPriceChangedEvent(savedProduct.getId()));
         return toResponse(savedProduct);
     }
 

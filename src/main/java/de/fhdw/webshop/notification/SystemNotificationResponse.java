@@ -71,6 +71,10 @@ public record SystemNotificationResponse(
                     "Dein Support-Ticket \"%s\" wurde geschlossen.",
                     n.getProductName()
             );
+            case PRICE_ALERT_TRIGGERED -> String.format(
+                    "Preisalarm: \"%s\" hat deinen Wunschpreis erreicht!",
+                    n.getProductName()
+            );
         };
     }
 

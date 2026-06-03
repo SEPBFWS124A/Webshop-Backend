@@ -7,6 +7,7 @@ import de.fhdw.webshop.product.dto.ProductVariantAttributeRequest;
 import de.fhdw.webshop.product.dto.ProductVariantRequest;
 import de.fhdw.webshop.reservation.StockReservationService;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -91,7 +92,7 @@ class ProductServiceVariantTest {
         when(productRepository.save(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(stockReservationService.getAvailableQuantity(any(Product.class)))
                 .thenAnswer(invocation -> invocation.<Product>getArgument(0).getStock());
-        return new ProductService(productRepository, mock(AuditLogService.class), stockReservationService);
+        return new ProductService(productRepository, mock(AuditLogService.class), stockReservationService, mock(ApplicationEventPublisher.class));
     }
 
     private ProductRequest request(List<ProductVariantRequest> variants) {
