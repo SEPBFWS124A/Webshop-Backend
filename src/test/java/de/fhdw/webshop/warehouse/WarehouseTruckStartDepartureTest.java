@@ -5,6 +5,7 @@ import de.fhdw.webshop.admin.AuditLogService;
 import de.fhdw.webshop.order.Order;
 import de.fhdw.webshop.order.OrderRepository;
 import de.fhdw.webshop.order.OrderStatus;
+import de.fhdw.webshop.subscription.SubscriptionService;
 import de.fhdw.webshop.user.DeliveryAddressRepository;
 import de.fhdw.webshop.user.User;
 import de.fhdw.webshop.warehouse.dto.DepartureReadinessResponse;
@@ -527,11 +528,12 @@ class WarehouseTruckStartDepartureTest {
         AuditLogService auditLogService = mock(AuditLogService.class);
         ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
         WarehouseStockBalanceService balanceService = mock(WarehouseStockBalanceService.class);
+        SubscriptionService subscriptionService = mock(SubscriptionService.class);
 
         WarehouseService service = new WarehouseService(
                 orderRepo, deliveryAddressRepo, addressLookupService, productRepo,
                 warehouseLocationRepo, stockRepo, truckRepo, auditLogService,
-                eventPublisher, balanceService
+                eventPublisher, balanceService, subscriptionService
         );
 
         when(orderRepo.findByTruckIdentifierOrderByCreatedAtAsc(anyString())).thenReturn(List.of());
