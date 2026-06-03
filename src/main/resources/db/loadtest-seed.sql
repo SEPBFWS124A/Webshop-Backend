@@ -27,7 +27,7 @@ INSERT INTO products (
 )
 SELECT
     'Load Test Produkt ' || series,
-    'Automatisch generiertes Produkt fuer den Lasttest, Nummer ' || series,
+    'Automatisch generiertes Produkt für den Lasttest, Nummer ' || series,
     ROUND((5 + random() * 995)::numeric, 2),
     ROUND((random() * 200)::numeric, 3),
     (ARRAY['A', 'B', 'C', 'D', 'E'])[1 + floor(random() * 5)::int],
@@ -59,7 +59,7 @@ INSERT INTO products (
 )
 VALUES (
     'Load Test Bestell Artikel',
-    'Hochlager-Artikel fuer den optionalen Bestell-Lasttest (siehe docs/loadtest.md)',
+    'Hochlager-Artikel für den optionalen Bestell-Lasttest (siehe docs/loadtest.md)',
     9.99, 'C', 'Loadtest', 100000000, 'LOAD-ORDER-PRODUCT', TRUE
 );
 

@@ -1,6 +1,7 @@
 package de.fhdw.webshop.sellerportal;
 
 import de.fhdw.webshop.admin.AuditLogService;
+import de.fhdw.webshop.marketplacedispute.MarketplaceDisputeRepository;
 import de.fhdw.webshop.order.Order;
 import de.fhdw.webshop.order.OrderItem;
 import de.fhdw.webshop.order.OrderStatus;
@@ -38,6 +39,7 @@ class SellerPortalServiceTest {
         SellerPayoutItemRepository sellerPayoutItemRepository = mock(SellerPayoutItemRepository.class);
         SellerPortalOrderItemRepository sellerPortalOrderItemRepository = mock(SellerPortalOrderItemRepository.class);
         SellerPortalReturnRequestItemRepository sellerPortalReturnRequestItemRepository = mock(SellerPortalReturnRequestItemRepository.class);
+        MarketplaceDisputeRepository marketplaceDisputeRepository = mock(MarketplaceDisputeRepository.class);
 
         SellerPortalService service = new SellerPortalService(
                 sellerProfileRepository,
@@ -45,6 +47,7 @@ class SellerPortalServiceTest {
                 sellerPayoutItemRepository,
                 sellerPortalOrderItemRepository,
                 sellerPortalReturnRequestItemRepository,
+                marketplaceDisputeRepository,
                 mock(AuditLogService.class));
 
         User seller = sellerUser();
@@ -73,6 +76,8 @@ class SellerPortalServiceTest {
                 .thenReturn(List.of(orderItem));
         when(sellerPortalReturnRequestItemRepository.findBySellerName(profile.getDisplayName()))
                 .thenReturn(List.of(returnItem));
+        when(marketplaceDisputeRepository.findBySellerNameIgnoreCaseAndStatusIn(any(), any()))
+                .thenReturn(List.of());
         when(sellerPayoutRepository.findBySellerProfileIdOrderByPeriodStartDesc(profile.getId()))
                 .thenAnswer(invocation -> storedPayouts.stream()
                         .sorted((left, right) -> right.getPeriodStart().compareTo(left.getPeriodStart()))

@@ -22,6 +22,7 @@ public record SellerOrderSummaryResponse(
         BigDecimal netAmount,
         boolean hasActiveReturn,
         boolean hasSettledReturn,
+        boolean payoutBlocked,
         boolean cancelled
 ) {
 }

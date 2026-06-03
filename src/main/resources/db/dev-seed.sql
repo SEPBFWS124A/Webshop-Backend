@@ -93,8 +93,8 @@ INSERT INTO advertisements (title, description, content_type, image_url, target_
 SELECT title, description, content_type, image_url, target_url, active, start_date, end_date
 FROM (
     VALUES
-      ('Sommeraktion im Home Office', 'Ergonomische Favoriten, clevere Bundles und schnelle Upgrades fuer deinen Arbeitsplatz.', 'IMAGE', '/standing-desk.jpg', '/products/3', TRUE, CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days'),
-      ('Top Auswahl fuer Entscheider', 'Vergleiche Bestseller, Empfehlungen und sofort verfuegbare Geraete direkt im Sortiment.', 'TEXT', NULL, '/', TRUE, CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days'),
+      ('Sommeraktion im Home Office', 'Ergonomische Favoriten, clevere Bundles und schnelle Upgrades für deinen Arbeitsplatz.', 'IMAGE', '/standing-desk.jpg', '/products/3', TRUE, CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days'),
+      ('Top Auswahl für Entscheider', 'Vergleiche Bestseller, Empfehlungen und sofort verfuegbare Geraete direkt im Sortiment.', 'TEXT', NULL, '/', TRUE, CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days'),
       ('Verkaeufer-Aktion vorbereiten', 'Diese Werbeflaeche ist angelegt, aber noch nicht aktiv geschaltet.', 'TEXT', NULL, '/admin/marketing/placements', FALSE, CURRENT_DATE + INTERVAL '7 days', CURRENT_DATE + INTERVAL '21 days')
 ) AS seed_data(title, description, content_type, image_url, target_url, active, start_date, end_date)
 WHERE NOT EXISTS (

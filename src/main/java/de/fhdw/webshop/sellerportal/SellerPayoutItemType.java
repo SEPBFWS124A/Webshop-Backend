@@ -4,5 +4,6 @@ public enum SellerPayoutItemType {
     SALE,
     RETURN_HOLDBACK,
     RETURN_SETTLEMENT,
+    DISPUTE_HOLDBACK,
     CORRECTION
 }

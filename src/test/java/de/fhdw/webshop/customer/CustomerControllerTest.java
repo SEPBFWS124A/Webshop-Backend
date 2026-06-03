@@ -153,7 +153,7 @@ class CustomerControllerTest {
 
         mockMvc.perform(patch("/api/customers/9/deactivate"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("Dieser Endpunkt gilt nur fuer Kundenkonten."));
+                .andExpect(jsonPath("$.message").value("Dieser Endpunkt gilt nur für Kundenkonten."));
 
         verify(userRepository, never()).save(any(User.class));
     }

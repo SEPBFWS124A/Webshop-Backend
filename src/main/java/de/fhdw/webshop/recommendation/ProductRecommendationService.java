@@ -51,7 +51,7 @@ public class ProductRecommendationService {
 
         List<ProductRecommendationItemResponse> aiRecommendations = requestAiRecommendations(
                 buildProductSystemPrompt(currentProduct, candidates, currentUser, resolvedLimit),
-                "Erzeuge passende Produktempfehlungen fuer die aktuelle Produktdetailseite.",
+                "Erzeuge passende Produktempfehlungen für die aktuelle Produktdetailseite.",
                 candidates,
                 resolvedLimit);
 
@@ -84,7 +84,7 @@ public class ProductRecommendationService {
 
         List<ProductRecommendationItemResponse> aiRecommendations = requestAiRecommendations(
                 buildCartSystemPrompt(cart, candidates, currentUser, resolvedLimit),
-                "Erzeuge passende Zusatzprodukte fuer den aktuellen Warenkorb.",
+                "Erzeuge passende Zusatzprodukte für den aktuellen Warenkorb.",
                 candidates,
                 resolvedLimit);
 
@@ -232,7 +232,7 @@ public class ProductRecommendationService {
                         product,
                         resolvedCategories.contains(product.category())
                                 ? "Ergaenzt die Kategorien aus Ihrem aktuellen Warenkorb."
-                                : "Sinnvolle Zusatzempfehlung fuer Ihren Einkauf.",
+                                : "Sinnvolle Zusatzempfehlung für Ihren Einkauf.",
                         "fallback"))
                 .toList();
     }
@@ -243,7 +243,7 @@ public class ProductRecommendationService {
             User currentUser,
             int limit) {
         StringBuilder builder = new StringBuilder("""
-                Du bist ein Empfehlungssystem fuer einen deutschen Webshop.
+                Du bist ein Empfehlungssystem für einen deutschen Webshop.
                 Antworte ausschliesslich mit JSON.
                 Format:
                 {
@@ -278,7 +278,7 @@ public class ProductRecommendationService {
             User currentUser,
             int limit) {
         StringBuilder builder = new StringBuilder("""
-                Du bist ein Empfehlungssystem fuer einen deutschen Webshop.
+                Du bist ein Empfehlungssystem für einen deutschen Webshop.
                 Antworte ausschliesslich mit JSON.
                 Format:
                 {
@@ -292,7 +292,7 @@ public class ProductRecommendationService {
                 - Waehle hoechstens %d Produkte aus.
                 - Nenne keine Produkte doppelt.
                 - Begruendungen muessen kurz, konkret und auf Deutsch sein.
-                - Empfiehl ergaenzende oder passende Zusatzprodukte fuer den Warenkorb.
+                - Empfiehl ergaenzende oder passende Zusatzprodukte für den Warenkorb.
                 """.formatted(limit));
 
         builder.append("\n[WARENKORB]\n");
@@ -354,7 +354,7 @@ public class ProductRecommendationService {
     }
 
     private String sanitizeReason(String reason) {
-        String normalized = defaultText(reason, "Passende Empfehlung fuer diesen Kontext.");
+        String normalized = defaultText(reason, "Passende Empfehlung für diesen Kontext.");
         return normalized.length() <= 140 ? normalized : normalized.substring(0, 137) + "...";
     }
 

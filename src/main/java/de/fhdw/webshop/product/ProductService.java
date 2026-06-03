@@ -514,10 +514,10 @@ public class ProductService {
             return null;
         }
         if (personalizationMaxLength == null || personalizationMaxLength <= 0) {
-            throw new IllegalArgumentException("Die maximale Zeichenlaenge fuer Personalisierung muss groesser als 0 sein.");
+            throw new IllegalArgumentException("Die maximale Zeichenlaenge für Personalisierung muss größer als 0 sein.");
         }
         if (personalizationMaxLength > 1000) {
-            throw new IllegalArgumentException("Die maximale Zeichenlaenge fuer Personalisierung darf hoechstens 1000 betragen.");
+            throw new IllegalArgumentException("Die maximale Zeichenlaenge für Personalisierung darf hoechstens 1000 betragen.");
         }
         return personalizationMaxLength;
     }
