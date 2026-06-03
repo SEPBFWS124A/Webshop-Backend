@@ -14,6 +14,7 @@ public record CartResponse(
         int co2EmissionCoveredItemCount,
         int co2EmissionTotalItemCount,
         String appliedCouponCode,
+        List<String> appliedAdditionalCouponCodes,
         List<String> messages,
         String discountType,
         String discountLabel,

@@ -88,6 +88,12 @@ public class CartService {
     /** US #75 — Optional coupon preview is included in the returned totals. */
     @Transactional
     public CartResponse getCart(Long userId, String couponCode) {
+        return getCart(userId, couponCode, null);
+    }
+
+    /** Coupon stacking: unlimited fixed-amount coupons can be combined. */
+    @Transactional
+    public CartResponse getCart(Long userId, String couponCode, List<String> additionalCouponCodes) {
         List<String> messages = normalizeCartQuantities(userId);
         List<CartItem> cartItems = cartRepository.findByUserId(userId);
         List<CartItemResponse> itemResponses = cartItems.stream()
@@ -100,20 +106,86 @@ public class CartService {
                 .setScale(2, RoundingMode.HALF_UP);
 
         Coupon coupon = resolveCoupon(couponCode, userId);
+        List<Coupon> additionalCoupons = additionalCouponCodes == null ? List.of() :
+                additionalCouponCodes.stream()
+                        .filter(c -> c != null && !c.isBlank())
+                        .map(c -> resolveCoupon(c, userId))
+                        .filter(java.util.Objects::nonNull)
+                        .toList();
         GiftCardRedemption giftCardRedemption = resolveGiftCardRedemption(couponCode, coupon);
-        boolean manualDiscountApplied = coupon != null || giftCardRedemption != null;
+
+        java.util.List<Coupon> allCoupons = new java.util.ArrayList<>();
+        if (coupon != null) {
+            allCoupons.add(coupon);
+        }
+        allCoupons.addAll(additionalCoupons);
+        List<Coupon> fixedCoupons = allCoupons.stream()
+                .filter(c -> c.getFixedAmountEur() != null)
+                .toList();
+        List<Coupon> percentCoupons = allCoupons.stream()
+                .filter(c -> c.getFixedAmountEur() == null && c.getDiscountPercent() != null)
+                .toList();
+
+        boolean manualDiscountApplied = !allCoupons.isEmpty() || giftCardRedemption != null;
         int totalItemCount = itemResponses.stream()
                 .mapToInt(CartItemResponse::quantity)
                 .sum();
-        VolumeDiscountResult volumeDiscount = volumeDiscountService.resolve(itemSubtotal, totalItemCount, manualDiscountApplied);
-        BigDecimal discountAmount = coupon != null
-                ? calculateDiscount(itemSubtotal, coupon)
-                : giftCardRedemption != null
-                    ? calculateGiftCardDiscount(itemSubtotal, giftCardRedemption)
-                : volumeDiscount.amount();
-        String discountType = resolveDiscountType(coupon, giftCardRedemption, volumeDiscount);
-        String discountLabel = resolveDiscountLabel(coupon, giftCardRedemption, volumeDiscount);
-        BigDecimal discountPercent = resolveDiscountPercent(coupon, giftCardRedemption, volumeDiscount);
+        // #freunde-werben — Festbetrag-Gutscheine (z. B. Freunde-werben-Gutscheine) lassen sich
+        // immer mit dem Mengenrabatt kombinieren. Nur Prozent-Gutscheine und Geschenkgutscheine
+        // schließen den Mengenrabatt aus.
+        boolean suppressesVolume = !percentCoupons.isEmpty() || giftCardRedemption != null;
+        VolumeDiscountResult volumeDiscount = volumeDiscountService.resolve(itemSubtotal, totalItemCount, suppressesVolume);
+
+        BigDecimal fixedTotal = fixedCoupons.stream()
+                .map(c -> calculateDiscount(itemSubtotal, c))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal baseDiscount;
+        if (!percentCoupons.isEmpty()) {
+            baseDiscount = percentCoupons.stream()
+                    .map(c -> calculateDiscount(itemSubtotal, c))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        } else if (giftCardRedemption != null) {
+            baseDiscount = calculateGiftCardDiscount(itemSubtotal, giftCardRedemption);
+        } else {
+            baseDiscount = volumeDiscount.amount();
+        }
+        BigDecimal discountAmount = baseDiscount.add(fixedTotal)
+                .min(itemSubtotal)
+                .setScale(2, RoundingMode.HALF_UP);
+
+        boolean volumeContributed = percentCoupons.isEmpty() && giftCardRedemption == null && volumeDiscount.applied();
+        String discountType;
+        if (!allCoupons.isEmpty()) {
+            discountType = "COUPON";
+        } else if (giftCardRedemption != null) {
+            discountType = "GIFT_CARD";
+        } else {
+            discountType = volumeDiscount.applied() ? VolumeDiscountService.DISCOUNT_TYPE : null;
+        }
+
+        java.util.List<String> labelParts = new java.util.ArrayList<>();
+        if (!allCoupons.isEmpty()) {
+            labelParts.add("Gutschein " + allCoupons.stream().map(Coupon::getCode)
+                    .collect(java.util.stream.Collectors.joining(" + ")));
+        }
+        if (giftCardRedemption != null) {
+            labelParts.add("Geschenkgutschein " + giftCardRedemption.item().getGiftCardCode());
+        }
+        if (volumeContributed) {
+            labelParts.add(volumeDiscount.label());
+        }
+        String discountLabel = labelParts.isEmpty() ? null : String.join(" + ", labelParts);
+
+        BigDecimal discountPercent;
+        if (volumeContributed && allCoupons.isEmpty() && giftCardRedemption == null) {
+            discountPercent = volumeDiscount.percent();
+        } else if (percentCoupons.size() == 1 && fixedCoupons.isEmpty()) {
+            discountPercent = percentCoupons.get(0).getDiscountPercent();
+        } else {
+            discountPercent = null;
+        }
+
+        List<String> appliedAdditional = additionalCoupons.stream().map(Coupon::getCode).toList();
         List<String> discountMessages = resolveDiscountMessages(volumeDiscount);
         BigDecimal subtotal = itemSubtotal.subtract(discountAmount)
                 .max(BigDecimal.ZERO)
@@ -160,7 +232,8 @@ public class CartService {
                 totalCo2EmissionKg,
                 co2EmissionCoveredItemCount,
                 co2EmissionTotalItemCount,
-                manualDiscountApplied ? couponCode.trim() : null,
+                manualDiscountApplied && couponCode != null ? couponCode.trim() : null,
+                appliedAdditional.isEmpty() ? null : appliedAdditional,
                 messages,
                 discountType,
                 discountLabel,
@@ -670,7 +743,9 @@ public class CartService {
         if (coupon == null || subtotal.compareTo(BigDecimal.ZERO) <= 0) {
             return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
         }
-
+        if (coupon.getFixedAmountEur() != null) {
+            return coupon.getFixedAmountEur().min(subtotal).setScale(2, RoundingMode.HALF_UP);
+        }
         BigDecimal multiplier = coupon.getDiscountPercent().divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
         return subtotal.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
     }
@@ -680,36 +755,6 @@ public class CartService {
             return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
         }
         return giftCardRedemption.amount().min(subtotal).setScale(2, RoundingMode.HALF_UP);
-    }
-
-    private String resolveDiscountType(Coupon coupon, GiftCardRedemption giftCardRedemption, VolumeDiscountResult volumeDiscount) {
-        if (coupon != null) {
-            return "COUPON";
-        }
-        if (giftCardRedemption != null) {
-            return "GIFT_CARD";
-        }
-        return volumeDiscount.applied() ? VolumeDiscountService.DISCOUNT_TYPE : null;
-    }
-
-    private String resolveDiscountLabel(Coupon coupon, GiftCardRedemption giftCardRedemption, VolumeDiscountResult volumeDiscount) {
-        if (coupon != null) {
-            return "Gutschein " + coupon.getCode();
-        }
-        if (giftCardRedemption != null) {
-            return "Geschenkgutschein " + giftCardRedemption.item().getGiftCardCode();
-        }
-        return volumeDiscount.label();
-    }
-
-    private BigDecimal resolveDiscountPercent(Coupon coupon, GiftCardRedemption giftCardRedemption, VolumeDiscountResult volumeDiscount) {
-        if (coupon != null) {
-            return coupon.getDiscountPercent();
-        }
-        if (giftCardRedemption != null) {
-            return null;
-        }
-        return volumeDiscount.percent();
     }
 
     private boolean isGiftCardCode(String couponCode) {

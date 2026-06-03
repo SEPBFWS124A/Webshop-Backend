@@ -243,6 +243,7 @@ class OrderServiceTest {
         StockReservationService stockReservationService = mock(StockReservationService.class);
         ProductBundleService productBundleService = mock(ProductBundleService.class);
         AffiliateService affiliateService = mock(AffiliateService.class);
+        de.fhdw.webshop.referral.ReferralService referralService = mock(de.fhdw.webshop.referral.ReferralService.class);
         OrderEventPublisher orderEventPublisher = mock(OrderEventPublisher.class);
         de.fhdw.webshop.subscription.SubscriptionService subscriptionService = mock(de.fhdw.webshop.subscription.SubscriptionService.class);
 
@@ -271,6 +272,7 @@ class OrderServiceTest {
                 stockReservationService,
                 productBundleService,
                 affiliateService,
+                referralService,
                 orderEventPublisher,
                 subscriptionService);
 
@@ -311,6 +313,7 @@ class OrderServiceTest {
     private static PlaceOrderRequest request(String approvalReason) {
         return new PlaceOrderRequest(
                 null,
+                null,
                 "employee@example.test",
                 "Employee Buyer",
                 "Keine Angabe",
@@ -334,6 +337,7 @@ class OrderServiceTest {
 
     private static PlaceOrderRequest requestWithPickupStore(Long pickupStoreId) {
         return new PlaceOrderRequest(
+                null,
                 null,
                 "employee@example.test",
                 "Employee Buyer",

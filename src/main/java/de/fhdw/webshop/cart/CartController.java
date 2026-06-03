@@ -9,6 +9,7 @@ import de.fhdw.webshop.cart.dto.QuickOrderPreviewResponse;
 import de.fhdw.webshop.cart.dto.UpdateCartItemQuantityRequest;
 import de.fhdw.webshop.user.User;
 import jakarta.validation.Valid;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -27,8 +28,9 @@ public class CartController {
     @GetMapping
     @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<CartResponse> getCart(@AuthenticationPrincipal User currentUser,
-                                                @RequestParam(required = false) String couponCode) {
-        return ResponseEntity.ok(cartService.getCart(currentUser.getId(), couponCode));
+                                                @RequestParam(required = false) String couponCode,
+                                                @RequestParam(required = false) List<String> additionalCouponCodes) {
+        return ResponseEntity.ok(cartService.getCart(currentUser.getId(), couponCode, additionalCouponCodes));
     }
 
     /** US #39 — Add an item to own cart. */

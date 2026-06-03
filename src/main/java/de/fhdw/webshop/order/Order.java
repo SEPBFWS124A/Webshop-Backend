@@ -99,6 +99,9 @@ public class Order {
     @Column(name = "coupon_code", length = 50)
     private String couponCode;
 
+    @Column(name = "additional_coupon_codes", columnDefinition = "TEXT")
+    private String additionalCouponCodes;
+
     @Column(name = "discount_amount", nullable = false, precision = 10, scale = 2)
     private BigDecimal discountAmount = BigDecimal.ZERO;
 

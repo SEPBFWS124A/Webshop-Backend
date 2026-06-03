@@ -75,6 +75,7 @@ public record SystemNotificationResponse(
                     "Preisalarm: \"%s\" hat deinen Wunschpreis erreicht!",
                     n.getProductName()
             );
+            case REFERRAL_REWARD_EARNED -> "Du hast einen Gutschein für eine erfolgreiche Einladung erhalten!";
         };
     }
 
