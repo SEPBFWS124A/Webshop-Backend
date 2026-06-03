@@ -118,6 +118,7 @@ public class OrderService {
     private final StockReservationService stockReservationService;
     private final ProductBundleService productBundleService;
     private final AffiliateService affiliateService;
+    private final de.fhdw.webshop.referral.ReferralService referralService;
     private final OrderEventPublisher orderEventPublisher;
     private final SubscriptionService subscriptionService;
 
@@ -295,6 +296,7 @@ public class OrderService {
         cartService.clearCartSilently(customer.getId());
         markCheckoutCodeAsUsed(preparedOrder, savedOrder, customer);
         affiliateService.processAffiliateConversions(savedOrder, affiliateCode);
+        referralService.grantReferrerRewardOnFirstOrder(customer);
         boolean confirmationEmailSent = sendOrderConfirmation(savedOrder);
         sendGiftCardEmails(savedOrder);
         orderEventPublisher.publishOrderCreated(toOrderCreatedEvent(savedOrder));
@@ -343,9 +345,14 @@ public class OrderService {
                 : resolveDeliveryAddress(customer, placeOrderRequest != null ? placeOrderRequest.deliveryAddress() : null);
         PaymentMethodSnapshot paymentMethod = resolvePaymentMethod(customer, paymentMethodRequest);
         String couponCode = placeOrderRequest != null ? placeOrderRequest.couponCode() : null;
-        String couponCode2 = placeOrderRequest != null ? placeOrderRequest.couponCode2() : null;
+        List<String> additionalCouponCodes = placeOrderRequest != null ? placeOrderRequest.additionalCouponCodes() : null;
         CheckoutDiscount checkoutDiscount = resolveCheckoutDiscount(couponCode, customer);
-        CheckoutDiscount checkoutDiscount2 = resolveCheckoutDiscount(couponCode2, customer);
+        List<CheckoutDiscount> additionalDiscounts = additionalCouponCodes == null ? List.of() :
+                additionalCouponCodes.stream()
+                        .filter(c -> c != null && !c.isBlank())
+                        .map(c -> resolveCheckoutDiscount(c, customer))
+                        .filter(java.util.Objects::nonNull)
+                        .toList();
         String orderNumber = placeOrderRequest != null ? placeOrderRequest.previewOrderNumber() : null;
         boolean carbonCompensationSelected = placeOrderRequest != null && Boolean.TRUE.equals(placeOrderRequest.carbonCompensationSelected());
         BigDecimal approvalBudgetLimit = resolveApprovalBudgetLimit(customer);
@@ -383,7 +390,7 @@ public class OrderService {
                 shippingMethod,
                 paymentMethod,
                 checkoutDiscount,
-                checkoutDiscount2,
+                additionalDiscounts,
                 customer.getId(),
                 placeOrderRequest != null && Boolean.TRUE.equals(placeOrderRequest.allowUnverifiedAddress()),
                 carbonCompensationSelected,
@@ -448,7 +455,7 @@ public class OrderService {
                 resolveShippingMethod(placeOrderRequest),
                 resolveGuestPaymentMethod(placeOrderRequest.paymentMethod()),
                 checkoutDiscount,
-                null,
+                List.of(),
                 null,
                 Boolean.TRUE.equals(placeOrderRequest.allowUnverifiedAddress()),
                 Boolean.TRUE.equals(placeOrderRequest.carbonCompensationSelected()),
@@ -466,7 +473,7 @@ public class OrderService {
                                        ShippingMethod shippingMethod,
                                        PaymentMethodSnapshot paymentMethod,
                                        CheckoutDiscount checkoutDiscount,
-                                       CheckoutDiscount checkoutDiscount2,
+                                       List<CheckoutDiscount> additionalDiscounts,
                                        Long discountCustomerId,
                                        boolean allowUnverifiedAddress,
                                        boolean carbonCompensationSelected,
@@ -492,7 +499,11 @@ public class OrderService {
         order.setPaymentMethodType(paymentMethod.methodType());
         order.setPaymentMaskedDetails(paymentMethod.maskedDetails());
         order.setCouponCode(checkoutDiscount != null ? checkoutDiscount.code() : null);
-        order.setCouponCode2(checkoutDiscount2 != null ? checkoutDiscount2.code() : null);
+        if (additionalDiscounts != null && !additionalDiscounts.isEmpty()) {
+            order.setAdditionalCouponCodes(additionalDiscounts.stream()
+                    .map(CheckoutDiscount::code)
+                    .collect(java.util.stream.Collectors.joining(",")));
+        }
         order.setPickupStore(pickupStore);
 
         BigDecimal itemSubtotal = BigDecimal.ZERO;
@@ -570,18 +581,81 @@ public class OrderService {
         int totalItemCount = preparedItems.stream()
                 .mapToInt(PreparedOrderItem::quantity)
                 .sum();
-        boolean hasManualDiscount = checkoutDiscount != null || checkoutDiscount2 != null;
-        VolumeDiscountResult volumeDiscount = volumeDiscountService.resolve(itemSubtotal, totalItemCount, hasManualDiscount);
-        BigDecimal discountAmount;
-        if (checkoutDiscount != null && checkoutDiscount2 != null) {
-            discountAmount = calculateCheckoutDiscount(itemSubtotal, checkoutDiscount)
-                    .add(calculateCheckoutDiscount(itemSubtotal, checkoutDiscount2))
-                    .min(itemSubtotal)
-                    .setScale(2, RoundingMode.HALF_UP);
-        } else if (checkoutDiscount != null) {
-            discountAmount = calculateCheckoutDiscount(itemSubtotal, checkoutDiscount);
+        final BigDecimal finalItemSubtotal = itemSubtotal;
+        java.util.List<CheckoutDiscount> allDiscounts = new java.util.ArrayList<>();
+        if (checkoutDiscount != null) {
+            allDiscounts.add(checkoutDiscount);
+        }
+        if (additionalDiscounts != null) {
+            allDiscounts.addAll(additionalDiscounts);
+        }
+        List<CheckoutDiscount> fixedDiscounts = allDiscounts.stream()
+                .filter(d -> d.coupon() != null && d.coupon().getFixedAmountEur() != null)
+                .toList();
+        List<CheckoutDiscount> percentDiscounts = allDiscounts.stream()
+                .filter(d -> d.coupon() != null && d.coupon().getFixedAmountEur() == null
+                        && d.coupon().getDiscountPercent() != null)
+                .toList();
+        List<CheckoutDiscount> giftCardDiscounts = allDiscounts.stream()
+                .filter(d -> d.giftCardItem() != null)
+                .toList();
+        List<CheckoutDiscount> couponDiscounts = allDiscounts.stream()
+                .filter(d -> d.coupon() != null)
+                .toList();
+
+        // #freunde-werben — Festbetrag-Gutscheine kombinieren sich immer mit dem Mengenrabatt;
+        // nur Prozent-Gutscheine und Geschenkgutscheine schließen ihn aus.
+        boolean suppressesVolume = !percentDiscounts.isEmpty() || !giftCardDiscounts.isEmpty();
+        VolumeDiscountResult volumeDiscount = volumeDiscountService.resolve(itemSubtotal, totalItemCount, suppressesVolume);
+
+        BigDecimal fixedTotal = fixedDiscounts.stream()
+                .map(d -> calculateCheckoutDiscount(finalItemSubtotal, d))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal baseDiscount;
+        if (!percentDiscounts.isEmpty()) {
+            baseDiscount = percentDiscounts.stream()
+                    .map(d -> calculateCheckoutDiscount(finalItemSubtotal, d))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        } else if (!giftCardDiscounts.isEmpty()) {
+            baseDiscount = giftCardDiscounts.stream()
+                    .map(d -> calculateCheckoutDiscount(finalItemSubtotal, d))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
         } else {
-            discountAmount = volumeDiscount.amount();
+            baseDiscount = volumeDiscount.amount();
+        }
+        BigDecimal discountAmount = baseDiscount.add(fixedTotal)
+                .min(finalItemSubtotal)
+                .setScale(2, RoundingMode.HALF_UP);
+
+        boolean volumeContributed = percentDiscounts.isEmpty() && giftCardDiscounts.isEmpty()
+                && volumeDiscount.applied();
+        String resolvedDiscountType;
+        if (!couponDiscounts.isEmpty()) {
+            resolvedDiscountType = "COUPON";
+        } else if (!giftCardDiscounts.isEmpty()) {
+            resolvedDiscountType = "GIFT_CARD";
+        } else {
+            resolvedDiscountType = volumeDiscount.applied() ? VolumeDiscountService.DISCOUNT_TYPE : null;
+        }
+        java.util.List<String> labelParts = new java.util.ArrayList<>();
+        if (!couponDiscounts.isEmpty()) {
+            labelParts.add("Gutschein " + couponDiscounts.stream()
+                    .map(d -> d.coupon().getCode()).collect(java.util.stream.Collectors.joining(" + ")));
+        }
+        if (!giftCardDiscounts.isEmpty()) {
+            labelParts.add("Geschenkgutschein " + giftCardDiscounts.get(0).giftCardItem().getGiftCardCode());
+        }
+        if (volumeContributed) {
+            labelParts.add(volumeDiscount.label());
+        }
+        String resolvedDiscountLabel = labelParts.isEmpty() ? null : String.join(" + ", labelParts);
+        BigDecimal resolvedDiscountPercent;
+        if (volumeContributed && couponDiscounts.isEmpty() && giftCardDiscounts.isEmpty()) {
+            resolvedDiscountPercent = volumeDiscount.percent();
+        } else if (percentDiscounts.size() == 1 && fixedDiscounts.isEmpty()) {
+            resolvedDiscountPercent = percentDiscounts.get(0).coupon().getDiscountPercent();
+        } else {
+            resolvedDiscountPercent = null;
         }
         BigDecimal subtotal = itemSubtotal.subtract(discountAmount).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
         // #135 — Webshop Plus subscribers get free shipping on every order
@@ -605,11 +679,11 @@ public class OrderService {
                 order,
                 preparedItems,
                 checkoutDiscount,
-                checkoutDiscount2,
+                additionalDiscounts != null ? additionalDiscounts : List.of(),
                 discountAmount,
-                resolveDiscountType(checkoutDiscount, volumeDiscount),
-                resolveDiscountLabel(checkoutDiscount, volumeDiscount),
-                resolveDiscountPercent(checkoutDiscount, volumeDiscount),
+                resolvedDiscountType,
+                resolvedDiscountLabel,
+                resolvedDiscountPercent,
                 resolveDiscountMessages(volumeDiscount),
                 taxAmount,
                 subtotal,
@@ -944,33 +1018,6 @@ public class OrderService {
         return subtotal.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
     }
 
-    private String resolveDiscountType(CheckoutDiscount checkoutDiscount, VolumeDiscountResult volumeDiscount) {
-        if (checkoutDiscount != null) {
-            return checkoutDiscount.type();
-        }
-        return volumeDiscount.applied() ? VolumeDiscountService.DISCOUNT_TYPE : null;
-    }
-
-    private String resolveDiscountLabel(CheckoutDiscount checkoutDiscount, VolumeDiscountResult volumeDiscount) {
-        if (checkoutDiscount != null && checkoutDiscount.coupon() != null) {
-            return "Gutschein " + checkoutDiscount.coupon().getCode();
-        }
-        if (checkoutDiscount != null && checkoutDiscount.giftCardItem() != null) {
-            return "Geschenkgutschein " + checkoutDiscount.giftCardItem().getGiftCardCode();
-        }
-        return volumeDiscount.label();
-    }
-
-    private BigDecimal resolveDiscountPercent(CheckoutDiscount checkoutDiscount, VolumeDiscountResult volumeDiscount) {
-        if (checkoutDiscount != null && checkoutDiscount.coupon() != null) {
-            return checkoutDiscount.coupon().getDiscountPercent();
-        }
-        if (checkoutDiscount != null) {
-            return null;
-        }
-        return volumeDiscount.percent();
-    }
-
     private boolean isGiftCardCode(String couponCode) {
         return couponCode != null && couponCode.trim().toUpperCase().startsWith("GUT-");
     }
@@ -1014,7 +1061,9 @@ public class OrderService {
 
     private void markCheckoutCodeAsUsed(PreparedOrder preparedOrder, Order savedOrder, User customer) {
         markSingleCheckoutDiscount(preparedOrder.checkoutDiscount(), savedOrder, customer);
-        markSingleCheckoutDiscount(preparedOrder.checkoutDiscount2(), savedOrder, customer);
+        if (preparedOrder.additionalDiscounts() != null) {
+            preparedOrder.additionalDiscounts().forEach(d -> markSingleCheckoutDiscount(d, savedOrder, customer));
+        }
     }
 
     private void markSingleCheckoutDiscount(CheckoutDiscount checkoutDiscount, Order savedOrder, User customer) {
@@ -1735,7 +1784,7 @@ public class OrderService {
             Order order,
             List<PreparedOrderItem> items,
             CheckoutDiscount checkoutDiscount,
-            CheckoutDiscount checkoutDiscount2,
+            List<CheckoutDiscount> additionalDiscounts,
             BigDecimal discountAmount,
             String discountType,
             String discountLabel,

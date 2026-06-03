@@ -36,6 +36,9 @@ public class Referral {
     @JoinColumn(name = "referred_coupon_id")
     private Coupon referredCoupon;
 
+    @Column(name = "referrer_rewarded", nullable = false)
+    private boolean referrerRewarded = false;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 }

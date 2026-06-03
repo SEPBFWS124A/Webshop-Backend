@@ -61,20 +61,37 @@ public class ReferralService {
             return;
         }
 
-        User referrer = referralCode.getReferrerUser();
-
-        Coupon referrerCoupon = buildFixedCoupon(referrer, REFERRER_REWARD_EUR, "REF5-");
+        // Die beworbene Person erhält ihren 15 €-Willkommensgutschein sofort bei Registrierung.
+        // Die 5 €-Belohnung für den Werber wird erst bei der ersten Bestellung gewährt
+        // (siehe grantReferrerRewardOnFirstOrder) — verhindert Missbrauch durch reine Account-Erstellung.
         Coupon referredCoupon = buildFixedCoupon(newUser, REFERRED_WELCOME_EUR, "WELCOME15-");
-        couponRepository.save(referrerCoupon);
         couponRepository.save(referredCoupon);
 
         Referral referral = new Referral();
         referral.setReferralCode(referralCode);
         referral.setReferredUser(newUser);
-        referral.setReferrerCoupon(referrerCoupon);
         referral.setReferredCoupon(referredCoupon);
         referralRepository.save(referral);
 
+        notificationService.createReferralWelcomeNotification(newUser, referredCoupon.getCode());
+    }
+
+    /**
+     * Wird beim Aufgeben einer Bestellung der beworbenen Person aufgerufen.
+     * Gewährt dem Werber einmalig den 5 €-Gutschein (idempotent über referrerRewarded-Flag).
+     */
+    @Transactional
+    public void grantReferrerRewardOnFirstOrder(User referredUser) {
+        Referral referral = referralRepository.findByReferredUserId(referredUser.getId()).orElse(null);
+        if (referral == null || referral.isReferrerRewarded()) {
+            return;
+        }
+        User referrer = referral.getReferralCode().getReferrerUser();
+        Coupon referrerCoupon = buildFixedCoupon(referrer, REFERRER_REWARD_EUR, "REF5-");
+        couponRepository.save(referrerCoupon);
+        referral.setReferrerCoupon(referrerCoupon);
+        referral.setReferrerRewarded(true);
+        referralRepository.save(referral);
         notificationService.createReferralRewardNotification(referrer, referrerCoupon.getCode());
     }
 

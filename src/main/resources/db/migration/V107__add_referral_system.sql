@@ -20,8 +20,8 @@ CREATE TABLE referrals (
     created_at           TIMESTAMP  NOT NULL DEFAULT NOW()
 );
 
--- Orders: zweiter Coupon-Slot für Stacking
-ALTER TABLE orders ADD COLUMN coupon_code_2 VARCHAR(50);
+-- Orders: unbegrenzte Coupon-Codes als kommaseparierte Liste
+ALTER TABLE orders ADD COLUMN additional_coupon_codes TEXT;
 
 CREATE INDEX idx_referral_codes_code ON referral_codes (code);
 CREATE INDEX idx_referrals_referral_code ON referrals (referral_code_id);

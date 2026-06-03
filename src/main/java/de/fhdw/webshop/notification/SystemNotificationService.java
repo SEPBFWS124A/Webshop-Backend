@@ -166,6 +166,21 @@ public class SystemNotificationService {
     }
 
     @Transactional
+    public SystemNotification createReferralWelcomeNotification(User referredUser, String couponCode) {
+        SystemNotification notification = new SystemNotification();
+        notification.setType(SystemNotificationType.REFERRAL_REWARD_EARNED);
+        notification.setRecipientUser(referredUser);
+        notification.setProductName("");
+        notification.setCurrentPeriodUnits(0);
+        notification.setPreviousPeriodUnits(0);
+        notification.setCustomMessage(
+                "Willkommen! Du hast einen 15 €-Gutschein erhalten. Code: " + couponCode
+        );
+        notification.setTargetUrl("/profile");
+        return repository.save(notification);
+    }
+
+    @Transactional
     public SystemNotification createReferralRewardNotification(User referrer, String couponCode) {
         SystemNotification notification = new SystemNotification();
         notification.setType(SystemNotificationType.REFERRAL_REWARD_EARNED);
