@@ -91,7 +91,8 @@ public class MarketplaceService {
                 p.getCategory(),
                 p.getSellerName(),
                 p.getEcoScore(),
-                p.getStock()
+                p.getStock(),
+                p.isPurchasable()
         );
     }
 }

@@ -13,6 +13,7 @@ public record MarketplaceProductDto(
         String category,
         String sellerName,
         ProductEcoScore ecoScore,
-        int stock
+        int stock,
+        boolean purchasable
 ) {
 }
