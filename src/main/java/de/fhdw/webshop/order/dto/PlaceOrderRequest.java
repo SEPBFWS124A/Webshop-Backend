@@ -25,5 +25,7 @@ public record PlaceOrderRequest(
         Long pickupStoreId,
         String approvalReason,
         List<@Valid PlaceOrderItemRequest> items,
-        String affiliateCode
+        String affiliateCode,
+        Boolean restrictionVerified,
+        String restrictionVerificationReference
 ) {}

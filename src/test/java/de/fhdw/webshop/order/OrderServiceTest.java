@@ -327,6 +327,8 @@ class OrderServiceTest {
                 null,
                 approvalReason,
                 null,
+                null,
+                null,
                 null);
     }
 
@@ -347,6 +349,8 @@ class OrderServiceTest {
                 false,
                 false,
                 pickupStoreId,
+                null,
+                null,
                 null,
                 null,
                 null);

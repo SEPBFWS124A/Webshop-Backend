@@ -266,6 +266,9 @@ public class OrderService {
             throw new IllegalArgumentException("Bitte akzeptiere AGB, Widerrufsbelehrung und Datenschutzhinweise vor der Bestellung");
         }
         cartService.getCart(customer.getId());
+        // #148/#149 — Restricted products require a completed verification before checkout.
+        RestrictionVerification restriction = resolveRestrictionVerification(
+                customer, placeOrderRequest, cartRepository.findByUserId(customer.getId()));
         PreparedOrder preparedOrder = prepareCustomerOrder(customer, placeOrderRequest);
         DeliveryAddressRequest deliveryAddressRequest = placeOrderRequest != null ? placeOrderRequest.deliveryAddress() : null;
         PaymentMethodRequest paymentMethodRequest = placeOrderRequest != null ? placeOrderRequest.paymentMethod() : null;
@@ -277,6 +280,7 @@ public class OrderService {
         }
         if (preparedOrder.approvalRequired()) {
             Order savedOrder = persistApprovalRequest(preparedOrder, placeOrderRequest != null ? placeOrderRequest.approvalReason() : null);
+            applyRestrictionToOrder(savedOrder, restriction, customer);
             cartService.clearCartSilently(customer.getId());
             return toResponse(savedOrder);
         }
@@ -287,6 +291,7 @@ public class OrderService {
                 .findFirst()
                 .orElse(placeOrderRequest != null ? placeOrderRequest.affiliateCode() : null);
         Order savedOrder = persistPreparedOrder(preparedOrder);
+        applyRestrictionToOrder(savedOrder, restriction, customer);
         cartService.clearCartSilently(customer.getId());
         markCheckoutCodeAsUsed(preparedOrder, savedOrder, customer);
         affiliateService.processAffiliateConversions(savedOrder, affiliateCode);
@@ -307,6 +312,13 @@ public class OrderService {
     @Transactional
     public OrderResponse placeGuestOrder(@Valid PlaceOrderRequest placeOrderRequest) {
         validateLegalAcceptance(placeOrderRequest);
+        // #148 — Restricted products require a registered, verified customer account.
+        if (placeOrderRequest != null && placeOrderRequest.items() != null
+                && placeOrderRequest.items().stream()
+                        .anyMatch(item -> productService.loadProduct(item.productId()).isRestricted())) {
+            throw new IllegalArgumentException(
+                    "Dein Warenkorb enthält ein restriktives Produkt. Bitte melde dich mit einem Kundenkonto an – eine Gastbestellung ist hier nicht möglich.");
+        }
         PreparedOrder preparedOrder = prepareGuestOrder(placeOrderRequest);
         Order savedOrder = persistPreparedOrder(preparedOrder);
         markCheckoutCodeAsUsed(preparedOrder, savedOrder, null);
@@ -1186,7 +1198,8 @@ public class OrderService {
                 resolvePersistedDiscountType(order),
                 resolvePersistedDiscountLabel(order),
                 null,
-                List.of());
+                List.of(),
+                order.isRestrictedShipping());
     }
 
     private OrderApprovalResponse toApprovalResponse(Order order, Boolean confirmationEmailSent) {
@@ -1247,7 +1260,8 @@ public class OrderService {
                 resolvePersistedDiscountType(order),
                 resolvePersistedDiscountLabel(order),
                 null,
-                List.of());
+                List.of(),
+                order.isRestrictedShipping());
     }
 
     private Instant estimateDeliveryAt(Order order) {
@@ -1306,6 +1320,15 @@ public class OrderService {
                 ))
                 .toList();
 
+        // #148 — Restriction info for the checkout (strictest rule for mixed carts).
+        List<String> restrictionTypes = preparedOrder.items().stream()
+                .map(PreparedOrderItem::product)
+                .filter(product -> product != null && product.isRestricted() && product.getRestrictionType() != null)
+                .map(product -> product.getRestrictionType().name())
+                .distinct()
+                .toList();
+        boolean previewRestricted = !restrictionTypes.isEmpty();
+
         return new OrderPreviewResponse(
                 preparedOrder.order().getOrderNumber(),
                 preparedOrder.order().getCustomerEmail(),
@@ -1324,7 +1347,9 @@ public class OrderService {
                 preparedOrder.discountType(),
                 preparedOrder.discountLabel(),
                 preparedOrder.discountPercent(),
-                preparedOrder.discountMessages()
+                preparedOrder.discountMessages(),
+                previewRestricted,
+                restrictionTypes
         );
     }
 
@@ -1623,6 +1648,64 @@ public class OrderService {
             BigDecimal unitPrice,
             BigDecimal lineTotal
     ) {}
+
+    /**
+     * #148/#149 — Enforce that a restricted cart is only checked out by a verified customer.
+     * Persists the verification on the account (bonus: skip on future purchases).
+     */
+    private RestrictionVerification resolveRestrictionVerification(
+            User customer, PlaceOrderRequest request, List<CartItem> cartItems) {
+        boolean restricted = cartItems.stream()
+                .anyMatch(item -> item.getProduct() != null && item.getProduct().isRestricted());
+        if (!restricted) {
+            return new RestrictionVerification(false, null);
+        }
+        boolean alreadyVerified = customer.isVerified();
+        boolean confirmedNow = request != null && Boolean.TRUE.equals(request.restrictionVerified());
+        if (!alreadyVerified && !confirmedNow) {
+            throw new IllegalArgumentException(
+                    "Dieser Warenkorb enthält restriktive Produkte. Bitte schließe die erforderliche Verifizierung ab, bevor du die Bestellung abschließt.");
+        }
+        String reference;
+        if (alreadyVerified && customer.getVerificationReference() != null) {
+            reference = customer.getVerificationReference();
+        } else if (request != null && request.restrictionVerificationReference() != null
+                && !request.restrictionVerificationReference().isBlank()) {
+            reference = request.restrictionVerificationReference().trim();
+        } else {
+            reference = "VERIFY-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        }
+        if (!alreadyVerified) {
+            customer.setVerified(true);
+            customer.setVerifiedAt(Instant.now());
+            customer.setVerificationReference(reference);
+            userRepository.save(customer);
+        }
+        return new RestrictionVerification(true, reference);
+    }
+
+    /** #149 — Tag the order for special (restricted) shipping and write a tamper-evident audit entry. */
+    private void applyRestrictionToOrder(Order order, RestrictionVerification restriction, User customer) {
+        if (restriction == null || !restriction.restricted()) {
+            return;
+        }
+        Instant verifiedAt = Instant.now();
+        order.setRestrictedShipping(true);
+        order.setRestrictionVerifiedAt(verifiedAt);
+        order.setRestrictionVerificationReference(restriction.reference());
+        orderRepository.save(order);
+        auditLogService.record(
+                customer,
+                "RESTRICTED_PURCHASE_VERIFIED",
+                "Order",
+                order.getId(),
+                AuditInitiator.USER,
+                "Restriktive Bestellung " + order.getOrderNumber()
+                        + " verifiziert. Referenz: " + restriction.reference()
+                        + ", Zeitstempel: " + verifiedAt);
+    }
+
+    private record RestrictionVerification(boolean restricted, String reference) {}
 
     private record PreparedOrder(
             Order order,

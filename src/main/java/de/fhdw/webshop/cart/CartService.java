@@ -140,6 +140,16 @@ public class CartService {
                 .mapToInt(CartItemResponse::quantity)
                 .sum();
 
+        // #148 — Mixed carts: the strictest rule applies. The whole cart is restricted
+        // as soon as a single item is restricted.
+        List<String> restrictionTypes = itemResponses.stream()
+                .filter(CartItemResponse::restricted)
+                .map(CartItemResponse::restrictionType)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        boolean cartRestricted = itemResponses.stream().anyMatch(CartItemResponse::restricted);
+
         return new CartResponse(
                 itemResponses,
                 subtotal,
@@ -155,7 +165,9 @@ public class CartService {
                 discountType,
                 discountLabel,
                 discountPercent,
-                discountMessages
+                discountMessages,
+                cartRestricted,
+                restrictionTypes
         );
     }
 
@@ -250,6 +262,12 @@ public class CartService {
     @Transactional
     public CartResponse addItemForCustomerByEmployee(User customer, AddToCartRequest addToCartRequest, User employee) {
         Product product = productService.loadProduct(addToCartRequest.productId());
+        // #149 — Customer-service block: an agent may not add a restricted product to a
+        // customer's cart unless the customer already holds a valid verification.
+        if (product.isRestricted() && !customer.isVerified()) {
+            throw new IllegalArgumentException(
+                    "Dieses Produkt ist restriktiv und kann nicht hinzugefügt werden, solange für das Kundenkonto keine gültige Verifizierung hinterlegt ist.");
+        }
         int previousQuantity = cartRepository.findByUserIdAndProductId(customer.getId(), product.getId())
                 .map(CartItem::getQuantity)
                 .orElse(0);
@@ -579,7 +597,11 @@ public class CartService {
                 cartItem.getQuantity(),
                 lineTotal,
                 lineCo2EmissionKg,
-                cartItem.getAddedAt()
+                cartItem.getAddedAt(),
+                cartItem.getProduct().isRestricted(),
+                cartItem.getProduct().getRestrictionType() == null
+                        ? null
+                        : cartItem.getProduct().getRestrictionType().name()
         );
     }
 

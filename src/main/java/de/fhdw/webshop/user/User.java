@@ -61,6 +61,16 @@ public class User implements UserDetails {
     @Column(nullable = false)
     private boolean active = true;
 
+    /** #148 — True once the customer has passed restricted-product verification (skips future checks). */
+    @Column(nullable = false)
+    private boolean verified = false;
+
+    @Column(name = "verified_at")
+    private Instant verifiedAt;
+
+    @Column(name = "verification_reference", length = 120)
+    private String verificationReference;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
