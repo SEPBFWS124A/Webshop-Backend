@@ -44,6 +44,8 @@ public class SecurityConfig {
                         // Product browsing is public (US #8 – customers can view catalogue without account)
                         .requestMatchers(HttpMethod.GET, "/api/products").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/products/{id}").permitAll()
+                        // Price history is public (prices are public information)
+                        .requestMatchers(HttpMethod.GET, "/api/products/{id}/price-history").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/products/{id}/questions").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/products/{id}/feedback").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/product-bundles/active").permitAll()

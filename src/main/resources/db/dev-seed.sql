@@ -70,6 +70,35 @@ INSERT INTO products (
   ('Office Chair', 'Lumbar support mesh chair', '/office-chair.jpg', 349.99, 33.200, 'D', 'Furniture', 25, 'OFFICE-CHAIR', 'B-02-05', TRUE, TRUE),
   ('Notebook (Draft)', 'Not yet available to customers', NULL, 9.99, 0.350, 'A', 'Stationery', 0, 'NOTEBOOK-DRAFT', 'C-01-01', FALSE, FALSE);
 
+-- Preisverlauf (UVP) fuer alle Produkte: drei juengere Aenderungen fuer Demo-Charts.
+INSERT INTO product_price_history (product_id, old_price, new_price, change_reason, changed_by, changed_at)
+SELECT p.id, NULL, ROUND((p.recommended_retail_price * 1.18)::numeric, 2), 'INITIAL', NULL, NOW() - INTERVAL '70 days'
+FROM products p
+WHERE p.recommended_retail_price IS NOT NULL
+  AND p.recommended_retail_price > 0;
+
+INSERT INTO product_price_history (product_id, old_price, new_price, change_reason, changed_by, changed_at)
+SELECT p.id,
+       ROUND((p.recommended_retail_price * 1.18)::numeric, 2),
+       ROUND((p.recommended_retail_price * 1.08)::numeric, 2),
+       'MANUAL',
+       NULL,
+       NOW() - INTERVAL '28 days'
+FROM products p
+WHERE p.recommended_retail_price IS NOT NULL
+  AND p.recommended_retail_price > 0;
+
+INSERT INTO product_price_history (product_id, old_price, new_price, change_reason, changed_by, changed_at)
+SELECT p.id,
+       ROUND((p.recommended_retail_price * 1.08)::numeric, 2),
+       p.recommended_retail_price,
+       'PROMOTION',
+       NULL,
+       NOW() - INTERVAL '6 days'
+FROM products p
+WHERE p.recommended_retail_price IS NOT NULL
+  AND p.recommended_retail_price > 0;
+
 -- Warehouse stock per location
 INSERT INTO warehouse_product_stocks (product_id, warehouse_location_id, quantity)
 SELECT

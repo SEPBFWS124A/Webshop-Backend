@@ -1,6 +1,7 @@
 package de.fhdw.webshop.pricealert;
 
 import de.fhdw.webshop.admin.AuditLogService;
+import de.fhdw.webshop.pricehistory.ProductPriceHistoryService;
 import de.fhdw.webshop.product.Product;
 import de.fhdw.webshop.product.ProductRepository;
 import de.fhdw.webshop.product.ProductService;
@@ -36,7 +37,8 @@ class PriceAlertEventIntegrationTest {
                 productRepository,
                 mock(AuditLogService.class),
                 mock(StockReservationService.class),
-                eventPublisher
+                eventPublisher,
+                mock(ProductPriceHistoryService.class)
         );
     }
 

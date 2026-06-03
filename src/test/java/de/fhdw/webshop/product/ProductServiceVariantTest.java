@@ -1,6 +1,7 @@
 package de.fhdw.webshop.product;
 
 import de.fhdw.webshop.admin.AuditLogService;
+import de.fhdw.webshop.pricehistory.ProductPriceHistoryService;
 import de.fhdw.webshop.product.dto.ProductRequest;
 import de.fhdw.webshop.product.dto.ProductResponse;
 import de.fhdw.webshop.product.dto.ProductVariantAttributeRequest;
@@ -92,7 +93,7 @@ class ProductServiceVariantTest {
         when(productRepository.save(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(stockReservationService.getAvailableQuantity(any(Product.class)))
                 .thenAnswer(invocation -> invocation.<Product>getArgument(0).getStock());
-        return new ProductService(productRepository, mock(AuditLogService.class), stockReservationService, mock(ApplicationEventPublisher.class));
+        return new ProductService(productRepository, mock(AuditLogService.class), stockReservationService, mock(ApplicationEventPublisher.class), mock(ProductPriceHistoryService.class));
     }
 
     private ProductRequest request(List<ProductVariantRequest> variants) {
