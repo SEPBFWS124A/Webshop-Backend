@@ -111,6 +111,7 @@ public class WarehouseService {
     private final AuditLogService auditLogService;
     private final ApplicationEventPublisher eventPublisher;
     private final WarehouseStockBalanceService warehouseStockBalanceService;
+    private final de.fhdw.webshop.subscription.SubscriptionService subscriptionService;
 
     @Transactional
     public List<WarehouseOrderResponse> listOrders(OrderStatus status) {
@@ -1716,6 +1717,9 @@ public class WarehouseService {
                 .filter(value -> !value.isBlank())
                 .collect(Collectors.joining(", "));
 
+        boolean plusMember = order.getCustomer() != null
+                && subscriptionService.hasActivePlusSubscription(order.getCustomer().getId());
+
         return new WarehouseOrderResponse(
                 order.getId(),
                 order.getId(),
@@ -1723,6 +1727,7 @@ public class WarehouseService {
                 order.getCustomerName(),
                 order.getCustomerEmail(),
                 order.getStatus(),
+                plusMember,
                 regionKey,
                 regionLabels.getOrDefault(regionKey, "Unbekannte Route"),
                 order.getTruckIdentifier(),
