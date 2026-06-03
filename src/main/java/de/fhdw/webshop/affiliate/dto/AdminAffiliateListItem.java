@@ -8,6 +8,7 @@ public record AdminAffiliateListItem(
         String username,
         String email,
         BigDecimal commissionRate,
+        String tier,
         long totalLinks,
         long totalClicks,
         long totalConversions,
