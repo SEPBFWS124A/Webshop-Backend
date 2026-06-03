@@ -9,6 +9,7 @@ public record CouponResponse(
         Long customerId,
         String code,
         BigDecimal discountPercent,
+        BigDecimal fixedAmountEur,
         LocalDate validUntil,
         boolean used,
         Instant usedAt

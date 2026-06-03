@@ -9,6 +9,7 @@ import java.util.List;
 
 public record PlaceOrderRequest(
         String couponCode,
+        String couponCode2,
         String email,
         String customerName,
         String customerSalutation,

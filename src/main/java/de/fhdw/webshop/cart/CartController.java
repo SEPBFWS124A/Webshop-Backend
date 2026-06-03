@@ -27,8 +27,9 @@ public class CartController {
     @GetMapping
     @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<CartResponse> getCart(@AuthenticationPrincipal User currentUser,
-                                                @RequestParam(required = false) String couponCode) {
-        return ResponseEntity.ok(cartService.getCart(currentUser.getId(), couponCode));
+                                                @RequestParam(required = false) String couponCode,
+                                                @RequestParam(required = false) String couponCode2) {
+        return ResponseEntity.ok(cartService.getCart(currentUser.getId(), couponCode, couponCode2));
     }
 
     /** US #39 — Add an item to own cart. */
