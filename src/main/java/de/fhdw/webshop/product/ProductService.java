@@ -228,7 +228,9 @@ public class ProductService {
                         : List.of(),
                 product.getCreatedAt(),
                 product.getSupplierName(),
-                product.getSupplierLeadTimeDays()
+                product.getSupplierLeadTimeDays(),
+                product.isRestricted(),
+                product.getRestrictionType()
         );
     }
 
@@ -256,6 +258,9 @@ public class ProductService {
         if (productRequest.supplierLeadTimeDays() != null) {
             product.setSupplierLeadTimeDays(productRequest.supplierLeadTimeDays());
         }
+        boolean restricted = Boolean.TRUE.equals(productRequest.restricted());
+        product.setRestricted(restricted);
+        product.setRestrictionType(restricted ? productRequest.restrictionType() : null);
     }
 
     private void syncVariants(Product parent, ProductRequest productRequest) {
@@ -338,6 +343,8 @@ public class ProductService {
         variant.setSku(firstNonBlank(variantRequest.sku(), buildGeneratedSku(parent, index)));
         variant.setPurchasable(parent.isPurchasable());
         variant.setTradeInEnabled(parent.isTradeInEnabled());
+        variant.setRestricted(parent.isRestricted());
+        variant.setRestrictionType(parent.getRestrictionType());
         variant.setPromoted(false);
         variant.setPersonalizable(parent.isPersonalizable());
         variant.setPersonalizationMaxLength(parent.getPersonalizationMaxLength());

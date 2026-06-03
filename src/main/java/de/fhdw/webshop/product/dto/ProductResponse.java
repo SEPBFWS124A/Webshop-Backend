@@ -2,6 +2,7 @@ package de.fhdw.webshop.product.dto;
 
 import de.fhdw.webshop.product.ProductEcoScore;
 import de.fhdw.webshop.product.ProductType;
+import de.fhdw.webshop.product.RestrictionType;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -35,5 +36,7 @@ public record ProductResponse(
         List<ProductResponse> variants,
         Instant createdAt,
         String supplierName,
-        Integer supplierLeadTimeDays
+        Integer supplierLeadTimeDays,
+        boolean restricted,
+        RestrictionType restrictionType
 ) {}

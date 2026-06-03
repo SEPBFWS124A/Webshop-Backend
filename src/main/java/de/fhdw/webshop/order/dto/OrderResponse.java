@@ -33,5 +33,6 @@ public record OrderResponse(
         String discountType,
         String discountLabel,
         BigDecimal discountPercent,
-        List<String> discountMessages
+        List<String> discountMessages,
+        boolean restrictedShipping
 ) {}

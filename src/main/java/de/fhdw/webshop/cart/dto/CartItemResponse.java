@@ -31,5 +31,7 @@ public record CartItemResponse(
         int quantity,
         BigDecimal lineTotal,
         BigDecimal lineCo2EmissionKg,
-        Instant addedAt
+        Instant addedAt,
+        boolean restricted,
+        String restrictionType
 ) {}
