@@ -13,6 +13,7 @@ public record OrderPreviewResponse(
         BigDecimal climateContributionAmount,
         BigDecimal totalCo2EmissionKg,
         BigDecimal totalPrice,
+        boolean plusMember,
         String couponCode,
         Boolean approvalRequired,
         BigDecimal approvalBudgetLimit,

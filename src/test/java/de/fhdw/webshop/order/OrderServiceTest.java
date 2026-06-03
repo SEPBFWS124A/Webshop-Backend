@@ -244,6 +244,7 @@ class OrderServiceTest {
         ProductBundleService productBundleService = mock(ProductBundleService.class);
         AffiliateService affiliateService = mock(AffiliateService.class);
         OrderEventPublisher orderEventPublisher = mock(OrderEventPublisher.class);
+        de.fhdw.webshop.subscription.SubscriptionService subscriptionService = mock(de.fhdw.webshop.subscription.SubscriptionService.class);
 
         OrderService service = new OrderService(
                 orderRepository,
@@ -270,7 +271,8 @@ class OrderServiceTest {
                 stockReservationService,
                 productBundleService,
                 affiliateService,
-                orderEventPublisher);
+                orderEventPublisher,
+                subscriptionService);
 
         User customer = businessCustomer(10L, "employee");
         User manager = businessCustomer(11L, "manager");

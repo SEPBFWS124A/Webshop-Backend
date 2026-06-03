@@ -32,6 +32,7 @@ import de.fhdw.webshop.product.ProductType;
 import de.fhdw.webshop.messaging.OrderCreatedEvent;
 import de.fhdw.webshop.messaging.OrderEventPublisher;
 import de.fhdw.webshop.productbundle.ProductBundleService;
+import de.fhdw.webshop.subscription.SubscriptionService;
 import de.fhdw.webshop.reservation.StockReservationService;
 import de.fhdw.webshop.user.DeliveryAddress;
 import de.fhdw.webshop.user.DeliveryAddressRepository;
@@ -118,6 +119,7 @@ public class OrderService {
     private final ProductBundleService productBundleService;
     private final AffiliateService affiliateService;
     private final OrderEventPublisher orderEventPublisher;
+    private final SubscriptionService subscriptionService;
 
     @Value("${app.frontend.base-url:http://localhost:5173}")
     private String frontendBaseUrl;
@@ -555,7 +557,10 @@ public class OrderService {
                 ? calculateCheckoutDiscount(itemSubtotal, checkoutDiscount)
                 : volumeDiscount.amount();
         BigDecimal subtotal = itemSubtotal.subtract(discountAmount).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal shippingCost = pickupStore != null
+        // #135 — Webshop Plus subscribers get free shipping on every order
+        boolean plusMember = customer != null
+                && subscriptionService.hasActivePlusSubscription(customer.getId());
+        BigDecimal shippingCost = (pickupStore != null || plusMember)
                 ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
                 : calculateShippingCost(subtotal, shippingMethod);
         BigDecimal taxAmount = subtotal.multiply(TAX_RATE).setScale(2, RoundingMode.HALF_UP);
@@ -586,7 +591,8 @@ public class OrderService {
                 carbonCompensationSelected,
                 totalPrice,
                 approvalRequired,
-                approvalRequired ? approvalBudgetLimit : null
+                approvalRequired ? approvalBudgetLimit : null,
+                plusMember
         );
     }
 
@@ -1310,6 +1316,7 @@ public class OrderService {
                 preparedOrder.climateContributionAmount(),
                 preparedOrder.totalCo2EmissionKg(),
                 preparedOrder.totalPrice(),
+                preparedOrder.plusMember(),
                 preparedOrder.order().getCouponCode(),
                 preparedOrder.approvalRequired(),
                 preparedOrder.approvalBudgetLimit(),
@@ -1634,7 +1641,8 @@ public class OrderService {
             boolean carbonCompensationSelected,
             BigDecimal totalPrice,
             boolean approvalRequired,
-            BigDecimal approvalBudgetLimit
+            BigDecimal approvalBudgetLimit,
+            boolean plusMember
     ) {}
 
     private record CheckoutDiscount(
