@@ -114,8 +114,9 @@ public class UserController {
     @GetMapping("/me/recently-viewed")
     @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<List<RecentlyViewedProductResponse>> getMyRecentlyViewedProducts(
-            @AuthenticationPrincipal User currentUser) {
-        return ResponseEntity.ok(recentlyViewedProductService.listForUser(currentUser));
+            @AuthenticationPrincipal User currentUser,
+            @RequestParam(required = false) Boolean marketplace) {
+        return ResponseEntity.ok(recentlyViewedProductService.listForUser(currentUser, marketplace));
     }
 
     /** US #313 — Record a product detail page visit for the current customer. */
