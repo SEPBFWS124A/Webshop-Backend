@@ -194,8 +194,8 @@ public class StatisticAlertService {
     }
 
     private static String buildReason(StatisticAlertThreshold threshold, BigDecimal deviationPercent) {
-        String direction = deviationPercent.signum() >= 0 ? "ueber" : "unter";
-        return "%s liegt um %s%% %s dem Vergleichszeitraum und ueberschreitet den Schwellwert von %s%%."
+        String direction = deviationPercent.signum() >= 0 ? "über" : "unter";
+        return "%s liegt um %s%% %s dem Vergleichszeitraum und überschreitet den Schwellwert von %s%%."
                 .formatted(
                         threshold.getMetric().getLabel(),
                         deviationPercent.abs().setScale(2, RoundingMode.HALF_UP),
@@ -214,7 +214,7 @@ public class StatisticAlertService {
         if (request.deviationPercent() == null
                 || request.deviationPercent().compareTo(BigDecimal.ZERO) <= 0
                 || request.deviationPercent().compareTo(MAX_THRESHOLD_PERCENT) > 0) {
-            throw new IllegalArgumentException("Der Schwellwert muss groesser als 0 und maximal 1000 Prozent sein.");
+            throw new IllegalArgumentException("Der Schwellwert muss größer als 0 und maximal 1000 Prozent sein.");
         }
     }
 

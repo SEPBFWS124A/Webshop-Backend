@@ -153,7 +153,7 @@ public class OrderService {
                 .orElseThrow(() -> new EntityNotFoundException("Order not found: " + orderId));
 
         if (!canCustomerCancel(order)) {
-            throw new IllegalArgumentException("Bestellungen koennen nur im Status Aufgegeben storniert werden.");
+            throw new IllegalArgumentException("Bestellungen können nur im Status Aufgegeben storniert werden.");
         }
 
         restoreReservedStock(order);
@@ -162,7 +162,7 @@ public class OrderService {
 
         auditLogService.record(customer, "CANCEL_ORDER", "Order", savedOrder.getId(),
                 AuditInitiator.USER,
-                "Status geaendert auf Storniert fuer Bestellung " + savedOrder.getOrderNumber());
+                "Status geaendert auf Storniert für Bestellung " + savedOrder.getOrderNumber());
         triggerRefundIfRequired(savedOrder, customer);
 
         return toResponse(savedOrder);
@@ -512,7 +512,7 @@ public class OrderService {
                     requestedItem.cartItemId(),
                     product.getId(),
                     requestedItem.quantity())) {
-                throw new IllegalArgumentException("Die Reservierung fuer " + product.getName()
+                throw new IllegalArgumentException("Die Reservierung für " + product.getName()
                         + " ist abgelaufen. Bitte aktualisiere deinen Warenkorb.");
             }
             String personalizationText = normalizePersonalizationText(product, requestedItem.personalizationText());
@@ -1091,7 +1091,7 @@ public class OrderService {
 
         auditLogService.record(customer, "ORDER_REFUND_TRIGGERED", "Order", order.getId(),
                 AuditInitiator.SYSTEM,
-                "Automatische Rueckerstattung fuer " + order.getPaymentMethodType()
+                "Automatische Rueckerstattung für " + order.getPaymentMethodType()
                         + " angestossen, Betrag=" + order.getTotalPrice());
     }
 
@@ -1355,7 +1355,7 @@ public class OrderService {
 
     private boolean sendOrderConfirmation(Order order) {
         StringBuilder body = new StringBuilder()
-                .append("Vielen Dank fuer deine Bestellung.\n\n")
+                .append("Vielen Dank für deine Bestellung.\n\n")
                 .append("Bestellnummer: ").append(order.getOrderNumber()).append('\n')
                 .append("Gesamtbetrag: ").append(order.getTotalPrice()).append(" EUR\n");
 

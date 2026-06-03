@@ -48,7 +48,7 @@ class AdminNavigationServiceTest {
                 .containsExactly("Produktverwaltung", "Bestellungen");
         assertThat(navigation.stream().flatMap(group -> group.items().stream()))
                 .extracting(AdminNavigationItemResponse::id)
-                .containsExactly("warehouse", "return-requests");
+                .containsExactly("warehouse", "stock-reservations", "return-requests");
     }
 
     @Test

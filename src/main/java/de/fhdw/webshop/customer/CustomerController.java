@@ -366,7 +366,7 @@ public class CustomerController {
     private User loadCustomerById(Long id) {
         User customer = userService.loadById(id);
         if (!isCustomer(customer)) {
-            throw new IllegalArgumentException("Dieser Endpunkt gilt nur fuer Kundenkonten.");
+            throw new IllegalArgumentException("Dieser Endpunkt gilt nur für Kundenkonten.");
         }
         return customer;
     }
@@ -438,7 +438,7 @@ public class CustomerController {
         }
 
         if (latestOrderAt != null && latestOrderAt.isBefore(Instant.now().minus(90, ChronoUnit.DAYS))) {
-            return "Der Kunde war frueher aktiv, hat aber seit ueber 90 Tagen keine Bestellung mehr abgeschlossen.";
+            return "Der Kunde war früher aktiv, hat aber seit über 90 Tagen keine Bestellung mehr abgeschlossen.";
         }
 
         if (businessCustomer) {
@@ -446,7 +446,7 @@ public class CustomerController {
         }
 
         if (hasActivePromotion) {
-            return "Es laufen bereits Vertriebsmassnahmen. Jetzt ist ein guter Zeitpunkt fuer eine konkrete Nachfassaktion.";
+            return "Es laufen bereits Vertriebsmaßnahmen. Jetzt ist ein guter Zeitpunkt für eine konkrete Nachfassaktion.";
         }
 
         return "Der Kunde zeigt ein stabiles Kaufverhalten und kann gezielt mit passenden Artikeln oder Serviceangeboten angesprochen werden.";

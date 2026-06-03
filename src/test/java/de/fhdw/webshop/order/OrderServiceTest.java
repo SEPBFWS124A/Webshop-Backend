@@ -71,7 +71,7 @@ class OrderServiceTest {
         TestContext context = newContext(new BigDecimal("100.00"));
         when(context.orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        OrderResponse response = context.service.placeOrder(context.customer, request("Bitte fuer das Projekt freigeben"));
+        OrderResponse response = context.service.placeOrder(context.customer, request("Bitte für das Projekt freigeben"));
 
         ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
         verify(context.orderRepository).save(orderCaptor.capture());
@@ -79,7 +79,7 @@ class OrderServiceTest {
 
         assertThat(response.status()).isEqualTo(OrderStatus.Pending_Approval);
         assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.Pending_Approval);
-        assertThat(savedOrder.getApprovalReason()).isEqualTo("Bitte fuer das Projekt freigeben");
+        assertThat(savedOrder.getApprovalReason()).isEqualTo("Bitte für das Projekt freigeben");
         assertThat(savedOrder.getApprovalBudgetLimit()).isEqualByComparingTo("100.00");
         assertThat(savedOrder.getItems()).hasSize(1);
         assertThat(context.product.getStock()).isEqualTo(5);
@@ -129,10 +129,10 @@ class OrderServiceTest {
         var approvalResponse = context.service.rejectApprovalRequest(
                 context.manager,
                 pendingOrder.getId(),
-                "Budget fuer dieses Quartal ausgeschoepft");
+                "Budget für dieses Quartal ausgeschöpft");
 
         assertThat(approvalResponse.status()).isEqualTo(OrderStatus.Rejected);
-        assertThat(approvalResponse.rejectionReason()).isEqualTo("Budget fuer dieses Quartal ausgeschoepft");
+        assertThat(approvalResponse.rejectionReason()).isEqualTo("Budget für dieses Quartal ausgeschöpft");
 
         ArgumentCaptor<String> addressCaptor = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> subjectCaptor = ArgumentCaptor.forClass(String.class);
@@ -140,7 +140,7 @@ class OrderServiceTest {
         verify(context.emailService).sendEmail(addressCaptor.capture(), subjectCaptor.capture(), bodyCaptor.capture());
         assertThat(addressCaptor.getValue()).isEqualTo(context.customer.getEmail());
         assertThat(subjectCaptor.getValue()).contains("Freigabe abgelehnt", pendingOrder.getOrderNumber());
-        assertThat(bodyCaptor.getValue()).contains("Budget fuer dieses Quartal ausgeschoepft", pendingOrder.getOrderNumber());
+        assertThat(bodyCaptor.getValue()).contains("Budget für dieses Quartal ausgeschöpft", pendingOrder.getOrderNumber());
     }
 
     @Test

@@ -79,7 +79,7 @@ public class ReturnRequestService {
                 .orElseThrow(() -> new EntityNotFoundException("Order not found: " + request.orderId()));
 
         if (order.getStatus() != OrderStatus.DELIVERED) {
-            throw new IllegalStateException("Retouren koennen nur fuer zugestellte Bestellungen angemeldet werden.");
+            throw new IllegalStateException("Retouren können nur für zugestellte Bestellungen angemeldet werden.");
         }
 
         Instant deliveredAt = resolveDeliveredAt(order);
@@ -89,7 +89,7 @@ public class ReturnRequestService {
 
         List<RequestedReturnLine> requestedLines = normalizeRequestedLines(request, order);
         if (requestedLines.isEmpty()) {
-            throw new IllegalArgumentException("Bitte waehle mindestens einen Artikel fuer die Retoure aus.");
+            throw new IllegalArgumentException("Bitte waehle mindestens einen Artikel für die Retoure aus.");
         }
 
         Map<Long, OrderItem> orderItemsById = order.getItems().stream()
@@ -111,8 +111,8 @@ public class ReturnRequestService {
             int alreadyReturned = getActiveReturnedQuantity(orderItem.getId());
             int returnableQuantity = orderItem.getQuantity() - alreadyReturned;
             if (line.quantity() > returnableQuantity) {
-                throw new IllegalStateException("Fuer " + orderItem.getProduct().getName()
-                        + " koennen maximal " + Math.max(returnableQuantity, 0)
+                throw new IllegalStateException("Für " + orderItem.getProduct().getName()
+                        + " können maximal " + Math.max(returnableQuantity, 0)
                         + " Stueck retourniert werden.");
             }
             validateLineReason(line);
@@ -160,7 +160,7 @@ public class ReturnRequestService {
 
         ReturnRequest saved = returnRequestRepository.save(returnRequest);
         auditLogService.record(customer, "RETURN_REQUEST_CREATED", "ReturnRequest", saved.getId(),
-                AuditInitiator.USER, "Retoure " + saved.getId() + " fuer Bestellung "
+                AuditInitiator.USER, "Retoure " + saved.getId() + " für Bestellung "
                         + order.getOrderNumber() + " angemeldet.");
         return toResponse(saved);
     }
@@ -258,7 +258,7 @@ public class ReturnRequestService {
         if (returnRequest.getStatus() != ReturnRequestStatus.GOODS_RECEIVED
                 && returnRequest.getStatus() != ReturnRequestStatus.IN_REVIEW
                 && returnRequest.getStatus() != ReturnRequestStatus.APPROVED) {
-            throw new IllegalStateException("Ein Pruefvermerk ist erst nach dem Wareneingang moeglich.");
+            throw new IllegalStateException("Ein Pruefvermerk ist erst nach dem Wareneingang möglich.");
         }
 
         returnRequest.setInspectionCondition(request.condition());
@@ -266,7 +266,7 @@ public class ReturnRequestService {
 
         ReturnRequest saved = returnRequestRepository.save(returnRequest);
         auditLogService.recordSystemAction("RETURN_REQUEST_INSPECTED", "ReturnRequest", saved.getId(),
-                "Pruefvermerk fuer Retoure aktualisiert: " + request.condition());
+                "Pruefvermerk für Retoure aktualisiert: " + request.condition());
         return toResponse(saved);
     }
 
@@ -286,7 +286,7 @@ public class ReturnRequestService {
     public ReturnRequestResponse approveReturn(Long returnRequestId, User employee) {
         ReturnRequest returnRequest = loadReturnRequest(returnRequestId);
         if (returnRequest.getStatus() != ReturnRequestStatus.IN_REVIEW) {
-            throw new IllegalStateException("Nur Retouren in Pruefung koennen freigegeben werden.");
+            throw new IllegalStateException("Nur Retouren in Pruefung können freigegeben werden.");
         }
         returnRequest.setStatus(ReturnRequestStatus.APPROVED);
         returnRequest.setApprovedAt(Instant.now());
@@ -294,7 +294,7 @@ public class ReturnRequestService {
         returnRequest.setDecidedBy(employee);
         prepareRefund(returnRequest);
         return auditAndRespond(returnRequest, employee, "RETURN_REQUEST_APPROVED",
-                "Retoure freigegeben. Rueckerstattung fuer Fremdsystem vorbereitet: "
+                "Retoure freigegeben. Rueckerstattung für Fremdsystem vorbereitet: "
                         + returnRequest.getRefundReference());
     }
 
@@ -302,7 +302,7 @@ public class ReturnRequestService {
     public ReturnRequestResponse rejectReturn(Long returnRequestId, User employee, ReturnStatusDecisionRequest request) {
         ReturnRequest returnRequest = loadReturnRequest(returnRequestId);
         if (returnRequest.getStatus() != ReturnRequestStatus.IN_REVIEW) {
-            throw new IllegalStateException("Nur Retouren in Pruefung koennen abgelehnt werden.");
+            throw new IllegalStateException("Nur Retouren in Pruefung können abgelehnt werden.");
         }
         String reason = normalizeRequiredDecisionReason(request.reason());
         returnRequest.setStatus(ReturnRequestStatus.REJECTED);
@@ -318,7 +318,7 @@ public class ReturnRequestService {
     public ReturnRequestResponse markGoodsReceived(Long returnRequestId, User employee) {
         ReturnRequest returnRequest = loadReturnRequest(returnRequestId);
         if (returnRequest.getStatus() != ReturnRequestStatus.SUBMITTED) {
-            throw new IllegalStateException("Nur beantragte Retouren koennen als Wareneingang markiert werden.");
+            throw new IllegalStateException("Nur beantragte Retouren können als Wareneingang markiert werden.");
         }
         returnRequest.setStatus(ReturnRequestStatus.GOODS_RECEIVED);
         returnRequest.setGoodsReceivedAt(Instant.now());
@@ -437,7 +437,7 @@ public class ReturnRequestService {
 
         return returnRequestRepository.findByTrackingIdIgnoreCase(code)
                 .or(() -> parseRmaId(code).flatMap(returnRequestRepository::findById))
-                .orElseThrow(() -> new EntityNotFoundException("Keine Retoure fuer den Scan-Code gefunden: " + code));
+                .orElseThrow(() -> new EntityNotFoundException("Keine Retoure für den Scan-Code gefunden: " + code));
     }
 
     private java.util.Optional<Long> parseRmaId(String code) {
@@ -504,7 +504,7 @@ private BigDecimal calculateRefundAmount(ReturnRequest returnRequest) {
         if (!containsDefectiveLine) {
             if (description != null || !images.isEmpty()) {
                 throw new IllegalArgumentException(
-                        "Defektdetails duerfen nur fuer den Rueckgabegrund Defekt uebermittelt werden.");
+                        "Defektdetails duerfen nur für den Rueckgabegrund Defekt übermittelt werden.");
             }
             return;
         }
@@ -710,7 +710,7 @@ private BigDecimal calculateRefundAmount(ReturnRequest returnRequest) {
         StringBuilder svg = new StringBuilder();
         svg.append("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 ")
                 .append(size).append(' ').append(size)
-                .append("\" role=\"img\" aria-label=\"QR-Code fuer Retourenlabel\">")
+                .append("\" role=\"img\" aria-label=\"QR-Code für Retourenlabel\">")
                 .append("<rect width=\"100%\" height=\"100%\" fill=\"#fff\"/>");
 
         for (int y = 0; y < matrix.getHeight(); y++) {

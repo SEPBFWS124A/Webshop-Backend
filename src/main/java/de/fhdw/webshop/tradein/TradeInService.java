@@ -56,10 +56,10 @@ public class TradeInService {
         }
 
         if (!orderItem.getProduct().isTradeInEnabled()) {
-            throw new IllegalStateException("Trade-In ist fuer diesen Artikel deaktiviert.");
+            throw new IllegalStateException("Trade-In ist für diesen Artikel deaktiviert.");
         }
         if (!isReturnWindowExpired(order)) {
-            throw new IllegalStateException("Trade-In ist erst nach Ablauf der 14-taegigen Retourenfrist moeglich.");
+            throw new IllegalStateException("Trade-In ist erst nach Ablauf der 14-taegigen Retourenfrist möglich.");
         }
 
         boolean alreadyPending = tradeInRepository.existsByOrderItemIdAndStatusNot(

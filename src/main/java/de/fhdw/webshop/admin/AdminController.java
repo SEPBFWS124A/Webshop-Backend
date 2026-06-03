@@ -246,7 +246,7 @@ public class AdminController {
         User targetUser = userRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("User not found: " + id));
         if (adminUser.getId().equals(targetUser.getId())) {
-            throw new IllegalArgumentException("Administratoren koennen ihr eigenes Konto nicht deaktivieren.");
+            throw new IllegalArgumentException("Administratoren können ihr eigenes Konto nicht deaktivieren.");
         }
 
         if (targetUser.isActive()) {
@@ -266,7 +266,7 @@ public class AdminController {
                 .orElseThrow(() -> new EntityNotFoundException("User not found: " + id));
         if (targetUser.getUsername().startsWith("deleted_")
                 && targetUser.getEmail().endsWith("@deleted.invalid")) {
-            throw new IllegalArgumentException("Geloeschte Benutzerkonten koennen nicht reaktiviert werden.");
+            throw new IllegalArgumentException("Geloeschte Benutzerkonten können nicht reaktiviert werden.");
         }
 
         if (!targetUser.isActive()) {
@@ -286,7 +286,7 @@ public class AdminController {
         User targetUser = userRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("User not found: " + id));
         if (adminUser.getId().equals(targetUser.getId())) {
-            throw new IllegalArgumentException("Administratoren koennen ihr eigenes Konto nicht loeschen.");
+            throw new IllegalArgumentException("Administratoren können ihr eigenes Konto nicht loeschen.");
         }
         String deletedUsername = targetUser.getUsername();
         accountLinkService.removeLinksForUser(id);
@@ -335,10 +335,10 @@ public class AdminController {
                 .orElseThrow(() -> new EntityNotFoundException("User not found: " + userId));
 
         if (!targetUser.isActive()) {
-            throw new IllegalArgumentException("Deaktivierte Benutzerkonten koennen nicht impersoniert werden.");
+            throw new IllegalArgumentException("Deaktivierte Benutzerkonten können nicht impersoniert werden.");
         }
         if (targetUser.hasRole(UserRole.ADMIN)) {
-            throw new IllegalArgumentException("Administratoren koennen keine Administrator-Identitaet annehmen.");
+            throw new IllegalArgumentException("Administratoren können keine Administrator-Identitaet annehmen.");
         }
 
         String impersonationToken = jwtTokenProvider.generateImpersonationToken(targetUser, adminUser);

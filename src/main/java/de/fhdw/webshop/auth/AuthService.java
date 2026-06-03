@@ -45,7 +45,7 @@ public class AuthService {
     @Transactional
     public AuthResponse register(RegisterRequest registerRequest) {
         if (registerRequest.userType() == UserType.INTERNAL) {
-            throw new IllegalArgumentException("Interne Benutzer koennen nur durch Administratoren angelegt werden.");
+            throw new IllegalArgumentException("Interne Benutzer können nur durch Administratoren angelegt werden.");
         }
         if (userRepository.existsByUsername(registerRequest.username())) {
             throw new IllegalArgumentException("Username already taken: " + registerRequest.username());

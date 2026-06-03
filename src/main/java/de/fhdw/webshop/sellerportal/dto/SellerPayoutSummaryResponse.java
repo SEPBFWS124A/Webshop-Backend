@@ -21,6 +21,7 @@ public record SellerPayoutSummaryResponse(
         BigDecimal settledReturnAmount,
         BigDecimal manualAdjustmentAmount,
         BigDecimal netPayoutAmount,
+        boolean payoutBlocked,
         Instant createdAt,
         Instant approvedAt,
         Instant paidOutAt,
