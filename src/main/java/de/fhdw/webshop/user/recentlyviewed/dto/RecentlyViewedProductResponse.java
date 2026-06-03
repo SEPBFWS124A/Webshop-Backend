@@ -11,6 +11,7 @@ public record RecentlyViewedProductResponse(
         String category,
         BigDecimal recommendedRetailPrice,
         boolean purchasable,
+        String sellerName,
         Instant viewedAt
 ) {
 }

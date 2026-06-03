@@ -16,15 +16,23 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class RecentlyViewedProductService {
 
-    private static final int MAX_RECENTLY_VIEWED_PRODUCTS = 5;
+    private static final int MAX_RECENTLY_VIEWED_PRODUCTS = 20;
 
     private final RecentlyViewedProductRepository recentlyViewedProductRepository;
     private final UserRepository userRepository;
     private final ProductService productService;
 
     @Transactional(readOnly = true)
-    public List<RecentlyViewedProductResponse> listForUser(User currentUser) {
-        return recentlyViewedProductRepository.findByUserIdOrderByViewedAtDesc(currentUser.getId()).stream()
+    public List<RecentlyViewedProductResponse> listForUser(User currentUser, Boolean marketplace) {
+        List<RecentlyViewedProduct> entries;
+        if (Boolean.TRUE.equals(marketplace)) {
+            entries = recentlyViewedProductRepository.findMarketplaceByUserIdOrderByViewedAtDesc(currentUser.getId());
+        } else if (Boolean.FALSE.equals(marketplace)) {
+            entries = recentlyViewedProductRepository.findShopByUserIdOrderByViewedAtDesc(currentUser.getId());
+        } else {
+            entries = recentlyViewedProductRepository.findByUserIdOrderByViewedAtDesc(currentUser.getId());
+        }
+        return entries.stream()
                 .limit(MAX_RECENTLY_VIEWED_PRODUCTS)
                 .map(this::toResponse)
                 .toList();
@@ -61,6 +69,7 @@ public class RecentlyViewedProductService {
                 product.getCategory(),
                 product.getRecommendedRetailPrice(),
                 product.isPurchasable(),
+                product.getSellerName(),
                 recentlyViewedProduct.getViewedAt()
         );
     }
