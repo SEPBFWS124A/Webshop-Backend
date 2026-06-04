@@ -752,7 +752,15 @@ INSERT INTO about_us_sections (title, content, display_order, created_at, update
 
 -- ============================================================
 -- Jobs / Karriere (Demo-Daten)
+-- Idempotent: vorhandene Demo-Daten werden zuerst entfernt, damit
+-- wiederholtes Ausführen des Seeds keine Duplikate erzeugt (sonst
+-- liefern die Subqueries nach Titel/Name mehr als eine ID -> Fehler).
+-- (DELETE FROM job_postings kaskadiert auf job_applications + _files.)
 -- ============================================================
+DELETE FROM job_applications;
+DELETE FROM job_postings;
+DELETE FROM job_locations;
+
 INSERT INTO job_postings (title, description, employment_type, location, status, display_order, created_at, updated_at) VALUES
 (
     'Frontend-Entwickler (React)',

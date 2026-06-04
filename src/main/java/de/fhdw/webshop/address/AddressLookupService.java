@@ -143,15 +143,16 @@ public class AddressLookupService {
                                 .queryParam("countrycodes", "de");
 
                         if (!normalizedStreet.isBlank()) {
+                            // Strukturierte Suche: street + optionale postalcode/city
                             uriBuilder.queryParam("street", normalizedStreet);
-                        }
-                        if (!normalizedPostalCode.isBlank()) {
-                            uriBuilder.queryParam("postalcode", normalizedPostalCode);
-                        }
-                        if (!normalizedCity.isBlank()) {
-                            uriBuilder.queryParam("city", normalizedCity);
-                        }
-                        if (normalizedStreet.isBlank()) {
+                            if (!normalizedPostalCode.isBlank()) {
+                                uriBuilder.queryParam("postalcode", normalizedPostalCode);
+                            }
+                            if (!normalizedCity.isBlank()) {
+                                uriBuilder.queryParam("city", normalizedCity);
+                            }
+                        } else {
+                            // Freitextsuche (kein street): nur q, keine strukturierten Params mischen
                             uriBuilder.queryParam(
                                     "q",
                                     List.of(normalizedPostalCode, normalizedCity, normalizedCountry).stream()
