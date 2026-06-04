@@ -1,2 +1,10 @@
--- Referrer-Belohnung wird erst nach erster Bestellung der beworbenen Person gewährt
-ALTER TABLE referrals ADD COLUMN referrer_rewarded BOOLEAN NOT NULL DEFAULT FALSE;
+-- No-op (Tombstone).
+--
+-- Diese Migration sollte ursprünglich die Spalte referrer_rewarded zur Tabelle
+-- referrals hinzufügen. Durch eine Merge-Konflikt-Umnummerierung
+-- (Commit 277d2aa "rename v107 to v108 to resolve merge conflicts") läuft V108
+-- jedoch VOR V109, das die Tabelle referrals erst erstellt — ein ALTER hier würde
+-- auf einer frischen Datenbank fehlschlagen.
+--
+-- Die Spalte wird deshalb direkt in V109 (CREATE TABLE referrals) angelegt.
+-- Diese Datei bleibt als Platzhalter erhalten, damit die Versionsnummern stabil bleiben.

@@ -656,3 +656,96 @@ SET seller_name = COALESCE(NULLIF(p.seller_name, ''), 'Webshop')
 FROM products p
 WHERE oi.product_id = p.id
   AND oi.seller_name = 'Webshop';
+
+-- ============================================================
+-- Newsletter-Posts (Demo-Inhalte)
+-- ============================================================
+INSERT INTO newsletter_posts (title, content, category_id, author_id, published, published_at, created_at, updated_at)
+SELECT
+    '🎉 Sommerrabatt: Bis zu 30% auf ausgewählte Produkte',
+    E'## Sommerangebote – jetzt zugreifen!\n\nDer Sommer ist da und wir feiern ihn mit unseren bisher besten Angeboten des Jahres.\n\n### Highlights\n\n- **Laptops & PCs** – bis zu 25% Rabatt\n- **Bürostühle & Schreibtische** – jetzt 30% günstiger\n- **Zubehör** – 2 kaufen, 1 gratis\n\n> Die Aktion gilt vom 01.07. bis 31.07. Solange der Vorrat reicht.\n\nJetzt im Shop stöbern und Lieblingsprodukte zum Schnäppchenpreis sichern!',
+    (SELECT id FROM newsletter_categories WHERE slug = 'angebote'),
+    (SELECT id FROM users WHERE username = 'admin'),
+    true,
+    NOW() - INTERVAL '5 days',
+    NOW() - INTERVAL '5 days',
+    NOW() - INTERVAL '5 days';
+
+INSERT INTO newsletter_posts (title, content, category_id, author_id, published, published_at, created_at, updated_at)
+SELECT
+    'Neue Produkte im Sortiment: Ergonomie-Serie erweitert',
+    E'## Erweiterte Ergonomie-Kollektion\n\nWir haben unser Sortiment um neue ergonomische Produkte erweitert, die deinen Arbeitsalltag noch angenehmer machen.\n\n### Neue Artikel\n\n**ErgoStand Pro X**\nDer höhenverstellbare Laptop-Ständer mit integriertem USB-Hub. Perfekt für das Home Office.\n\n**ComfortPad 3.0**\nGelkissen für Tastatur und Maus – ideal für lange Arbeitstage.\n\n**BackCare Chair Light**\nLeichter Bürostuhl mit Lendenwirbelstütze für unter 300 €.\n\nAlle neuen Produkte sind ab sofort im Shop verfügbar. Kostenloser Versand ab 50 €!',
+    (SELECT id FROM newsletter_categories WHERE slug = 'produktneuheiten'),
+    (SELECT id FROM users WHERE username = 'admin'),
+    true,
+    NOW() - INTERVAL '12 days',
+    NOW() - INTERVAL '12 days',
+    NOW() - INTERVAL '12 days';
+
+INSERT INTO newsletter_posts (title, content, category_id, author_id, published, published_at, created_at, updated_at)
+SELECT
+    'Webshop Update: Neue Features für ein besseres Einkaufserlebnis',
+    E'## Was ist neu?\n\nWir haben in den letzten Wochen hart daran gearbeitet, euren Einkauf noch angenehmer zu gestalten. Hier sind die wichtigsten Neuerungen:\n\n### Preisalarm\nSetze jetzt Preisalarme für deine Wunschprodukte. Du wirst automatisch benachrichtigt, sobald der Preis fällt.\n\n### Geteilte Merklisten\nTeile deine Merkliste mit Freunden und Familie – ideal für gemeinsame Wunschlisten.\n\n### Schnellerer Checkout\nUnser überarbeiteter Checkout-Prozess spart dir wertvolle Zeit.\n\nWir freuen uns auf euer Feedback! Schreibt uns über das Support-Ticket-System.',
+    (SELECT id FROM newsletter_categories WHERE slug = 'news'),
+    (SELECT id FROM users WHERE username = 'admin'),
+    true,
+    NOW() - INTERVAL '20 days',
+    NOW() - INTERVAL '20 days',
+    NOW() - INTERVAL '20 days';
+
+INSERT INTO newsletter_posts (title, content, category_id, author_id, published, published_at, created_at, updated_at)
+SELECT
+    'Flash-Sale diesen Freitag: 24 Stunden, unschlagbare Preise',
+    E'## Flash-Sale am Freitag!\n\nNur für 24 Stunden – von Freitag 00:00 bis Samstag 00:00 Uhr – gibt es exklusive Blitzangebote.\n\n**Was dich erwartet:**\n\n- Tagesangebote im Stundentakt\n- Limitierte Stückzahlen\n- Bis zu 50% Rabatt auf Top-Produkte\n\nTrage den Termin in deinen Kalender ein und sei rechtzeitig dabei – die besten Deals sind schnell weg!',
+    (SELECT id FROM newsletter_categories WHERE slug = 'angebote'),
+    (SELECT id FROM users WHERE username = 'admin'),
+    false,
+    NULL,
+    NOW() - INTERVAL '1 day',
+    NOW() - INTERVAL '1 day';
+
+-- Newsletter-Abonnements für Demo-Nutzer
+INSERT INTO newsletter_subscriptions (user_id, category_id, subscribed, updated_at)
+SELECT u.id, c.id, true, NOW()
+FROM users u, newsletter_categories c
+WHERE u.username = 'alice'
+ON CONFLICT (user_id, category_id) DO NOTHING;
+
+INSERT INTO newsletter_subscriptions (user_id, category_id, subscribed, updated_at)
+SELECT u.id, c.id, CASE WHEN c.slug = 'angebote' THEN true ELSE false END, NOW()
+FROM users u, newsletter_categories c
+WHERE u.username = 'bob'
+ON CONFLICT (user_id, category_id) DO NOTHING;
+
+-- ============================================================
+-- Über-Uns-Sektionen (Demo-Inhalte)
+-- ============================================================
+INSERT INTO about_us_sections (title, content, display_order, created_at, updated_at) VALUES
+(
+    'Wer wir sind',
+    E'## Unser Unternehmen\n\nWir sind ein junges, innovatives Unternehmen aus dem Herzen Deutschlands, das es sich zur Aufgabe gemacht hat, Shopping neu zu denken.\n\nSeit unserer Gründung im Jahr 2022 wachsen wir stetig und bieten unseren Kunden ein einzigartiges Online-Einkaufserlebnis – von hochwertigen Produkten bis hin zu persönlichem Kundenservice.\n\n**Unser Versprechen:** Qualität, Transparenz und Nachhaltigkeit in allem, was wir tun.',
+    0,
+    NOW(),
+    NOW()
+),
+(
+    'Unsere Mission',
+    E'## Mission & Vision\n\nUnsere Mission ist es, Online-Shopping so einfach, sicher und angenehm wie möglich zu gestalten.\n\n### Was uns antreibt\n\n- **Kundenzufriedenheit** steht bei uns an erster Stelle\n- Wir setzen auf **nachhaltige Produkte** und umweltfreundliche Verpackungen\n- **Faire Preise** ohne versteckte Kosten\n- Ein **transparenter Marktplatz**, auf dem Verkäufer und Käufer sich auf Augenhöhe begegnen\n\nWir glauben daran, dass guter Handel auf gegenseitigem Vertrauen basiert.',
+    1,
+    NOW(),
+    NOW()
+),
+(
+    'Unser Team',
+    E'## Die Menschen hinter dem Webshop\n\nUnser Team besteht aus leidenschaftlichen Entwicklern, kreativen Designern und erfahrenen Kaufleuten, die täglich daran arbeiten, euer Einkaufserlebnis zu verbessern.\n\nWir kommen aus verschiedenen Ecken Deutschlands und teilen eine gemeinsame Vision: einen Webshop zu bauen, den wir selbst gerne nutzen würden.\n\n> *"Wir bauen nicht nur einen Shop, wir bauen eine Community."*\n> — Das Gründerteam\n\nLust auf Mitarbeit? Wir freuen uns immer über motivierte Talente!',
+    2,
+    NOW(),
+    NOW()
+),
+(
+    'Nachhaltigkeit & Verantwortung',
+    E'## Unser Beitrag zur Umwelt\n\nNachhaltigkeit ist für uns kein Marketing-Begriff, sondern gelebte Praxis:\n\n- Alle Verpackungen bestehen aus **recyceltem oder recycelbarem Material**\n- Wir gleichen unseren CO₂-Fußabdruck durch zertifizierte **Klimaschutzprojekte** aus\n- Unser **Öko-Score** zeigt transparent, wie nachhaltig jedes Produkt ist\n- Mit dem **Trade-In-Programm** geben wir gebrauchten Geräten ein zweites Leben\n\nGemeinsam können wir einen Unterschied machen.',
+    3,
+    NOW(),
+    NOW()
+);
