@@ -851,11 +851,11 @@ VALUES
 -- ============================================================
 -- Job-Standorte (Demo-Daten)
 -- ============================================================
-INSERT INTO job_locations (name, street, house_number, postal_code, city, location_type, created_at, updated_at) VALUES
-('Zentrale Berlin',       'Unter den Linden',   '1',   '10117', 'Berlin',  'VERWALTUNG', NOW(), NOW()),
-('Filiale Hamburg',       'Mönckebergstraße',   '7',   '20095', 'Hamburg', 'FILIALE',    NOW(), NOW()),
-('Zentrallager Köln',     'Aachener Straße',    '100', '50674', 'Köln',    'LAGER',      NOW(), NOW()),
-('Filiale München',       'Kaufingerstraße',    '15',  '80331', 'München', 'FILIALE',    NOW(), NOW());
+INSERT INTO job_locations (name, street, house_number, postal_code, city, location_type, latitude, longitude, created_at, updated_at) VALUES
+('Zentrale Berlin',   'Unter den Linden', '1',   '10117', 'Berlin',  'VERWALTUNG', 52.5170,  13.3777, NOW(), NOW()),
+('Filiale Hamburg',   'Mönckebergstraße', '7',   '20095', 'Hamburg', 'FILIALE',    53.5503,  10.0006, NOW(), NOW()),
+('Zentrallager Köln', 'Aachener Straße',  '100', '50674', 'Köln',    'LAGER',      50.9296,   6.9166, NOW(), NOW()),
+('Filiale München',   'Kaufingerstraße',  '15',  '80331', 'München', 'FILIALE',    48.1375,  11.5755, NOW(), NOW());
 
 -- Bestehende Stellenausschreibungen mit Standorten verknüpfen
 UPDATE job_postings SET job_location_id = (SELECT id FROM job_locations WHERE name = 'Zentrale Berlin')
