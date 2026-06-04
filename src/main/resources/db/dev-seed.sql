@@ -749,3 +749,93 @@ INSERT INTO about_us_sections (title, content, display_order, created_at, update
     NOW(),
     NOW()
 );
+
+-- ============================================================
+-- Jobs / Karriere (Demo-Daten)
+-- ============================================================
+INSERT INTO job_postings (title, description, employment_type, location, status, display_order, created_at, updated_at) VALUES
+(
+    'Frontend-Entwickler (React)',
+    E'## Deine Aufgaben\n\n- Entwicklung und Weiterentwicklung unserer React-basierten Webshop-Oberfläche\n- Enge Zusammenarbeit mit UX/Design und Backend-Teams\n- Code Reviews und technische Dokumentation\n\n## Dein Profil\n\n- Mindestens 2 Jahre Erfahrung mit React\n- Kenntnisse in TypeScript, CSS und REST-APIs\n- Teamfähigkeit und eigenverantwortliches Arbeiten\n\n## Was wir bieten\n\n- Flexible Arbeitszeiten und Remote-Option\n- Modernes Tech-Stack\n- Flache Hierarchien und kurze Entscheidungswege',
+    'VOLLZEIT', 'Berlin', 'ACTIVE', 0,
+    NOW() - INTERVAL '10 days', NOW() - INTERVAL '10 days'
+),
+(
+    'Backend-Entwicklerin / Backend-Entwickler (Java / Spring Boot)',
+    E'## Deine Aufgaben\n\n- Entwicklung und Pflege unserer Spring-Boot-Microservices\n- Datenbankmodellierung und Query-Optimierung (PostgreSQL)\n- Mitgestaltung der API-Architektur (REST)\n\n## Dein Profil\n\n- Sehr gute Java-Kenntnisse (Java 17+)\n- Erfahrung mit Spring Boot, JPA/Hibernate und Flyway\n- Grundkenntnisse in Docker und CI/CD\n\n## Was wir bieten\n\n- 30 Tage Urlaub\n- Weiterbildungsbudget\n- Gemeinsame Team-Events',
+    'VOLLZEIT', 'Berlin', 'ACTIVE', 1,
+    NOW() - INTERVAL '8 days', NOW() - INTERVAL '8 days'
+),
+(
+    'Werkstudent/in Kundenservice',
+    E'## Deine Aufgaben\n\n- Beantwortung von Kundenanfragen per E-Mail und Chat\n- Bearbeitung von Retouren und Beschwerden\n- Pflege unseres FAQ-Bereichs\n\n## Dein Profil\n\n- Laufendes Studium (BWL, Kommunikation o. Ä.)\n- Sehr gute Deutschkenntnisse in Wort und Schrift\n- Freundliches und lösungsorientiertes Auftreten\n\n## Was wir bieten\n\n- Flexible Arbeitszeiten passend zum Studium\n- Übernahme-Möglichkeit nach dem Studium',
+    'TEILZEIT', 'Hamburg', 'ACTIVE', 2,
+    NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days'
+),
+(
+    'Minijob: Lagermitarbeiter/in',
+    E'## Deine Aufgaben\n\n- Wareneingangskontrolle und Einlagerung\n- Kommissionierung von Bestellungen\n- Pflege der Lagerfläche\n\n## Dein Profil\n\n- Körperliche Belastbarkeit\n- Zuverlässigkeit und Pünktlichkeit\n- Erfahrung im Lager von Vorteil, aber kein Muss\n\n## Was wir bieten\n\n- Fester Stundenlohn über Mindestlohn\n- Kollegiales Team',
+    'MINIJOB', 'Hamburg', 'ACTIVE', 3,
+    NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days'
+),
+(
+    'DevOps-Engineer (m/w/d)',
+    E'## Deine Aufgaben\n\n- Aufbau und Pflege unserer CI/CD-Pipelines\n- Container-Orchestrierung mit Docker und Kubernetes\n- Monitoring und Incident-Management\n\n## Dein Profil\n\n- Erfahrung mit Docker, Kubernetes, GitHub Actions\n- Linux-Kenntnisse\n- Interesse an Cloud-nativen Architekturen\n\n## Was wir bieten\n\n- 100 % Remote möglich\n- Home-Office-Ausstattung inklusive',
+    'VOLLZEIT', 'Remote', 'INACTIVE', 4,
+    NOW() - INTERVAL '30 days', NOW() - INTERVAL '15 days'
+),
+(
+    'Praktikum Marketing & Social Media',
+    E'## Deine Aufgaben\n\n- Erstellung von Social-Media-Content (Instagram, LinkedIn)\n- Unterstützung bei Newsletter-Kampagnen\n- Analyse von Marketing-KPIs\n\n## Dein Profil\n\n- Studium im Bereich Marketing, Medien oder Kommunikation\n- Kreativität und Gespür für Trends\n- Erfahrung mit Canva oder Adobe Express von Vorteil\n\n## Was wir bieten\n\n- Praxisnahes Arbeiten im echten Unternehmen\n- Pflichtpraktikum oder freiwilliges Praktikum möglich',
+    'TEILZEIT', 'Berlin', 'ARCHIVED', 5,
+    NOW() - INTERVAL '60 days', NOW() - INTERVAL '30 days'
+);
+
+-- Bewerbungen (offene + bearbeitete)
+INSERT INTO job_applications (job_posting_id, applicant_name, applicant_email, applicant_phone, motivation_text, status, created_at, updated_at)
+VALUES
+(
+    (SELECT id FROM job_postings WHERE title = 'Frontend-Entwickler (React)'),
+    'Max Mustermann',
+    'max.mustermann@example.com',
+    '+49 151 12345678',
+    E'Sehr geehrte Damen und Herren,\n\nals begeisterter React-Entwickler mit 3 Jahren Berufserfahrung möchte ich mich herzlich für die ausgeschriebene Stelle bewerben. In meiner aktuellen Tätigkeit habe ich umfangreiche Erfahrungen mit modernen React-Patterns, TypeScript und REST-APIs gesammelt.\n\nIch freue mich auf ein persönliches Gespräch.',
+    'OPEN',
+    NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days'
+),
+(
+    (SELECT id FROM job_postings WHERE title = 'Frontend-Entwickler (React)'),
+    'Lena Schmidt',
+    'lena.schmidt@example.com',
+    NULL,
+    E'Hallo,\n\nich bin Absolventin der TU Berlin (Informatik) und suche meinen ersten Job als Frontend-Entwicklerin. React und JavaScript sind meine Leidenschaft. Mein Portfolio: github.com/lena-dev.',
+    'ACCEPTED',
+    NOW() - INTERVAL '7 days', NOW() - INTERVAL '2 days'
+),
+(
+    (SELECT id FROM job_postings WHERE title = 'Backend-Entwicklerin / Backend-Entwickler (Java / Spring Boot)'),
+    'Jonas Weber',
+    'jonas.weber@example.com',
+    '+49 176 87654321',
+    E'Guten Tag,\n\nich bringe 5 Jahre Erfahrung in der Java-Backend-Entwicklung mit, davon 3 Jahre mit Spring Boot und PostgreSQL. Ich schätze saubere Architektur und testgetriebene Entwicklung.',
+    'OPEN',
+    NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days'
+),
+(
+    (SELECT id FROM job_postings WHERE title = 'Backend-Entwicklerin / Backend-Entwickler (Java / Spring Boot)'),
+    'Anna Bauer',
+    'anna.bauer@example.com',
+    '+49 160 11223344',
+    NULL,
+    'REJECTED',
+    NOW() - INTERVAL '6 days', NOW() - INTERVAL '1 day'
+),
+(
+    (SELECT id FROM job_postings WHERE title = 'Werkstudent/in Kundenservice'),
+    'Tom Fischer',
+    'tom.fischer@example.com',
+    NULL,
+    E'Ich studiere BWL im 4. Semester und suche eine Werkstudentenstelle, die mir praktische Erfahrungen ermöglicht. Kundenservice und Kommunikation liegen mir sehr.',
+    'OPEN',
+    NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day'
+);
