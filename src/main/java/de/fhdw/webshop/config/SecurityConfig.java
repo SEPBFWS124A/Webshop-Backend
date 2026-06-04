@@ -77,6 +77,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/newsletter/**").permitAll()
                         // About Us – public reading
                         .requestMatchers(HttpMethod.GET, "/api/about-us/**").permitAll()
+                        // Jobs – public listing and application submission
+                        .requestMatchers(HttpMethod.GET, "/api/jobs").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/jobs/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/jobs/*/apply").permitAll()
                         // Affiliate click tracking — public so links work without login
                         .requestMatchers(HttpMethod.GET, "/api/affiliate/track/**").permitAll()
                         // Shoppi chatbot — public, auth-aware (personal context only when authenticated)
