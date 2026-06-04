@@ -27,8 +27,12 @@ public class JobPosting {
     @Column(name = "employment_type", nullable = false, length = 50)
     private String employmentType;
 
-    @Column(name = "location", nullable = false, length = 255)
+    @Column(name = "location", length = 255)
     private String location;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "job_location_id")
+    private JobLocation jobLocation;
 
     @Column(name = "status", nullable = false, length = 50)
     private String status = "ACTIVE";

@@ -7,9 +7,9 @@ public record JobPostingResponse(
         String title,
         String description,
         String employmentType,
-        String location,
         String status,
         int displayOrder,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        JobLocationResponse jobLocation
 ) {}

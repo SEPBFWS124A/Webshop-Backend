@@ -839,3 +839,25 @@ VALUES
     'OPEN',
     NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day'
 );
+
+-- ============================================================
+-- Job-Standorte (Demo-Daten)
+-- ============================================================
+INSERT INTO job_locations (name, street, house_number, postal_code, city, location_type, created_at, updated_at) VALUES
+('Zentrale Berlin',       'Unter den Linden',   '1',   '10117', 'Berlin',  'VERWALTUNG', NOW(), NOW()),
+('Filiale Hamburg',       'Mönckebergstraße',   '7',   '20095', 'Hamburg', 'FILIALE',    NOW(), NOW()),
+('Zentrallager Köln',     'Aachener Straße',    '100', '50674', 'Köln',    'LAGER',      NOW(), NOW()),
+('Filiale München',       'Kaufingerstraße',    '15',  '80331', 'München', 'FILIALE',    NOW(), NOW());
+
+-- Bestehende Stellenausschreibungen mit Standorten verknüpfen
+UPDATE job_postings SET job_location_id = (SELECT id FROM job_locations WHERE name = 'Zentrale Berlin')
+WHERE title IN ('Frontend-Entwickler (React)', 'Backend-Entwicklerin / Backend-Entwickler (Java / Spring Boot)', 'Praktikum Marketing & Social Media');
+
+UPDATE job_postings SET job_location_id = (SELECT id FROM job_locations WHERE name = 'Filiale Hamburg')
+WHERE title = 'Werkstudent/in Kundenservice';
+
+UPDATE job_postings SET job_location_id = (SELECT id FROM job_locations WHERE name = 'Zentrallager Köln')
+WHERE title = 'Minijob: Lagermitarbeiter/in';
+
+UPDATE job_postings SET job_location_id = (SELECT id FROM job_locations WHERE name = 'Zentrale Berlin')
+WHERE title = 'DevOps-Engineer (m/w/d)';
