@@ -107,6 +107,15 @@ public class AdminNavigationService {
                     )
             ),
             new NavigationGroup(
+                    "content",
+                    "Content",
+                    "pi pi-file",
+                    List.of(
+                            item("newsletter-management", "Newsletter", "/admin/content/newsletter", "pi pi-envelope", ADMIN_ROLES),
+                            item("about-us-management", "Über Uns", "/admin/content/about-us", "pi pi-info-circle", ADMIN_ROLES)
+                    )
+            ),
+            new NavigationGroup(
                     "system",
                     "System",
                     "pi pi-cog",

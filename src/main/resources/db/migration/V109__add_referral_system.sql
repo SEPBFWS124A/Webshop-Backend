@@ -11,12 +11,16 @@ CREATE TABLE referral_codes (
 );
 
 -- Referrals: Tracking wer sich über welchen Code registriert hat
+-- Hinweis: referrer_rewarded gehört logisch zu V108, das aber wegen einer
+-- historischen Merge-Konflikt-Umnummerierung vor dieser Tabelle läuft. Die Spalte
+-- wird daher hier direkt mit erstellt (V108 ist ein No-op).
 CREATE TABLE referrals (
     id                   BIGSERIAL  PRIMARY KEY,
     referral_code_id     BIGINT     NOT NULL REFERENCES referral_codes(id),
     referred_user_id     BIGINT     NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
     referrer_coupon_id   BIGINT     REFERENCES coupons(id),
     referred_coupon_id   BIGINT     REFERENCES coupons(id),
+    referrer_rewarded    BOOLEAN    NOT NULL DEFAULT FALSE,
     created_at           TIMESTAMP  NOT NULL DEFAULT NOW()
 );
 
