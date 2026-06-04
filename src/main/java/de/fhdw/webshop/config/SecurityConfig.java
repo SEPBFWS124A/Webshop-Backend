@@ -81,6 +81,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/jobs").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/jobs/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/jobs/*/apply").permitAll()
+                        // Job locations – public listing for career page dropdown
+                        .requestMatchers(HttpMethod.GET, "/api/job-locations").permitAll()
                         // Affiliate click tracking — public so links work without login
                         .requestMatchers(HttpMethod.GET, "/api/affiliate/track/**").permitAll()
                         // Shoppi chatbot — public, auth-aware (personal context only when authenticated)

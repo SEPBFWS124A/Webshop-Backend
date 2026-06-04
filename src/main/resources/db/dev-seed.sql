@@ -752,7 +752,15 @@ INSERT INTO about_us_sections (title, content, display_order, created_at, update
 
 -- ============================================================
 -- Jobs / Karriere (Demo-Daten)
+-- Idempotent: vorhandene Demo-Daten werden zuerst entfernt, damit
+-- wiederholtes Ausführen des Seeds keine Duplikate erzeugt (sonst
+-- liefern die Subqueries nach Titel/Name mehr als eine ID -> Fehler).
+-- (DELETE FROM job_postings kaskadiert auf job_applications + _files.)
 -- ============================================================
+DELETE FROM job_applications;
+DELETE FROM job_postings;
+DELETE FROM job_locations;
+
 INSERT INTO job_postings (title, description, employment_type, location, status, display_order, created_at, updated_at) VALUES
 (
     'Frontend-Entwickler (React)',
@@ -839,3 +847,25 @@ VALUES
     'OPEN',
     NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day'
 );
+
+-- ============================================================
+-- Job-Standorte (Demo-Daten)
+-- ============================================================
+INSERT INTO job_locations (name, street, house_number, postal_code, city, location_type, latitude, longitude, created_at, updated_at) VALUES
+('Zentrale Berlin',   'Unter den Linden', '1',   '10117', 'Berlin',  'VERWALTUNG', 52.5170,  13.3777, NOW(), NOW()),
+('Filiale Hamburg',   'Mönckebergstraße', '7',   '20095', 'Hamburg', 'FILIALE',    53.5503,  10.0006, NOW(), NOW()),
+('Zentrallager Köln', 'Aachener Straße',  '100', '50674', 'Köln',    'LAGER',      50.9296,   6.9166, NOW(), NOW()),
+('Filiale München',   'Kaufingerstraße',  '15',  '80331', 'München', 'FILIALE',    48.1375,  11.5755, NOW(), NOW());
+
+-- Bestehende Stellenausschreibungen mit Standorten verknüpfen
+UPDATE job_postings SET job_location_id = (SELECT id FROM job_locations WHERE name = 'Zentrale Berlin')
+WHERE title IN ('Frontend-Entwickler (React)', 'Backend-Entwicklerin / Backend-Entwickler (Java / Spring Boot)', 'Praktikum Marketing & Social Media');
+
+UPDATE job_postings SET job_location_id = (SELECT id FROM job_locations WHERE name = 'Filiale Hamburg')
+WHERE title = 'Werkstudent/in Kundenservice';
+
+UPDATE job_postings SET job_location_id = (SELECT id FROM job_locations WHERE name = 'Zentrallager Köln')
+WHERE title = 'Minijob: Lagermitarbeiter/in';
+
+UPDATE job_postings SET job_location_id = (SELECT id FROM job_locations WHERE name = 'Zentrale Berlin')
+WHERE title = 'DevOps-Engineer (m/w/d)';
