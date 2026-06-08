@@ -14,6 +14,9 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
         List<Order> findByCustomerIdOrderByCreatedAtDesc(Long customerId);
 
+        /** GDPR export for guest orders (#153). */
+        List<Order> findByCustomerEmailIgnoreCaseOrderByCreatedAtDesc(String customerEmail);
+
         List<Order> findTop10ByCustomerIdOrderByCreatedAtDesc(Long customerId);
 
         long countByCustomerId(Long customerId);
