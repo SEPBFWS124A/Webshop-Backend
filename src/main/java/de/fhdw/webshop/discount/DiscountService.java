@@ -162,12 +162,13 @@ public class DiscountService implements ProductService.DiscountLookupPort {
                 discount.getValidUntil());
     }
 
-    private CouponResponse toCouponResponse(Coupon coupon) {
+    public CouponResponse toCouponResponse(Coupon coupon) {
         return new CouponResponse(
                 coupon.getId(),
                 coupon.getCustomer().getId(),
                 coupon.getCode(),
                 coupon.getDiscountPercent(),
+                coupon.getFixedAmountEur(),
                 coupon.getValidUntil(),
                 coupon.isUsed(),
                 coupon.getUsedAt());

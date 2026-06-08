@@ -70,6 +70,35 @@ INSERT INTO products (
   ('Office Chair', 'Lumbar support mesh chair', '/office-chair.jpg', 349.99, 33.200, 'D', 'Furniture', 25, 'OFFICE-CHAIR', 'B-02-05', TRUE, TRUE),
   ('Notebook (Draft)', 'Not yet available to customers', NULL, 9.99, 0.350, 'A', 'Stationery', 0, 'NOTEBOOK-DRAFT', 'C-01-01', FALSE, FALSE);
 
+-- Preisverlauf (UVP) fuer alle Produkte: drei juengere Aenderungen fuer Demo-Charts.
+INSERT INTO product_price_history (product_id, old_price, new_price, change_reason, changed_by, changed_at)
+SELECT p.id, NULL, ROUND((p.recommended_retail_price * 1.18)::numeric, 2), 'INITIAL', NULL, NOW() - INTERVAL '70 days'
+FROM products p
+WHERE p.recommended_retail_price IS NOT NULL
+  AND p.recommended_retail_price > 0;
+
+INSERT INTO product_price_history (product_id, old_price, new_price, change_reason, changed_by, changed_at)
+SELECT p.id,
+       ROUND((p.recommended_retail_price * 1.18)::numeric, 2),
+       ROUND((p.recommended_retail_price * 1.08)::numeric, 2),
+       'MANUAL',
+       NULL,
+       NOW() - INTERVAL '28 days'
+FROM products p
+WHERE p.recommended_retail_price IS NOT NULL
+  AND p.recommended_retail_price > 0;
+
+INSERT INTO product_price_history (product_id, old_price, new_price, change_reason, changed_by, changed_at)
+SELECT p.id,
+       ROUND((p.recommended_retail_price * 1.08)::numeric, 2),
+       p.recommended_retail_price,
+       'PROMOTION',
+       NULL,
+       NOW() - INTERVAL '6 days'
+FROM products p
+WHERE p.recommended_retail_price IS NOT NULL
+  AND p.recommended_retail_price > 0;
+
 -- Warehouse stock per location
 INSERT INTO warehouse_product_stocks (product_id, warehouse_location_id, quantity)
 SELECT
@@ -93,8 +122,8 @@ INSERT INTO advertisements (title, description, content_type, image_url, target_
 SELECT title, description, content_type, image_url, target_url, active, start_date, end_date
 FROM (
     VALUES
-      ('Sommeraktion im Home Office', 'Ergonomische Favoriten, clevere Bundles und schnelle Upgrades fuer deinen Arbeitsplatz.', 'IMAGE', '/standing-desk.jpg', '/products/3', TRUE, CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days'),
-      ('Top Auswahl fuer Entscheider', 'Vergleiche Bestseller, Empfehlungen und sofort verfuegbare Geraete direkt im Sortiment.', 'TEXT', NULL, '/', TRUE, CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days'),
+      ('Sommeraktion im Home Office', 'Ergonomische Favoriten, clevere Bundles und schnelle Upgrades für deinen Arbeitsplatz.', 'IMAGE', '/standing-desk.jpg', '/products/3', TRUE, CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days'),
+      ('Top Auswahl für Entscheider', 'Vergleiche Bestseller, Empfehlungen und sofort verfuegbare Geraete direkt im Sortiment.', 'TEXT', NULL, '/', TRUE, CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days'),
       ('Verkaeufer-Aktion vorbereiten', 'Diese Werbeflaeche ist angelegt, aber noch nicht aktiv geschaltet.', 'TEXT', NULL, '/admin/marketing/placements', FALSE, CURRENT_DATE + INTERVAL '7 days', CURRENT_DATE + INTERVAL '21 days')
 ) AS seed_data(title, description, content_type, image_url, target_url, active, start_date, end_date)
 WHERE NOT EXISTS (
@@ -627,3 +656,216 @@ SET seller_name = COALESCE(NULLIF(p.seller_name, ''), 'Webshop')
 FROM products p
 WHERE oi.product_id = p.id
   AND oi.seller_name = 'Webshop';
+
+-- ============================================================
+-- Newsletter-Posts (Demo-Inhalte)
+-- ============================================================
+INSERT INTO newsletter_posts (title, content, category_id, author_id, published, published_at, created_at, updated_at)
+SELECT
+    '🎉 Sommerrabatt: Bis zu 30% auf ausgewählte Produkte',
+    E'## Sommerangebote – jetzt zugreifen!\n\nDer Sommer ist da und wir feiern ihn mit unseren bisher besten Angeboten des Jahres.\n\n### Highlights\n\n- **Laptops & PCs** – bis zu 25% Rabatt\n- **Bürostühle & Schreibtische** – jetzt 30% günstiger\n- **Zubehör** – 2 kaufen, 1 gratis\n\n> Die Aktion gilt vom 01.07. bis 31.07. Solange der Vorrat reicht.\n\nJetzt im Shop stöbern und Lieblingsprodukte zum Schnäppchenpreis sichern!',
+    (SELECT id FROM newsletter_categories WHERE slug = 'angebote'),
+    (SELECT id FROM users WHERE username = 'admin'),
+    true,
+    NOW() - INTERVAL '5 days',
+    NOW() - INTERVAL '5 days',
+    NOW() - INTERVAL '5 days';
+
+INSERT INTO newsletter_posts (title, content, category_id, author_id, published, published_at, created_at, updated_at)
+SELECT
+    'Neue Produkte im Sortiment: Ergonomie-Serie erweitert',
+    E'## Erweiterte Ergonomie-Kollektion\n\nWir haben unser Sortiment um neue ergonomische Produkte erweitert, die deinen Arbeitsalltag noch angenehmer machen.\n\n### Neue Artikel\n\n**ErgoStand Pro X**\nDer höhenverstellbare Laptop-Ständer mit integriertem USB-Hub. Perfekt für das Home Office.\n\n**ComfortPad 3.0**\nGelkissen für Tastatur und Maus – ideal für lange Arbeitstage.\n\n**BackCare Chair Light**\nLeichter Bürostuhl mit Lendenwirbelstütze für unter 300 €.\n\nAlle neuen Produkte sind ab sofort im Shop verfügbar. Kostenloser Versand ab 50 €!',
+    (SELECT id FROM newsletter_categories WHERE slug = 'produktneuheiten'),
+    (SELECT id FROM users WHERE username = 'admin'),
+    true,
+    NOW() - INTERVAL '12 days',
+    NOW() - INTERVAL '12 days',
+    NOW() - INTERVAL '12 days';
+
+INSERT INTO newsletter_posts (title, content, category_id, author_id, published, published_at, created_at, updated_at)
+SELECT
+    'Webshop Update: Neue Features für ein besseres Einkaufserlebnis',
+    E'## Was ist neu?\n\nWir haben in den letzten Wochen hart daran gearbeitet, euren Einkauf noch angenehmer zu gestalten. Hier sind die wichtigsten Neuerungen:\n\n### Preisalarm\nSetze jetzt Preisalarme für deine Wunschprodukte. Du wirst automatisch benachrichtigt, sobald der Preis fällt.\n\n### Geteilte Merklisten\nTeile deine Merkliste mit Freunden und Familie – ideal für gemeinsame Wunschlisten.\n\n### Schnellerer Checkout\nUnser überarbeiteter Checkout-Prozess spart dir wertvolle Zeit.\n\nWir freuen uns auf euer Feedback! Schreibt uns über das Support-Ticket-System.',
+    (SELECT id FROM newsletter_categories WHERE slug = 'news'),
+    (SELECT id FROM users WHERE username = 'admin'),
+    true,
+    NOW() - INTERVAL '20 days',
+    NOW() - INTERVAL '20 days',
+    NOW() - INTERVAL '20 days';
+
+INSERT INTO newsletter_posts (title, content, category_id, author_id, published, published_at, created_at, updated_at)
+SELECT
+    'Flash-Sale diesen Freitag: 24 Stunden, unschlagbare Preise',
+    E'## Flash-Sale am Freitag!\n\nNur für 24 Stunden – von Freitag 00:00 bis Samstag 00:00 Uhr – gibt es exklusive Blitzangebote.\n\n**Was dich erwartet:**\n\n- Tagesangebote im Stundentakt\n- Limitierte Stückzahlen\n- Bis zu 50% Rabatt auf Top-Produkte\n\nTrage den Termin in deinen Kalender ein und sei rechtzeitig dabei – die besten Deals sind schnell weg!',
+    (SELECT id FROM newsletter_categories WHERE slug = 'angebote'),
+    (SELECT id FROM users WHERE username = 'admin'),
+    false,
+    NULL,
+    NOW() - INTERVAL '1 day',
+    NOW() - INTERVAL '1 day';
+
+-- Newsletter-Abonnements für Demo-Nutzer
+INSERT INTO newsletter_subscriptions (user_id, category_id, subscribed, updated_at)
+SELECT u.id, c.id, true, NOW()
+FROM users u, newsletter_categories c
+WHERE u.username = 'alice'
+ON CONFLICT (user_id, category_id) DO NOTHING;
+
+INSERT INTO newsletter_subscriptions (user_id, category_id, subscribed, updated_at)
+SELECT u.id, c.id, CASE WHEN c.slug = 'angebote' THEN true ELSE false END, NOW()
+FROM users u, newsletter_categories c
+WHERE u.username = 'bob'
+ON CONFLICT (user_id, category_id) DO NOTHING;
+
+-- ============================================================
+-- Über-Uns-Sektionen (Demo-Inhalte)
+-- ============================================================
+INSERT INTO about_us_sections (title, content, display_order, created_at, updated_at) VALUES
+(
+    'Wer wir sind',
+    E'## Unser Unternehmen\n\nWir sind ein junges, innovatives Unternehmen aus dem Herzen Deutschlands, das es sich zur Aufgabe gemacht hat, Shopping neu zu denken.\n\nSeit unserer Gründung im Jahr 2022 wachsen wir stetig und bieten unseren Kunden ein einzigartiges Online-Einkaufserlebnis – von hochwertigen Produkten bis hin zu persönlichem Kundenservice.\n\n**Unser Versprechen:** Qualität, Transparenz und Nachhaltigkeit in allem, was wir tun.',
+    0,
+    NOW(),
+    NOW()
+),
+(
+    'Unsere Mission',
+    E'## Mission & Vision\n\nUnsere Mission ist es, Online-Shopping so einfach, sicher und angenehm wie möglich zu gestalten.\n\n### Was uns antreibt\n\n- **Kundenzufriedenheit** steht bei uns an erster Stelle\n- Wir setzen auf **nachhaltige Produkte** und umweltfreundliche Verpackungen\n- **Faire Preise** ohne versteckte Kosten\n- Ein **transparenter Marktplatz**, auf dem Verkäufer und Käufer sich auf Augenhöhe begegnen\n\nWir glauben daran, dass guter Handel auf gegenseitigem Vertrauen basiert.',
+    1,
+    NOW(),
+    NOW()
+),
+(
+    'Unser Team',
+    E'## Die Menschen hinter dem Webshop\n\nUnser Team besteht aus leidenschaftlichen Entwicklern, kreativen Designern und erfahrenen Kaufleuten, die täglich daran arbeiten, euer Einkaufserlebnis zu verbessern.\n\nWir kommen aus verschiedenen Ecken Deutschlands und teilen eine gemeinsame Vision: einen Webshop zu bauen, den wir selbst gerne nutzen würden.\n\n> *"Wir bauen nicht nur einen Shop, wir bauen eine Community."*\n> — Das Gründerteam\n\nLust auf Mitarbeit? Wir freuen uns immer über motivierte Talente!',
+    2,
+    NOW(),
+    NOW()
+),
+(
+    'Nachhaltigkeit & Verantwortung',
+    E'## Unser Beitrag zur Umwelt\n\nNachhaltigkeit ist für uns kein Marketing-Begriff, sondern gelebte Praxis:\n\n- Alle Verpackungen bestehen aus **recyceltem oder recycelbarem Material**\n- Wir gleichen unseren CO₂-Fußabdruck durch zertifizierte **Klimaschutzprojekte** aus\n- Unser **Öko-Score** zeigt transparent, wie nachhaltig jedes Produkt ist\n- Mit dem **Trade-In-Programm** geben wir gebrauchten Geräten ein zweites Leben\n\nGemeinsam können wir einen Unterschied machen.',
+    3,
+    NOW(),
+    NOW()
+);
+
+-- ============================================================
+-- Jobs / Karriere (Demo-Daten)
+-- Idempotent: vorhandene Demo-Daten werden zuerst entfernt, damit
+-- wiederholtes Ausführen des Seeds keine Duplikate erzeugt (sonst
+-- liefern die Subqueries nach Titel/Name mehr als eine ID -> Fehler).
+-- (DELETE FROM job_postings kaskadiert auf job_applications + _files.)
+-- ============================================================
+DELETE FROM job_applications;
+DELETE FROM job_postings;
+DELETE FROM job_locations;
+
+INSERT INTO job_postings (title, description, employment_type, location, status, display_order, created_at, updated_at) VALUES
+(
+    'Frontend-Entwickler (React)',
+    E'## Deine Aufgaben\n\n- Entwicklung und Weiterentwicklung unserer React-basierten Webshop-Oberfläche\n- Enge Zusammenarbeit mit UX/Design und Backend-Teams\n- Code Reviews und technische Dokumentation\n\n## Dein Profil\n\n- Mindestens 2 Jahre Erfahrung mit React\n- Kenntnisse in TypeScript, CSS und REST-APIs\n- Teamfähigkeit und eigenverantwortliches Arbeiten\n\n## Was wir bieten\n\n- Flexible Arbeitszeiten und Remote-Option\n- Modernes Tech-Stack\n- Flache Hierarchien und kurze Entscheidungswege',
+    'VOLLZEIT', 'Berlin', 'ACTIVE', 0,
+    NOW() - INTERVAL '10 days', NOW() - INTERVAL '10 days'
+),
+(
+    'Backend-Entwicklerin / Backend-Entwickler (Java / Spring Boot)',
+    E'## Deine Aufgaben\n\n- Entwicklung und Pflege unserer Spring-Boot-Microservices\n- Datenbankmodellierung und Query-Optimierung (PostgreSQL)\n- Mitgestaltung der API-Architektur (REST)\n\n## Dein Profil\n\n- Sehr gute Java-Kenntnisse (Java 17+)\n- Erfahrung mit Spring Boot, JPA/Hibernate und Flyway\n- Grundkenntnisse in Docker und CI/CD\n\n## Was wir bieten\n\n- 30 Tage Urlaub\n- Weiterbildungsbudget\n- Gemeinsame Team-Events',
+    'VOLLZEIT', 'Berlin', 'ACTIVE', 1,
+    NOW() - INTERVAL '8 days', NOW() - INTERVAL '8 days'
+),
+(
+    'Werkstudent/in Kundenservice',
+    E'## Deine Aufgaben\n\n- Beantwortung von Kundenanfragen per E-Mail und Chat\n- Bearbeitung von Retouren und Beschwerden\n- Pflege unseres FAQ-Bereichs\n\n## Dein Profil\n\n- Laufendes Studium (BWL, Kommunikation o. Ä.)\n- Sehr gute Deutschkenntnisse in Wort und Schrift\n- Freundliches und lösungsorientiertes Auftreten\n\n## Was wir bieten\n\n- Flexible Arbeitszeiten passend zum Studium\n- Übernahme-Möglichkeit nach dem Studium',
+    'TEILZEIT', 'Hamburg', 'ACTIVE', 2,
+    NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days'
+),
+(
+    'Minijob: Lagermitarbeiter/in',
+    E'## Deine Aufgaben\n\n- Wareneingangskontrolle und Einlagerung\n- Kommissionierung von Bestellungen\n- Pflege der Lagerfläche\n\n## Dein Profil\n\n- Körperliche Belastbarkeit\n- Zuverlässigkeit und Pünktlichkeit\n- Erfahrung im Lager von Vorteil, aber kein Muss\n\n## Was wir bieten\n\n- Fester Stundenlohn über Mindestlohn\n- Kollegiales Team',
+    'MINIJOB', 'Hamburg', 'ACTIVE', 3,
+    NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days'
+),
+(
+    'DevOps-Engineer (m/w/d)',
+    E'## Deine Aufgaben\n\n- Aufbau und Pflege unserer CI/CD-Pipelines\n- Container-Orchestrierung mit Docker und Kubernetes\n- Monitoring und Incident-Management\n\n## Dein Profil\n\n- Erfahrung mit Docker, Kubernetes, GitHub Actions\n- Linux-Kenntnisse\n- Interesse an Cloud-nativen Architekturen\n\n## Was wir bieten\n\n- 100 % Remote möglich\n- Home-Office-Ausstattung inklusive',
+    'VOLLZEIT', 'Remote', 'INACTIVE', 4,
+    NOW() - INTERVAL '30 days', NOW() - INTERVAL '15 days'
+),
+(
+    'Praktikum Marketing & Social Media',
+    E'## Deine Aufgaben\n\n- Erstellung von Social-Media-Content (Instagram, LinkedIn)\n- Unterstützung bei Newsletter-Kampagnen\n- Analyse von Marketing-KPIs\n\n## Dein Profil\n\n- Studium im Bereich Marketing, Medien oder Kommunikation\n- Kreativität und Gespür für Trends\n- Erfahrung mit Canva oder Adobe Express von Vorteil\n\n## Was wir bieten\n\n- Praxisnahes Arbeiten im echten Unternehmen\n- Pflichtpraktikum oder freiwilliges Praktikum möglich',
+    'TEILZEIT', 'Berlin', 'ARCHIVED', 5,
+    NOW() - INTERVAL '60 days', NOW() - INTERVAL '30 days'
+);
+
+-- Bewerbungen (offene + bearbeitete)
+INSERT INTO job_applications (job_posting_id, applicant_name, applicant_email, applicant_phone, motivation_text, status, created_at, updated_at)
+VALUES
+(
+    (SELECT id FROM job_postings WHERE title = 'Frontend-Entwickler (React)'),
+    'Max Mustermann',
+    'max.mustermann@example.com',
+    '+49 151 12345678',
+    E'Sehr geehrte Damen und Herren,\n\nals begeisterter React-Entwickler mit 3 Jahren Berufserfahrung möchte ich mich herzlich für die ausgeschriebene Stelle bewerben. In meiner aktuellen Tätigkeit habe ich umfangreiche Erfahrungen mit modernen React-Patterns, TypeScript und REST-APIs gesammelt.\n\nIch freue mich auf ein persönliches Gespräch.',
+    'OPEN',
+    NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days'
+),
+(
+    (SELECT id FROM job_postings WHERE title = 'Frontend-Entwickler (React)'),
+    'Lena Schmidt',
+    'lena.schmidt@example.com',
+    NULL,
+    E'Hallo,\n\nich bin Absolventin der TU Berlin (Informatik) und suche meinen ersten Job als Frontend-Entwicklerin. React und JavaScript sind meine Leidenschaft. Mein Portfolio: github.com/lena-dev.',
+    'ACCEPTED',
+    NOW() - INTERVAL '7 days', NOW() - INTERVAL '2 days'
+),
+(
+    (SELECT id FROM job_postings WHERE title = 'Backend-Entwicklerin / Backend-Entwickler (Java / Spring Boot)'),
+    'Jonas Weber',
+    'jonas.weber@example.com',
+    '+49 176 87654321',
+    E'Guten Tag,\n\nich bringe 5 Jahre Erfahrung in der Java-Backend-Entwicklung mit, davon 3 Jahre mit Spring Boot und PostgreSQL. Ich schätze saubere Architektur und testgetriebene Entwicklung.',
+    'OPEN',
+    NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days'
+),
+(
+    (SELECT id FROM job_postings WHERE title = 'Backend-Entwicklerin / Backend-Entwickler (Java / Spring Boot)'),
+    'Anna Bauer',
+    'anna.bauer@example.com',
+    '+49 160 11223344',
+    NULL,
+    'REJECTED',
+    NOW() - INTERVAL '6 days', NOW() - INTERVAL '1 day'
+),
+(
+    (SELECT id FROM job_postings WHERE title = 'Werkstudent/in Kundenservice'),
+    'Tom Fischer',
+    'tom.fischer@example.com',
+    NULL,
+    E'Ich studiere BWL im 4. Semester und suche eine Werkstudentenstelle, die mir praktische Erfahrungen ermöglicht. Kundenservice und Kommunikation liegen mir sehr.',
+    'OPEN',
+    NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day'
+);
+
+-- ============================================================
+-- Job-Standorte (Demo-Daten)
+-- ============================================================
+INSERT INTO job_locations (name, street, house_number, postal_code, city, location_type, latitude, longitude, created_at, updated_at) VALUES
+('Zentrale Berlin',   'Unter den Linden', '1',   '10117', 'Berlin',  'VERWALTUNG', 52.5170,  13.3777, NOW(), NOW()),
+('Filiale Hamburg',   'Mönckebergstraße', '7',   '20095', 'Hamburg', 'FILIALE',    53.5503,  10.0006, NOW(), NOW()),
+('Zentrallager Köln', 'Aachener Straße',  '100', '50674', 'Köln',    'LAGER',      50.9296,   6.9166, NOW(), NOW()),
+('Filiale München',   'Kaufingerstraße',  '15',  '80331', 'München', 'FILIALE',    48.1375,  11.5755, NOW(), NOW());
+
+-- Bestehende Stellenausschreibungen mit Standorten verknüpfen
+UPDATE job_postings SET job_location_id = (SELECT id FROM job_locations WHERE name = 'Zentrale Berlin')
+WHERE title IN ('Frontend-Entwickler (React)', 'Backend-Entwicklerin / Backend-Entwickler (Java / Spring Boot)', 'Praktikum Marketing & Social Media');
+
+UPDATE job_postings SET job_location_id = (SELECT id FROM job_locations WHERE name = 'Filiale Hamburg')
+WHERE title = 'Werkstudent/in Kundenservice';
+
+UPDATE job_postings SET job_location_id = (SELECT id FROM job_locations WHERE name = 'Zentrallager Köln')
+WHERE title = 'Minijob: Lagermitarbeiter/in';
+
+UPDATE job_postings SET job_location_id = (SELECT id FROM job_locations WHERE name = 'Zentrale Berlin')
+WHERE title = 'DevOps-Engineer (m/w/d)';

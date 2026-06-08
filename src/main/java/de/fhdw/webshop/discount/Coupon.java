@@ -29,8 +29,11 @@ public class Coupon {
     @Column(nullable = false, unique = true, length = 50)
     private String code;
 
-    @Column(name = "discount_percent", nullable = false, precision = 5, scale = 2)
+    @Column(name = "discount_percent", precision = 5, scale = 2)
     private BigDecimal discountPercent;
+
+    @Column(name = "fixed_amount_eur", precision = 10, scale = 2)
+    private BigDecimal fixedAmountEur;
 
     @Column(name = "valid_until")
     private LocalDate validUntil;

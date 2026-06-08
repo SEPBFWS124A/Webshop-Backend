@@ -100,7 +100,8 @@ public class AffiliateService {
         if (profileRepository.findByUser(application.getUser()).isEmpty()) {
             AffiliateProfile profile = new AffiliateProfile();
             profile.setUser(application.getUser());
-            profile.setCommissionRate(new BigDecimal("0.0100"));
+            profile.setCommissionRate(AffiliateTier.TIER_3.getDefaultRate());
+            profile.setTier(AffiliateTier.TIER_3);
             profile.setActive(true);
             profileRepository.save(profile);
         }
@@ -251,6 +252,7 @@ public class AffiliateService {
             if (totalCommission.compareTo(BigDecimal.ZERO) > 0) {
                 profile.setPendingEarnings(profile.getPendingEarnings().add(totalCommission));
                 profileRepository.save(profile);
+                recalculateTierAndRate(profile);
                 auditLogService.recordSystemAction(
                         "AFFILIATE_CONVERSION_CREATED", "AffiliateConversion",
                         order.getId(),
@@ -306,6 +308,7 @@ public class AffiliateService {
                     p.getId(), p.getUser().getId(),
                     p.getUser().getUsername(), p.getUser().getEmail(),
                     p.getCommissionRate(),
+                    p.getTier().name(),
                     links.size(),
                     links.stream().mapToLong(AffiliateLink::getClickCount).sum(),
                     convs.size(),
@@ -328,12 +331,34 @@ public class AffiliateService {
         AffiliateProfile profile = profileRepository.findById(affiliateId)
                 .orElseThrow(() -> new EntityNotFoundException(
                         "Affiliate-Profil nicht gefunden: " + affiliateId));
+        AffiliateTier tier = AffiliateTier.fromRate(rate);
         profile.setCommissionRate(rate);
+        profile.setTier(tier);
         profileRepository.save(profile);
         auditLogService.recordSystemAction(
                 "AFFILIATE_COMMISSION_RATE_UPDATED", "AffiliateProfile",
-                affiliateId, "Provisionsrate auf " + rate + " gesetzt für: "
+                affiliateId, "Provisionsrate auf " + rate + " (" + tier + ") gesetzt für: "
                         + profile.getUser().getUsername());
+    }
+
+    /** Recalculates tier and auto-sets commission rate based on total generated revenue. */
+    private void recalculateTierAndRate(AffiliateProfile profile) {
+        BigDecimal totalRevenue = conversionRepository
+                .findByAffiliateLink_AffiliateProfileOrderByCreatedAtDesc(profile)
+                .stream()
+                .map(AffiliateConversion::getPurchaseAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        AffiliateTier newTier = AffiliateTier.fromRevenue(totalRevenue);
+        if (newTier != profile.getTier()) {
+            profile.setTier(newTier);
+            profile.setCommissionRate(newTier.getDefaultRate());
+            profileRepository.save(profile);
+            auditLogService.recordSystemAction(
+                    "AFFILIATE_TIER_AUTO_UPGRADED", "AffiliateProfile",
+                    profile.getId(),
+                    "Tier automatisch auf " + newTier + " angepasst (Umsatz: " + totalRevenue + " €)"
+                            + " für: " + profile.getUser().getUsername());
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -343,14 +368,24 @@ public class AffiliateService {
                 linkRepository.findByAffiliateProfileOrderByCreatedAtDesc(profile);
         List<AffiliateConversion> conversions =
                 conversionRepository.findByAffiliateLink_AffiliateProfileOrderByCreatedAtDesc(profile);
+        BigDecimal totalRevenue = conversions.stream()
+                .map(AffiliateConversion::getPurchaseAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        AffiliateTier currentTier = profile.getTier();
+        BigDecimal nextTierRevenue = switch (currentTier) {
+            case TIER_3 -> AffiliateTier.TIER_2.getMinRevenue().subtract(totalRevenue).max(BigDecimal.ZERO);
+            case TIER_2 -> AffiliateTier.TIER_1.getMinRevenue().subtract(totalRevenue).max(BigDecimal.ZERO);
+            case TIER_1 -> BigDecimal.ZERO;
+        };
         return new AffiliateDashboardStats(
                 links.stream().mapToLong(AffiliateLink::getClickCount).sum(),
                 conversions.size(),
-                conversions.stream().map(AffiliateConversion::getPurchaseAmount)
-                        .reduce(BigDecimal.ZERO, BigDecimal::add),
+                totalRevenue,
                 profile.getTotalEarningsConfirmed(),
                 profile.getPendingEarnings(),
-                links.stream().filter(AffiliateLink::isActive).count()
+                links.stream().filter(AffiliateLink::isActive).count(),
+                currentTier.name(),
+                nextTierRevenue
         );
     }
 

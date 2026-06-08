@@ -4,6 +4,7 @@ import de.fhdw.webshop.auth.dto.AuthResponse;
 import de.fhdw.webshop.auth.dto.LoginRequest;
 import de.fhdw.webshop.auth.dto.RegisterRequest;
 import de.fhdw.webshop.loyalty.LoyaltyService;
+import de.fhdw.webshop.referral.ReferralService;
 import de.fhdw.webshop.user.User;
 import de.fhdw.webshop.user.UserRepository;
 import de.fhdw.webshop.user.UserRole;
@@ -28,6 +29,7 @@ public class AuthService {
     private final TokenBlacklist tokenBlacklist;
     private final JdbcTemplate jdbcTemplate;
     private final LoyaltyService loyaltyService;
+    private final ReferralService referralService;
 
     public AuthResponse login(LoginRequest loginRequest) {
         Authentication authentication = authenticationManager.authenticate(
@@ -45,7 +47,7 @@ public class AuthService {
     @Transactional
     public AuthResponse register(RegisterRequest registerRequest) {
         if (registerRequest.userType() == UserType.INTERNAL) {
-            throw new IllegalArgumentException("Interne Benutzer koennen nur durch Administratoren angelegt werden.");
+            throw new IllegalArgumentException("Interne Benutzer können nur durch Administratoren angelegt werden.");
         }
         if (userRepository.existsByUsername(registerRequest.username())) {
             throw new IllegalArgumentException("Username already taken: " + registerRequest.username());
@@ -67,6 +69,7 @@ public class AuthService {
         newUser.setCustomerNumber(String.valueOf(nextSequenceValue));
 
         User savedUser = userRepository.save(newUser);
+        referralService.processReferral(savedUser, registerRequest.referralCode());
         String token = jwtTokenProvider.generateToken(savedUser);
         return buildAuthResponse(token, savedUser);
     }

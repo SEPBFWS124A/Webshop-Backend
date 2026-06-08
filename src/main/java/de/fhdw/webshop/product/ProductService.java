@@ -2,11 +2,15 @@ package de.fhdw.webshop.product;
 
 import de.fhdw.webshop.admin.AuditInitiator;
 import de.fhdw.webshop.admin.AuditLogService;
+import de.fhdw.webshop.pricealert.ProductPriceChangedEvent;
+import de.fhdw.webshop.pricehistory.PriceChangeReason;
+import de.fhdw.webshop.pricehistory.ProductPriceHistoryService;
 import de.fhdw.webshop.product.dto.*;
 import de.fhdw.webshop.reservation.StockReservationService;
 import de.fhdw.webshop.user.User;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,6 +32,8 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final AuditLogService auditLogService;
     private final StockReservationService stockReservationService;
+    private final ApplicationEventPublisher eventPublisher;
+    private final ProductPriceHistoryService priceHistoryService;
 
     @Transactional(readOnly = true)
     public List<ProductResponse> listProducts(Boolean purchasableOnly, String category, String searchTerm) {
@@ -80,6 +86,7 @@ public class ProductService {
         Product savedWithVariants = productRepository.save(savedProduct);
         recordProductAction(actingUser, "CREATE_PRODUCT", savedWithVariants,
                 "Product created: " + savedWithVariants.getName());
+        priceHistoryService.recordInitialPrice(savedWithVariants, actingUser);
         return toResponse(savedWithVariants);
     }
 
@@ -89,11 +96,18 @@ public class ProductService {
         if (product.getParentProduct() != null) {
             throw new IllegalArgumentException("Variant products must be edited through their parent product.");
         }
+        BigDecimal oldPrice = product.getRecommendedRetailPrice();
         applyProductRequest(product, productRequest);
         syncVariants(product, productRequest);
         Product savedProduct = productRepository.save(product);
         recordProductAction(actingUser, "UPDATE_PRODUCT", savedProduct,
                 "Product updated: " + savedProduct.getName());
+        BigDecimal newPrice = savedProduct.getRecommendedRetailPrice();
+        if (oldPrice == null || oldPrice.compareTo(newPrice) != 0) {
+            priceHistoryService.recordPriceChange(savedProduct, oldPrice, newPrice,
+                    PriceChangeReason.MANUAL, actingUser);
+            eventPublisher.publishEvent(new ProductPriceChangedEvent(savedProduct.getId()));
+        }
         return toResponse(savedProduct);
     }
 
@@ -150,10 +164,15 @@ public class ProductService {
     @Transactional
     public ProductResponse updatePrice(Long productId, UpdatePriceRequest updatePriceRequest, User actingUser) {
         Product product = loadProduct(productId);
-        product.setRecommendedRetailPrice(updatePriceRequest.recommendedRetailPrice());
+        BigDecimal oldPrice = product.getRecommendedRetailPrice();
+        BigDecimal newPrice = updatePriceRequest.recommendedRetailPrice();
+        product.setRecommendedRetailPrice(newPrice);
         Product savedProduct = productRepository.save(product);
         recordProductAction(actingUser, "UPDATE_PRODUCT_PRICE", savedProduct,
-                "Product price updated to " + updatePriceRequest.recommendedRetailPrice() + ": " + savedProduct.getName());
+                "Product price updated to " + newPrice + ": " + savedProduct.getName());
+        priceHistoryService.recordPriceChange(savedProduct, oldPrice, newPrice,
+                PriceChangeReason.MANUAL, actingUser);
+        eventPublisher.publishEvent(new ProductPriceChangedEvent(savedProduct.getId()));
         return toResponse(savedProduct);
     }
 
@@ -514,10 +533,10 @@ public class ProductService {
             return null;
         }
         if (personalizationMaxLength == null || personalizationMaxLength <= 0) {
-            throw new IllegalArgumentException("Die maximale Zeichenlaenge fuer Personalisierung muss groesser als 0 sein.");
+            throw new IllegalArgumentException("Die maximale Zeichenlaenge für Personalisierung muss größer als 0 sein.");
         }
         if (personalizationMaxLength > 1000) {
-            throw new IllegalArgumentException("Die maximale Zeichenlaenge fuer Personalisierung darf hoechstens 1000 betragen.");
+            throw new IllegalArgumentException("Die maximale Zeichenlaenge für Personalisierung darf hoechstens 1000 betragen.");
         }
         return personalizationMaxLength;
     }

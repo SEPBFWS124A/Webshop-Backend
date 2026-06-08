@@ -37,7 +37,7 @@ class StatisticAlertServiceTest {
 
         assertThatThrownBy(() -> service.updateThreshold(7L, request))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Der Schwellwert muss groesser als 0 und maximal 1000 Prozent sein.");
+                .hasMessage("Der Schwellwert muss größer als 0 und maximal 1000 Prozent sein.");
     }
 
     @Test

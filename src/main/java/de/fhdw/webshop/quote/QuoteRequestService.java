@@ -166,13 +166,13 @@ public class QuoteRequestService {
             throw new IllegalArgumentException("Der Artikel " + product.getName() + " ist aktuell nicht bestellbar.");
         }
         if (product.getProductType() != ProductType.DIGITAL_GIFT_CARD && product.getStock() < quantity) {
-            throw new IllegalArgumentException("Der Bestand reicht fuer " + product.getName() + " nicht aus.");
+            throw new IllegalArgumentException("Der Bestand reicht für " + product.getName() + " nicht aus.");
         }
     }
 
     private void requireBusinessCustomer(User user) {
         if (user == null || user.getUserType() != UserType.BUSINESS) {
-            throw new IllegalArgumentException("Angebotsanforderungen sind nur fuer verifizierte B2B-Kunden verfuegbar.");
+            throw new IllegalArgumentException("Angebotsanforderungen sind nur für verifizierte B2B-Kunden verfuegbar.");
         }
     }
 
@@ -216,7 +216,7 @@ public class QuoteRequestService {
                 Gueltig bis: %s
                 Gesamtbetrag: %s
 
-                Das Angebot ist im Kundenkonto unter "Meine Angebote" abrufbar und kann innerhalb der Gueltigkeitsfrist wieder in den Warenkorb uebernommen werden.
+                Das Angebot ist im Kundenkonto unter "Meine Angebote" abrufbar und kann innerhalb der Gueltigkeitsfrist wieder in den Warenkorb übernommen werden.
                 """.formatted(
                 quoteRequest.getQuoteNumber(),
                 DATE_FORMATTER.format(quoteRequest.getValidUntil()),
@@ -298,7 +298,7 @@ public class QuoteRequestService {
         lines.add("Versand: " + formatMoney(quoteRequest.getShippingCost()));
         lines.add("Gesamtbetrag: " + formatMoney(quoteRequest.getTotalPrice()));
         lines.add("");
-        lines.add("Dieses Angebot kann innerhalb der Gueltigkeitsfrist im Kundenkonto in einen Warenkorb uebernommen werden.");
+        lines.add("Dieses Angebot kann innerhalb der Gueltigkeitsfrist im Kundenkonto in einen Warenkorb übernommen werden.");
         return PdfDocumentBuilder.build(lines);
     }
 

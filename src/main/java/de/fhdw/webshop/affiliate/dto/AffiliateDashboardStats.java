@@ -8,5 +8,7 @@ public record AffiliateDashboardStats(
         BigDecimal totalRevenue,
         BigDecimal confirmedEarnings,
         BigDecimal pendingEarnings,
-        long activeLinksCount
+        long activeLinksCount,
+        String tier,
+        BigDecimal nextTierRevenue
 ) {}

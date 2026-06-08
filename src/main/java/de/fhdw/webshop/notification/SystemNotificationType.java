@@ -12,5 +12,9 @@ public enum SystemNotificationType {
     /** Öffentliche Antwort auf ein Support-Ticket. */
     SUPPORT_TICKET_REPLY,
     /** Support-Ticket wurde geschlossen. */
-    SUPPORT_TICKET_CLOSED
+    SUPPORT_TICKET_CLOSED,
+    /** Preisalarm wurde ausgelöst (Preis hat Zielpreis erreicht). */
+    PRICE_ALERT_TRIGGERED,
+    /** Freunde-werben-Belohnung: Referrer hat einen Gutschein erhalten. */
+    REFERRAL_REWARD_EARNED
 }

@@ -99,7 +99,7 @@ public class SellerReviewService {
                 .orElseThrow(() -> new EntityNotFoundException("Order not found: " + orderId));
 
         if (NON_REVIEWABLE_STATUSES.contains(order.getStatus())) {
-            throw new IllegalArgumentException("Verkaeufer koennen erst nach Bestellbestaetigung bewertet werden.");
+            throw new IllegalArgumentException("Verkaeufer können erst nach Bestellbestaetigung bewertet werden.");
         }
 
         String requestedSeller = normalizeRequired(request.sellerName(), "Bitte einen Verkaeufer aus der Bestellung auswaehlen.");
@@ -112,7 +112,7 @@ public class SellerReviewService {
         }
 
         if (sellerReviewRepository.existsByOrderIdAndCustomerIdAndSellerNameIgnoreCase(orderId, currentUser.getId(), canonicalSeller)) {
-            throw new IllegalArgumentException("Fuer diesen Verkaeufer wurde zu dieser Bestellung bereits eine Bewertung abgegeben.");
+            throw new IllegalArgumentException("Für diesen Verkaeufer wurde zu dieser Bestellung bereits eine Bewertung abgegeben.");
         }
 
         SellerReview review = new SellerReview();
@@ -210,11 +210,11 @@ public class SellerReviewService {
             return;
         }
         if (images.size() > MAX_IMAGES_PER_REVIEW) {
-            throw new IllegalArgumentException("Es koennen maximal 3 Bilder pro Rezension hochgeladen werden.");
+            throw new IllegalArgumentException("Es können maximal 3 Bilder pro Rezension hochgeladen werden.");
         }
         for (MultipartFile image : images) {
             if (image == null || image.isEmpty()) {
-                throw new IllegalArgumentException("Leere Bilddateien koennen nicht hochgeladen werden.");
+                throw new IllegalArgumentException("Leere Bilddateien können nicht hochgeladen werden.");
             }
             if (image.getSize() > MAX_IMAGE_SIZE_BYTES) {
                 throw new IllegalArgumentException("Ein Rezensionsbild darf maximal 5 MB gross sein.");

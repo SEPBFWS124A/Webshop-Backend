@@ -2,6 +2,9 @@ package de.fhdw.webshop.sellerportal;
 
 import de.fhdw.webshop.admin.AuditInitiator;
 import de.fhdw.webshop.admin.AuditLogService;
+import de.fhdw.webshop.marketplacedispute.MarketplaceDispute;
+import de.fhdw.webshop.marketplacedispute.MarketplaceDisputeRepository;
+import de.fhdw.webshop.marketplacedispute.MarketplaceDisputeStatus;
 import de.fhdw.webshop.order.Order;
 import de.fhdw.webshop.order.OrderItem;
 import de.fhdw.webshop.order.OrderStatus;
@@ -61,6 +64,7 @@ public class SellerPortalService {
     private final SellerPayoutItemRepository sellerPayoutItemRepository;
     private final SellerPortalOrderItemRepository sellerPortalOrderItemRepository;
     private final SellerPortalReturnRequestItemRepository sellerPortalReturnRequestItemRepository;
+    private final MarketplaceDisputeRepository marketplaceDisputeRepository;
     private final AuditLogService auditLogService;
 
     @Transactional
@@ -226,6 +230,7 @@ public class SellerPortalService {
         SellerPayout payout = sellerPayoutRepository.findById(payoutId)
                 .orElseThrow(() -> new EntityNotFoundException("Auszahlung nicht gefunden: " + payoutId));
         ensureMutablePayout(payout);
+        ensureNoOpenDisputeBlock(payout);
         payout.setStatus(SellerPayoutStatus.APPROVED);
         payout.setAdminNote(blankToNull(request == null ? null : request.note()));
         payout.setApprovedAt(Instant.now());
@@ -265,6 +270,7 @@ public class SellerPortalService {
         if (payout.getStatus() == SellerPayoutStatus.PAID_OUT) {
             return toDetailResponse(payout);
         }
+        ensureNoOpenDisputeBlock(payout);
         payout.setStatus(SellerPayoutStatus.PAID_OUT);
         payout.setPaidOutAt(Instant.now());
         payout.setAdminNote(blankToNull(request == null ? null : request.note()));
@@ -373,6 +379,36 @@ public class SellerPortalService {
                     ));
                 });
 
+        snapshot.activeDisputes().forEach(dispute -> {
+            LineAmounts amounts = snapshot.lineAmountsByOrderItemId().get(dispute.getOrderItem().getId());
+            if (amounts == null) {
+                return;
+            }
+            Instant occurredAt = dispute.getCreatedAt() != null ? dispute.getCreatedAt() : resolveSaleInstant(dispute.getOrder());
+            LocalDate periodStart = resolveSaleInstant(dispute.getOrder())
+                    .atZone(ZoneId.of("Europe/Berlin"))
+                    .toLocalDate()
+                    .withDayOfMonth(1);
+            BigDecimal holdbackAmount = money(amounts.netAmount());
+            addComputationItem(itemsByPeriod, periodStart, new PayoutComputationItem(
+                    SellerPayoutItemType.DISPUTE_HOLDBACK,
+                    occurredAt,
+                    "DSP-" + dispute.getId(),
+                    dispute.getOrderItem().getProduct().getName() + " | Konfliktfall " + dispute.getStatus(),
+                    dispute.getOrder(),
+                    null,
+                    dispute.getOrderItem().getQuantity(),
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    holdbackAmount,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    holdbackAmount.negate()
+            ));
+        });
+
         Map<LocalDate, SellerPayout> existingByPeriod = sellerPayoutRepository
                 .findBySellerProfileIdOrderByPeriodStartDesc(sellerProfile.getId())
                 .stream()
@@ -430,6 +466,7 @@ public class SellerPortalService {
         BigDecimal settled = sum(itemsToPersist, PayoutComputationItem::returnSettlementAmount);
         BigDecimal manualAdjustment = sum(itemsToPersist, PayoutComputationItem::manualAdjustmentAmount);
         BigDecimal net = sum(itemsToPersist, PayoutComputationItem::netAmount);
+        boolean payoutBlocked = itemsToPersist.stream().anyMatch(item -> item.type() == SellerPayoutItemType.DISPUTE_HOLDBACK);
 
         payout.setGrossSalesAmount(gross);
         payout.setDiscountAmount(discount);
@@ -439,6 +476,7 @@ public class SellerPortalService {
         payout.setSettledReturnAmount(settled);
         payout.setManualAdjustmentAmount(manualAdjustment);
         payout.setNetPayoutAmount(net);
+        payout.setPayoutBlocked(payoutBlocked);
         sellerPayoutRepository.save(payout);
 
         if (payout.getId() != null) {
@@ -454,6 +492,9 @@ public class SellerPortalService {
         List<OrderItem> orderItems = sellerPortalOrderItemRepository
                 .findBySellerNameIgnoreCaseOrderByOrderCreatedAtDesc(sellerProfile.getDisplayName());
         List<ReturnRequestItem> returnItems = sellerPortalReturnRequestItemRepository.findBySellerName(sellerProfile.getDisplayName());
+        List<MarketplaceDispute> activeDisputes = marketplaceDisputeRepository.findBySellerNameIgnoreCaseAndStatusIn(
+                sellerProfile.getDisplayName(),
+                Set.of(MarketplaceDisputeStatus.OPEN, MarketplaceDisputeStatus.UNDER_REVIEW));
         Map<Long, BigDecimal> subtotalCache = new HashMap<>();
         Map<Long, LineAmounts> lineAmountsByOrderItemId = new HashMap<>();
 
@@ -470,7 +511,7 @@ public class SellerPortalService {
             returnImpacts.computeIfAbsent(returnItem.getOrderItem().getId(), ignored -> new ArrayList<>()).add(impact);
         }
 
-        return new SellerSnapshot(orderItems, returnItems, lineAmountsByOrderItemId, returnImpacts);
+        return new SellerSnapshot(orderItems, returnItems, activeDisputes, lineAmountsByOrderItemId, returnImpacts);
     }
 
     private LineAmounts calculateLineAmounts(
@@ -579,6 +620,16 @@ public class SellerPortalService {
                     summary.hasActiveReturn = true;
                 }
             }
+            snapshot.activeDisputes().stream()
+                    .filter(dispute -> Objects.equals(dispute.getOrderItem().getId(), orderItem.getId()))
+                    .findAny()
+                    .ifPresent(dispute -> {
+                        LineAmounts disputeAmounts = snapshot.lineAmountsByOrderItemId().get(orderItem.getId());
+                        if (disputeAmounts != null) {
+                            summary.openReturnHoldback = summary.openReturnHoldback.add(disputeAmounts.netAmount());
+                            summary.payoutBlocked = true;
+                        }
+                    });
         }
 
         return byOrderId.values().stream()
@@ -605,6 +656,7 @@ public class SellerPortalService {
                 money(payout.getSettledReturnAmount()),
                 money(payout.getManualAdjustmentAmount()),
                 money(payout.getNetPayoutAmount()),
+                payout.isPayoutBlocked(),
                 payout.getCreatedAt(),
                 payout.getApprovedAt(),
                 payout.getPaidOutAt(),
@@ -719,6 +771,12 @@ public class SellerPortalService {
         }
     }
 
+    private void ensureNoOpenDisputeBlock(SellerPayout payout) {
+        if (payout.isPayoutBlocked()) {
+            throw new IllegalStateException("Diese Auszahlung ist wegen offener Marketplace-Konfliktfälle blockiert.");
+        }
+    }
+
     private String generatePayoutNumber(SellerProfile sellerProfile, LocalDate periodStart) {
         return "SPA-" + periodStart.format(DateTimeFormatter.ofPattern("yyyyMM"))
                 + "-" + String.format("%03d", sellerProfile.getId());
@@ -768,6 +826,7 @@ public class SellerPortalService {
     private record SellerSnapshot(
             List<OrderItem> orderItems,
             List<ReturnRequestItem> returnItems,
+            List<MarketplaceDispute> activeDisputes,
             Map<Long, LineAmounts> lineAmountsByOrderItemId,
             Map<Long, List<ReturnImpact>> returnImpacts
     ) {
@@ -825,6 +884,7 @@ public class SellerPortalService {
         private BigDecimal net = BigDecimal.ZERO;
         private boolean hasActiveReturn;
         private boolean hasSettledReturn;
+        private boolean payoutBlocked;
 
         private MutableOrderSummary(Order order) {
             this.order = order;
@@ -849,6 +909,7 @@ public class SellerPortalService {
                     net.setScale(2, RoundingMode.HALF_UP),
                     hasActiveReturn,
                     hasSettledReturn,
+                    payoutBlocked,
                     order.getStatus() == OrderStatus.CANCELLED
             );
         }

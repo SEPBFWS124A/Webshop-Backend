@@ -44,6 +44,8 @@ public class SecurityConfig {
                         // Product browsing is public (US #8 – customers can view catalogue without account)
                         .requestMatchers(HttpMethod.GET, "/api/products").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/products/{id}").permitAll()
+                        // Price history is public (prices are public information)
+                        .requestMatchers(HttpMethod.GET, "/api/products/{id}/price-history").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/products/{id}/questions").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/products/{id}/feedback").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/product-bundles/active").permitAll()
@@ -73,6 +75,16 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/seller-reviews/seller/**").permitAll()
                         // AGB – latest version readable without login (shown on /agb page and checkout)
                         .requestMatchers(HttpMethod.GET, "/api/agb/latest").permitAll()
+                        // Newsletter – public reading, subscriptions require auth
+                        .requestMatchers(HttpMethod.GET, "/api/newsletter/**").permitAll()
+                        // About Us – public reading
+                        .requestMatchers(HttpMethod.GET, "/api/about-us/**").permitAll()
+                        // Jobs – public listing and application submission
+                        .requestMatchers(HttpMethod.GET, "/api/jobs").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/jobs/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/jobs/*/apply").permitAll()
+                        // Job locations – public listing for career page dropdown
+                        .requestMatchers(HttpMethod.GET, "/api/job-locations").permitAll()
                         // Affiliate click tracking — public so links work without login
                         .requestMatchers(HttpMethod.GET, "/api/affiliate/track/**").permitAll()
                         // Shoppi chatbot — public, auth-aware (personal context only when authenticated)

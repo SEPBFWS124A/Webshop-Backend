@@ -75,6 +75,9 @@ public class SellerPayout {
     @Column(name = "net_payout_amount", nullable = false, precision = 12, scale = 2)
     private BigDecimal netPayoutAmount = BigDecimal.ZERO;
 
+    @Column(name = "payout_blocked", nullable = false)
+    private boolean payoutBlocked = false;
+
     @Column(name = "correction_reason", length = 500)
     private String correctionReason;
 
