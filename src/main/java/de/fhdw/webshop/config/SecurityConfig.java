@@ -56,6 +56,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/orders/checkout").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/orders/guest").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/orders/guest/preview").permitAll()
+                        // GDPR data export – guest request returns the archive directly (public)
+                        .requestMatchers(HttpMethod.POST, "/api/privacy/data-requests/guest").permitAll()
                         // OpenAPI spec + Swagger UI – accessible without login during development
                         .requestMatchers("/v3/api-docs/**").permitAll()
                         .requestMatchers("/swagger-ui/**").permitAll()
